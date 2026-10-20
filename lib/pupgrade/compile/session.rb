@@ -21,6 +21,11 @@ module Pupgrade
 
       config_key 'compile.environment', type: :string, default: 'production',
                  about: 'The environment name the catalogs are compiled in; it names the repo dir for Puppet'
+      config_key 'compile.manifest', type: :string, default: nil, example: 'manifests/site.pp',
+                 about: 'A manifest file or directory compiled in place of environment.conf\'s, relative to the control repo'
+      config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
+                 about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
+                        'relative to the control repo'
       config_key 'compile.stubs', type: :string, default: nil, example: 'pupgrade-stubs.yaml',
                  about: 'A stub file answering commands and facts module code asks for during a compile, ' \
                         'relative to the control repo'

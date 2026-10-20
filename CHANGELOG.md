@@ -64,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     or runs and is recorded (`--on-leak allow`); every interception is in the
     probe record
   - config subsystem `compile` in `pupgrade.yaml`: `factsets`, `output_dir`,
-    `environment`, `stubs`, `on_leak`, `vars`, `server_facts`
+    `environment`, `manifest`, `prepend_file`, `stubs`, `on_leak`, `vars`,
+    `server_facts`
 - `rake fixture[DIR]` builds a fixture control repo to run pupgrade against:
   - 32 git modules as bare remotes with a tagged commit per release; stdlib,
     firewall, concat, and simplib also ship functions, a type and provider, a

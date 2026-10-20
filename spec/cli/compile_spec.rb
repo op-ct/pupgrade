@@ -124,6 +124,36 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(catalog['classes']).to eq(%w[settings])
   end
 
+  it 'takes the manifest, the prepended file, the stubs, and the factsets from the config file' do
+    File.write(File.join(fixture.dir, 'before.pp'), "notify { 'from before': }\n")
+    File.write(File.join(fixture.dir, 'alt.pp'), "notify { 'from alt': }\n")
+    cfg = File.join(@tmp, 'pupgrade.yaml')
+    File.write(cfg, <<~YAML)
+      compile:
+        factsets: [factsets]
+        manifest: alt.pp
+        prepend_file: before.pp
+        stubs: pupgrade-stubs.yaml
+        output_dir: #{out}
+        vars:
+          role: db
+    YAML
+    captured = StringIO.new
+    original = $stdout
+    $stdout  = captured
+    status   = nil
+    begin
+      described_class.new.run(['-c', cfg, '-d', fixture.dir, '--certname', 'web01*'])
+    rescue SystemExit => e
+      status = e.status
+    ensure
+      $stdout = original
+    end
+    expect(status).to eq(0)
+    titles = read('web01.example.com', 'catalog.json')['resources'].select { |r| r['type'] == 'Notify' }.map { |r| r['title'] }
+    expect(titles).to eq(['from alt', 'from before'])
+  end
+
   it 'refuses missing factsets, a bad stub file, and an unknown leak policy' do
     expect(run(['--factsets', 'nope']).first).to eq(3)
     expect(run(['--stubs', 'nope.yaml']).first).to eq(3)

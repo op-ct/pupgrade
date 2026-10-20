@@ -72,9 +72,10 @@ module Pupgrade
         o.separator ''
         o.separator 'What to compile:'
         o.on('--environment=NAME', 'Environment name (config: compile.environment)') { |v| @options[:environment] = v }
-        o.on('--manifest=PATH', 'A manifest file or directory in place of environment.conf\'s') { |v| @options[:manifest] = v }
+        o.on('--manifest=PATH', 'A manifest file or directory in place of environment.conf\'s (config: compile.manifest)') { |v| @options[:manifest] = v }
         o.on('--code=CODE', 'Puppet code compiled in place of the manifest') { |v| @options[:code] = v }
-        o.on('--prepend=CODE', 'Puppet code evaluated before the manifest; @FILE reads it from a file') { |v| @options[:prepend] = v }
+        o.on('--prepend=CODE', 'Puppet code evaluated before the manifest; @FILE reads it from a file',
+             '(config: compile.prepend_file names the file)') { |v| @options[:prepend] = v }
         o.on('--var=NAME=VALUE', 'A top-scope variable, repeatable (config: compile.vars)') { |v| pair(:vars, v) }
         o.on('--server-fact=NAME=VALUE', 'An entry of $server_facts, repeatable (config: compile.server_facts)') { |v| pair(:server_facts, v) }
 
@@ -106,6 +107,7 @@ module Pupgrade
       def build_session(repo)
         stubs = @options[:stubs] ? ::Pupgrade::Compile::Stubs.load(File.expand_path(@options[:stubs], repo.dir)) : ::Pupgrade::Compile::Stubs.empty
         prepend = @options[:prepend]
+        prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
         prepend = File.read(File.expand_path(prepend.delete_prefix('@'), repo.dir)) if prepend&.start_with?('@')
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
@@ -168,6 +170,8 @@ module Pupgrade
           factsets:     cfg.dig('compile', 'factsets'),
           output_dir:   cfg.dig('compile', 'output_dir') || 'pupgrade-catalogs',
           environment:  cfg.dig('compile', 'environment') || 'production',
+          manifest:     cfg.dig('compile', 'manifest'),
+          prepend_file: cfg.dig('compile', 'prepend_file'),
           stubs:        cfg.dig('compile', 'stubs'),
           on_leak:      cfg.dig('compile', 'on_leak') || 'raise',
           vars:         cfg.dig('compile', 'vars'),

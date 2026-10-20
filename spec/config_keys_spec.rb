@@ -22,6 +22,8 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.factsets'                 => Pupgrade::CLI::Compile,
       'compile.output_dir'               => Pupgrade::CLI::Compile,
       'compile.environment'              => Pupgrade::Compile::Session,
+      'compile.manifest'                 => Pupgrade::Compile::Session,
+      'compile.prepend_file'             => Pupgrade::Compile::Session,
       'compile.stubs'                    => Pupgrade::Compile::Session,
       'compile.on_leak'                  => Pupgrade::Compile::Session,
       'compile.vars'                     => Pupgrade::Compile::Session,
