@@ -37,6 +37,18 @@ module Pupgrade
           @skip_config_load = true
         end
 
+        # A command with this declaration runs its own `execute` when the
+        # arguments do not start with one of its subcommands, instead of
+        # requiring one: `pupgrade compile -d DIR` compiles, `pupgrade
+        # compile diff A B` dispatches.
+        def runs_without_subcommand
+          @runs_without_subcommand = true
+        end
+
+        def runs_without_subcommand?
+          @runs_without_subcommand ? true : false
+        end
+
         def skip_config_load?
           @skip_config_load ? true : false
         end
@@ -123,9 +135,10 @@ module Pupgrade
       # while dispatching honours --[no-]color.
       def run(argv)
         argv = argv.dup
-        parse_own_options!(argv)
+        leaf = self.class.subcommands.empty? || (self.class.runs_without_subcommand? && !names_subcommand?(argv))
+        parse_own_options!(argv, leaf: leaf)
         ::Pupgrade::Ansi.preference = @options[:color]
-        return dispatch(argv) unless self.class.subcommands.empty?
+        return dispatch(argv) unless leaf
 
         after_own_parse
         apply_log_level
@@ -267,7 +280,9 @@ module Pupgrade
       def usage_line
         parts = ['Usage:', *self.class.command_path]
         parts << '[options]'
-        parts << '<subcommand>' unless self.class.subcommands.empty?
+        unless self.class.subcommands.empty?
+          parts << (self.class.runs_without_subcommand? ? '[<subcommand>]' : '<subcommand>')
+        end
         parts.concat(self.class.positional)
         parts.join(' ')
       end
@@ -281,15 +296,24 @@ module Pupgrade
         subs.each { |c| o.separator "    #{c.canonical_name.ljust(width)}   #{c.desc}" }
       end
 
-      def parse_own_options!(argv)
+      # @param leaf [Boolean] whether this command runs itself: every
+      #   argument is then its own, else parsing stops at the subcommand
+      def parse_own_options!(argv, leaf: self.class.subcommands.empty?)
         parser = build_parser
-        if self.class.subcommands.empty?
-          parser.parse!(argv)
-        else
-          parser.order!(argv)
-        end
+        leaf ? parser.parse!(argv) : parser.order!(argv)
       rescue OptionParser::ParseError => e
         fatal!(e.message, help: true)
+      end
+
+      # Whether the first argument names (or unambiguously abbreviates) a
+      # subcommand; an ambiguous one counts, so dispatch can report it.
+      def names_subcommand?(argv)
+        first = argv.first
+        return false if first.nil? || first.start_with?('-')
+
+        !self.class.find_subcommand(first).nil?
+      rescue AmbiguousSubcommand
+        true
       end
 
       def dispatch(argv)

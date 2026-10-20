@@ -22,7 +22,8 @@ module Pupgrade
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'compile', subcommand_of: Root
-      desc 'Compile catalogs from factsets and record what each compile used'
+      desc 'Compile catalogs from factsets and record what each compile used (`diff` compares two runs)'
+      runs_without_subcommand
 
       config_key 'compile.factsets', type: :array, default: [], example: ['spec/factsets'],
                  about: 'Factset files or directories (onceover layout or a plain facts hash), relative to the control repo'
@@ -181,3 +182,5 @@ module Pupgrade
     end
   end
 end
+
+Dir[File.join(__dir__, 'compile', '*.rb')].sort.each { |f| require f }

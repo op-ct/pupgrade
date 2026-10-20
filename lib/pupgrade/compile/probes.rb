@@ -268,10 +268,12 @@ module Pupgrade
           end
         end
 
-        # Makes sure Puppet's log reaches the recorder; a destination is
-        # dropped whenever Puppet closes them all.
+        # Makes sure Puppet's log reaches the recorder, through one sink:
+        # Puppet keys destinations by the object given, and drops them all
+        # whenever it closes its log.
         def attach_log
-          Puppet::Util::Log.newdestination(LogSink.new) unless Puppet::Util::Log.destinations.key?('Pupgrade::Compile::Probes::LogSink')
+          @sink ||= LogSink.new
+          Puppet::Util::Log.newdestination(@sink) unless Puppet::Util::Log.destinations.key?(@sink)
         end
       end
 

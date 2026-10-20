@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - config subsystem `compile` in `pupgrade.yaml`: `factsets`, `output_dir`,
     `environment`, `manifest`, `prepend_file`, `stubs`, `on_leak`, `vars`,
     `server_facts`
+- `pupgrade compile diff FROM TO`: what changed between two `compile` runs, node
+  by node: resources added and removed, parameters added, removed, and changed
+  with their values, classes and relationship edges added and removed, and nodes
+  only one run has. `--group` folds identical changes across nodes into one row
+  with the nodes it appears on; `--summary` counts per node; row filters
+  `--certname`, `--resources`, `--changes`, `--skip-changes`, `--ignore-params`.
+  Exits 1 when the catalogs differ
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
   pupgrade.yaml listing every known key under its subsystem, commented out with
   its default or an example, or set live by an argument; `-p --` prints it

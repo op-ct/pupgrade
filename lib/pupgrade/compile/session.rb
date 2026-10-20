@@ -138,7 +138,7 @@ module Pupgrade
         probes = recorder.to_h
         probes.merge!(catalog_summary(catalog)) if catalog
         Result.new(certname: factset.certname, factset: factset, error: error,
-                   catalog: catalog && CatalogDocument.build(catalog, version: @version), probes: probes,
+                   catalog: catalog && CatalogDocument.build(catalog, version: @version, repo_dir: @repo_dir), probes: probes,
                    seconds: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       end
 
