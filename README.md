@@ -32,3 +32,33 @@ bundle exec pupgrade --help
 * `pupgrade help` lists the commands.
   * Today, they are `check`, `compile`, `compile diff`, `config new`, `solve`, `surface`, `surface diff`, `module gitlog`, `module update`, and `params compare`.
   * `pupgrade config new` writes a `pupgrade.yaml` with every key commented out
+
+
+
+
+```sh
+# Compile catalogs from factsets + stubbed functions
+pupgrade compile --factsets pupgrade/factsets/ \
+  --stubs pupgrade-stubs.yaml -o pupgrade/catalogs/
+
+pupgrade solve --evidence pupgrade/catalogs/ --prune-unused \
+  --exclusions exclusions.yaml -o Puppetfile.solved
+
+pupgrade check --propose Puppetfile.solved --by-change
+```
+
+To make the second and third steps repeatable, put the inputs in `pupgrade.yaml`:
+
+```yaml
+compile:
+  factsets: [factsets]
+  stubs: pupgrade-stubs.yaml
+  output_dir: pupgrade/catalogs
+solve:
+  evidence: pupgrade/catalogs
+```
+
+After which `pupgrade compile` and `pupgrade solve --prune-unused` need no flags.
+
+
+
