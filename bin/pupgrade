@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+require 'pupgrade'
+require 'pupgrade/cli/root'
+Pupgrade::CLI::Root.run(ARGV)
