@@ -30,5 +30,5 @@ bundle exec pupgrade --help
 ## Usage
 
 * `pupgrade help` lists the commands.
-  * Today, they are `check`, `module gitlog`, `module update`, and `params compare`.
+  * Today, they are `check`, `compile`, `module gitlog`, `module update`, and `params compare`.
   * `pupgrade config` subcommands are not yet available

@@ -38,10 +38,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `operatingsystems`, `requirements`, `exclude_modules`,
       `exclude_dependencies`, `exclude_requirements`,
       `exclude_operatingsystems`, `branchfile`, `check_order`, `check_sort`
+- `pupgrade compile -d DIR --factsets PATH -o OUT`: one catalog per factset,
+  compiled against the deployed environment directory through Puppet's own
+  compiler, with a record of what each compile used
+  - factsets in onceover's layout (`name`, `values`, `trusted`) or as a plain
+    facts hash named by its file (what `driftless export factsets` writes); a
+    file, a directory, or an onceover role tree, `--certname GLOB` to select
+  - `OUT/<certname>/catalog.json`: Puppet's catalog data hash with resources,
+    edges, classes, and keys sorted, the version set to the repo's git sha,
+    and the per-run uuid dropped, so compiles of the same code are identical
+  - `OUT/<certname>/probes.json`: functions called (with the module providing
+    each and the call sites), facts read through `$facts`, `$trusted`, Hiera
+    interpolation, and `Facter.value`, legacy fact variables, lookups
+    (automatic and explicit, found or not), warnings and deprecations,
+    classes, defined types, resource types, and the providers resources name,
+    each with its module, and the commands and facts that reached the guard
+  - `--environment`, `--manifest PATH`, `--code CODE` (in place of the
+    manifest), `--prepend CODE|@FILE`, `--var NAME=VALUE`, `--server-fact
+    NAME=VALUE`
+  - the execution guard: commands module code runs through Puppet's or
+    Facter's execution helpers are answered from `--stubs FILE` (a regexp per
+    command with the output to return, or `action: allow`), and `Facter.value`
+    reads are answered from the factset or the stub file's `facts`; a command
+    nothing answers stops that node's compile (`--on-leak raise`, the default)
+    or runs and is recorded (`--on-leak allow`); every interception is in the
+    probe record
+  - config subsystem `compile` in `pupgrade.yaml`: `factsets`, `output_dir`,
+    `environment`, `stubs`, `on_leak`, `vars`, `server_facts`
 - `rake fixture[DIR]` builds a fixture control repo to run pupgrade against:
-  - 32 git modules as bare remotes with a tagged commit per release
+  - 32 git modules as bare remotes with a tagged commit per release; stdlib,
+    firewall, concat, and simplib also ship functions, a type and provider, a
+    defined type, and a custom fact for `compile` to probe
   - two Forge-style modules
-  - a `pupgrade.yaml`
+  - a `pupgrade.yaml`, a `pupgrade-stubs.yaml`, a site manifest with a role and
+    profile, and two factsets in the two layouts `compile` reads
   - a `Puppetfile.proposed` that bumps stdlib a major version and five modules
     with it.
   The current state has every conflict kind; commits carry fixed dates, so

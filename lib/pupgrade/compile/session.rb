@@ -1,0 +1,244 @@
+require 'fileutils'
+require 'tmpdir'
+require 'puppet'
+
+require 'driftless/git_clone'
+require 'pupgrade/config_keys'
+require 'pupgrade/compile/catalog_document'
+require 'pupgrade/compile/factset'
+require 'pupgrade/compile/module_index'
+require 'pupgrade/compile/probes'
+require 'pupgrade/compile/stubs'
+
+module Pupgrade
+  module Compile
+    # Compiles catalogs against one deployed environment directory: Puppet
+    # settings pointed at scratch directories, the environment read from the
+    # directory's environment.conf and hiera.yaml, the probes installed, and
+    # one {Result} per factset.
+    class Session
+      extend ConfigKeys::DSL
+
+      config_key 'compile.environment', type: :string, default: 'production',
+                 about: 'The environment name the catalogs are compiled in; it names the repo dir for Puppet'
+      config_key 'compile.stubs', type: :string, default: nil, example: 'pupgrade-stubs.yaml',
+                 about: 'A stub file answering commands and facts module code asks for during a compile, ' \
+                        'relative to the control repo'
+      config_key 'compile.on_leak', type: :string, default: 'raise',
+                 about: 'What happens to a command the stubs do not answer: raise (stop that node\'s compile) ' \
+                        'or allow (run it, and record it)'
+      config_key 'compile.vars', type: :hash, default: {}, example: { 'role' => 'web' },
+                 about: 'Top-scope variables set before the manifest, as an ENC would'
+      config_key 'compile.server_facts', type: :hash, default: {}, example: { 'servername' => 'puppet.example.com' },
+                 about: 'Entries of $server_facts to set or override; servername, serverip, and serverversion have defaults'
+
+      class Error < StandardError; end
+
+      ON_LEAK = %w[raise allow].freeze
+
+      DEFAULT_SERVER_FACTS = { 'servername' => 'pupgrade.local', 'serverip' => '127.0.0.1' }.freeze
+
+      # One node's compile.
+      #
+      # @!attribute [r] certname
+      #   @return [String]
+      # @!attribute [r] factset
+      #   @return [Factset]
+      # @!attribute [r] catalog
+      #   @return [Hash, nil] the catalog document; nil when the compile failed
+      # @!attribute [r] probes
+      #   @return [Hash] the probe record, partial when the compile failed
+      # @!attribute [r] error
+      #   @return [String, nil] why the compile failed
+      # @!attribute [r] seconds
+      #   @return [Float]
+      Result = Data.define(:certname, :factset, :catalog, :probes, :error, :seconds) do
+        def ok?
+          error.nil?
+        end
+      end
+
+      # @param repo_dir [String] the deployed environment directory
+      # @param environment [String] the environment name
+      # @param manifest [String, nil] a manifest file or directory in place of
+      #   environment.conf's
+      # @param code [String, nil] Puppet code compiled in place of the manifest
+      # @param prepend [String, nil] Puppet code evaluated before the manifest
+      # @param vars [Hash{String => Object}] top-scope variables
+      # @param server_facts [Hash{String => Object}]
+      # @param stubs [Stubs]
+      # @param on_leak [String] one of {ON_LEAK}
+      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {},
+                     server_facts: {}, stubs: Stubs.empty, on_leak: 'raise')
+        raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
+        raise Error, 'give code or prepend, not both' if code && prepend
+        raise Error, "environment name #{environment.inspect} must be lowercase letters, digits, and underscores" unless environment.match?(/\A[a-z0-9_]+\z/)
+
+        @repo_dir     = File.expand_path(repo_dir)
+        @environment  = environment
+        @manifest     = manifest && File.expand_path(manifest, @repo_dir)
+        @code         = code
+        @prepend      = prepend
+        @vars         = vars.to_h { |k, v| [k.to_s, v] }
+        @server_facts = DEFAULT_SERVER_FACTS.merge(server_facts.to_h { |k, v| [k.to_s, v] })
+        @stubs        = stubs
+        @on_leak      = on_leak
+      end
+
+      # @return [Array<String>] the environment's modulepath, absolute
+      attr_reader :modulepath
+
+      # @return [String, Integer] the catalog version: the repo's HEAD sha
+      #   when it is a git clone, else 0
+      attr_reader :version
+
+      # Points Puppet at scratch directories and loads the environment.
+      #
+      # @raise [Error] when the directory is not an environment
+      def start
+        raise Error, "#{@repo_dir}: no environment.conf" unless File.file?(File.join(@repo_dir, 'environment.conf'))
+
+        @scratch = Dir.mktmpdir('pupgrade-compile')
+        self.class.boot!
+        settings!
+        conf = Puppet::Settings::EnvironmentConf.load_from(@repo_dir, [])
+        @modulepath = conf.modulepath.to_s.split(File::PATH_SEPARATOR).reject(&:empty?)
+        @env     = Puppet::Node::Environment.create(@environment.to_sym, @modulepath, @manifest || conf.manifest, nil)
+        @loader  = Puppet::Environments::StaticDirectory.new(@environment.to_sym, @repo_dir, @env)
+        @index   = ModuleIndex.new(@modulepath)
+        @version = catalog_version
+        Probes.install!
+        Probes.attach_log
+        self
+      end
+
+      # @param factset [Factset]
+      # @return [Result]
+      def compile(factset)
+        started  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        recorder = Recorder.new(factset: factset, stubs: @stubs, on_leak: @on_leak, repo_dir: @repo_dir)
+        catalog  = nil
+        error    = nil
+        Probes.current = recorder
+        begin
+          Puppet.override(environments: @loader, current_environment: @env) do
+            Puppet[:code] = code_for(@env)
+            catalog = Puppet::Parser::Compiler.compile(node_for(factset))
+          end
+        rescue Leak, Puppet::Error, StandardError => e
+          error = e.message
+        ensure
+          Probes.current = nil
+        end
+        probes = recorder.to_h
+        probes.merge!(catalog_summary(catalog)) if catalog
+        Result.new(certname: factset.certname, factset: factset, error: error,
+                   catalog: catalog && CatalogDocument.build(catalog, version: @version), probes: probes,
+                   seconds: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+      end
+
+      def close
+        FileUtils.rm_rf(@scratch) if @scratch
+      end
+
+      # Puppet's global settings are initialised once per process.
+      def self.boot!
+        return if Puppet.settings.global_defaults_initialized?
+
+        Puppet.initialize_settings([])
+      end
+
+      private
+
+      # Every path setting under the scratch directory, and a global
+      # hiera.yaml with nothing in it, so the host's Puppet configuration
+      # plays no part.
+      def settings!
+        File.write(File.join(@scratch, 'hiera.yaml'), "---\nversion: 5\nhierarchy: []\n")
+        %i[confdir vardir codedir logdir rundir statedir].each { |s| Puppet[s] = @scratch }
+        Puppet[:hiera_config] = File.join(@scratch, 'hiera.yaml')
+        Puppet[:environmentpath] = @scratch
+        Puppet[:log_level] = 'warning'
+        Puppet[:disable_warnings] = []
+      end
+
+      def catalog_version
+        clone = ::Driftless::GitClone.new(@repo_dir)
+        (clone.own? && clone.sha) || 0
+      end
+
+      # @return [String] what Puppet[:code] is set to: the code replacing the
+      #   manifest, the prepended code plus the manifest's text, or nothing
+      def code_for(env)
+        return @code if @code
+        return '' unless @prepend
+
+        manifest = env.manifest
+        files =
+          if manifest.nil? || manifest == Puppet::Node::Environment::NO_MANIFEST then []
+          elsif File.directory?(manifest) then Dir.glob(File.join(manifest, '**', '*.pp')).sort
+          else [manifest]
+          end
+        ([@prepend] + files.map { |f| File.read(f) }).join("\n")
+      end
+
+      def node_for(factset)
+        node = Puppet::Node.new(factset.certname, environment: @env)
+        node.fact_merge(Puppet::Node::Facts.new(factset.certname, deep_dup(factset.values)))
+        node.trusted_data = trusted_for(factset)
+        node.add_server_facts(@server_facts.merge('serverversion' => Puppet.version))
+        node.merge(@vars) unless @vars.empty?
+        node
+      end
+
+      def trusted_for(factset)
+        return deep_dup(factset.trusted) if factset.trusted.is_a?(Hash)
+
+        Puppet::Context::TrustedInformation.new('remote', factset.certname, {}, deep_dup(factset.trusted_external)).to_h
+      end
+
+      # Classes, defined types, resource types, and the providers resources
+      # name, each with the module providing it. Providers are not loaded by
+      # a compile (the agent chooses them), so the catalog's `provider`
+      # parameters are what can be known here.
+      def catalog_summary(catalog)
+        types     = Hash.new { |h, k| h[k] = { 'module' => nil, 'resources' => 0 } }
+        defines   = Hash.new { |h, k| h[k] = { 'module' => nil, 'resources' => 0 } }
+        providers = Hash.new { |h, k| h[k] = { 'module' => nil, 'resources' => 0 } }
+        krt = @env.known_resource_types
+        catalog.resources.each do |r|
+          next if %w[Class Stage Node].include?(r.type.to_s)
+
+          name = r.type.to_s.downcase
+          if (definition = krt.find_definition(name))
+            defines[name]['module'] ||= @index.module_of(definition.file)
+            defines[name]['resources'] += 1
+          else
+            types[name]['module'] ||= @index.type(name)
+            types[name]['resources'] += 1
+            provider = r[:provider]
+            next if provider.nil? || provider.to_s.empty?
+
+            key = "#{name}/#{provider}"
+            providers[key]['module'] ||= @index.provider(name, provider)
+            providers[key]['resources'] += 1
+          end
+        end
+        classes = catalog.classes.sort.to_h do |name|
+          hostclass = krt.find_hostclass(name.to_s.downcase)
+          [name, { 'module' => hostclass && @index.module_of(hostclass.file) }]
+        end
+        { 'classes' => classes, 'defined_types' => defines.sort.to_h, 'types' => types.sort.to_h,
+          'providers_named' => providers.sort.to_h }
+      end
+
+      def deep_dup(obj)
+        case obj
+        when Hash  then obj.to_h { |k, v| [k, deep_dup(v)] }
+        when Array then obj.map { |v| deep_dup(v) }
+        else obj
+        end
+      end
+    end
+  end
+end

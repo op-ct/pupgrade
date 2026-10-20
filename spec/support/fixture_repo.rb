@@ -79,7 +79,11 @@ module Pupgrade
     #   @return [String] Puppetfile.proposed
     # @!attribute [r] config
     #   @return [String] pupgrade.yaml
-    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config)
+    # @!attribute [r] factsets
+    #   @return [String] the factsets directory
+    # @!attribute [r] stubs
+    #   @return [String] pupgrade-stubs.yaml
+    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :stubs)
 
     OS_EL_OLD = { 'RedHat' => %w[7 8], 'CentOS' => %w[7], 'Ubuntu' => %w[18.04 20.04], 'Debian' => %w[10 11] }.freeze
     OS_EL     = { 'RedHat' => %w[8 9], 'Rocky' => %w[8 9], 'Ubuntu' => %w[20.04 22.04], 'Debian' => %w[11 12] }.freeze
@@ -268,6 +272,95 @@ module Pupgrade
       'puppetlabs-facts'     => rel('1.4.0', {}, puppet: '>= 6.0.0 < 9.0.0', os: OS_EL),
     }.freeze
 
+    # Files some modules ship in every release besides metadata.json and
+    # their class: what a compile can be probed for. stdlib carries a 4.x
+    # function, a 3.x function that warns of its deprecation, a
+    # Puppet-language function, a function that runs a command, and a type
+    # alias; firewall a resource type and a provider that reads a fact;
+    # concat a defined type; simplib a custom fact.
+    EXTRAS = {
+      'puppetlabs-stdlib' => {
+        'lib/puppet/functions/stdlib/shout.rb' => <<~RUBY,
+          Puppet::Functions.create_function(:'stdlib::shout') do
+            dispatch(:shout) { param 'String', :text }
+            def shout(text)
+              text.upcase
+            end
+          end
+        RUBY
+        'lib/puppet/functions/stdlib/run_hostname.rb' => <<~RUBY,
+          Puppet::Functions.create_function(:'stdlib::run_hostname') do
+            dispatch(:run) {}
+            def run
+              Puppet::Util::Execution.execute(['hostname', '-f']).to_s.strip
+            end
+          end
+        RUBY
+        'lib/puppet/parser/functions/legacy_shout.rb' => <<~RUBY,
+          Puppet::Parser::Functions.newfunction(:legacy_shout, type: :rvalue) do |args|
+            Puppet.deprecation_warning('legacy_shout is deprecated; use stdlib::shout')
+            args[0].to_s.upcase
+          end
+        RUBY
+        'functions/whisper.pp' => "function stdlib::whisper(String $text) >> String {\n  $text.downcase\n}\n",
+        'types/port.pp' => "type Stdlib::Port = Integer[0, 65535]\n",
+      },
+      'puppetlabs-firewall' => {
+        'lib/puppet/type/firewall.rb' => <<~RUBY,
+          Puppet::Type.newtype(:firewall) do
+            ensurable
+            newparam(:name, namevar: true)
+            newparam(:action)
+          end
+        RUBY
+        'lib/puppet/provider/firewall/iptables.rb' => <<~RUBY,
+          Puppet::Type.type(:firewall).provide(:iptables) do
+            KERNEL = Facter.value(:kernel)
+            commands iptables: 'iptables'
+            def self.instances
+              []
+            end
+          end
+        RUBY
+      },
+      'puppetlabs-concat' => {
+        'manifests/fragment.pp' => "define concat::fragment (String $content) {\n  notify { \"fragment ${title}\": message => $content }\n}\n",
+      },
+      'simp-simplib' => {
+        'lib/facter/simplib_fips.rb' => "Facter.add(:simplib_fips) do\n  setcode { false }\nend\n",
+      },
+    }.freeze
+
+    # The stub file the fixture ships, answering what its code runs.
+    STUBS = <<~YAML.freeze
+      ---
+      commands:
+        - match: '^hostname'
+          stdout: "stubbed.example.com\\n"
+      facts:
+        simplib_fips: false
+    YAML
+
+    # Two factsets in the two layouts compile reads: onceover's, with
+    # trusted facts, and driftless's export, the facts hash alone.
+    FACTSETS = {
+      'web01.example.com.json' => {
+        'name'   => 'web01.example.com',
+        'values' => {
+          'os' => { 'family' => 'RedHat', 'name' => 'Rocky', 'release' => { 'major' => '9', 'full' => '9.3' } },
+          'osfamily' => 'RedHat', 'kernel' => 'Linux',
+          'networking' => { 'fqdn' => 'web01.example.com', 'hostname' => 'web01', 'domain' => 'example.com' }
+        },
+        'trusted' => { 'authenticated' => 'remote', 'certname' => 'web01.example.com', 'extensions' => { 'pp_role' => 'web' },
+                       'hostname' => 'web01', 'domain' => 'example.com', 'external' => {} },
+      },
+      'db01.example.com.json' => {
+        'os' => { 'family' => 'Debian', 'name' => 'Ubuntu', 'release' => { 'major' => '22.04', 'full' => '22.04' } },
+        'osfamily' => 'Debian', 'kernel' => 'Linux',
+        'networking' => { 'fqdn' => 'db01.example.com', 'hostname' => 'db01', 'domain' => 'example.com' }
+      },
+    }.freeze
+
     CONFIG = <<~YAML.freeze
       ---
       modules:
@@ -310,7 +403,8 @@ module Pupgrade
       File.write(puppetfile_path, puppetfile(CATALOGUE.to_h { |m| [m.name, m.deployed] }))
       File.write(proposed_path, puppetfile(CATALOGUE.to_h { |m| [m.name, PROPOSED.fetch(m.name, m.deployed)] }))
       File.write(config_path, CONFIG)
-      Result.new(dir: @dir, remotes_dir: @remotes, puppetfile: puppetfile_path, proposed: proposed_path, config: config_path)
+      Result.new(dir: @dir, remotes_dir: @remotes, puppetfile: puppetfile_path, proposed: proposed_path, config: config_path,
+                 factsets: File.join(@dir, 'factsets'), stubs: File.join(@dir, 'pupgrade-stubs.yaml'))
     end
 
     private
@@ -343,14 +437,48 @@ module Pupgrade
           - name: common
             path: common.yaml
       YAML
-      File.write(File.join(@dir, 'data/common.yaml'), "---\nprofile::base::ntp_servers:\n  - time.example.com\n")
+      File.write(File.join(@dir, 'data/common.yaml'), <<~YAML)
+        ---
+        profile::base::ntp_servers:
+          - time.example.com
+        profile::base::banner: "%{facts.os.family} on %{facts.networking.fqdn}"
+      YAML
       %w[profile role].each do |name|
         FileUtils.mkdir_p(File.join(@dir, 'site-modules', name, 'manifests'))
       end
-      File.write(File.join(@dir, 'site-modules/profile/manifests/base.pp'),
-                 "class profile::base (Array[String] $ntp_servers) {\n  class { 'ntp': servers => $ntp_servers }\n  include timezone\n}\n")
+      FileUtils.mkdir_p(File.join(@dir, 'manifests'))
+      File.write(File.join(@dir, 'manifests/site.pp'), "node default {\n  include role::web\n}\n")
       File.write(File.join(@dir, 'site-modules/role/manifests/web.pp'),
                  "class role::web {\n  include profile::base\n  include apache\n}\n")
+      File.write(File.join(@dir, 'site-modules/profile/manifests/base.pp'), <<~PP)
+        class profile::base (
+          Array[String] $ntp_servers,
+          String        $banner,
+          Stdlib::Port  $port = 123,
+        ) {
+          include ntp
+          include timezone
+          $family  = $facts['os']['family']
+          $legacy  = $osfamily
+          $shouted = stdlib::shout('hi')
+          $old     = legacy_shout('hi')
+          $quiet   = stdlib::whisper('HI')
+          $host    = stdlib::run_hostname()
+          $servers = lookup('profile::base::ntp_servers')
+          $absent  = lookup('profile::base::absent', undef, undef, 'default')
+          firewall { "100 allow ntp ${port}":
+            ensure   => present,
+            action   => 'accept',
+            provider => 'iptables',
+          }
+          concat::fragment { 'motd':
+            content => "${banner}: ${family} ${legacy} ${shouted} ${old} ${quiet} ${host} ${servers[0]} ${absent}",
+          }
+        }
+      PP
+      FileUtils.mkdir_p(File.join(@dir, 'factsets'))
+      FACTSETS.each { |name, data| File.write(File.join(@dir, 'factsets', name), JSON.pretty_generate(data) + "\n") }
+      File.write(File.join(@dir, 'pupgrade-stubs.yaml'), STUBS)
     end
 
     # One Puppetfile text: git modules at the given versions, Forge modules
@@ -358,13 +486,13 @@ module Pupgrade
     def puppetfile(versions)
       lines = ["forge 'https://forge.example.com'", '']
       CATALOGUE.each do |m|
-        if m.forge
-          lines << "mod '#{m.name}', '#{m.deployed}'"
-        elsif m.track
-          lines << "mod '#{m.name}',\n  git: '#{remote_url(m)}',\n  branch: '#{m.branch}'"
-        else
-          lines << "mod '#{m.name}',\n  git: '#{remote_url(m)}',\n  tag: '#{m.tag(versions.fetch(m.name))}'"
-        end
+        lines << if m.forge
+                   "mod '#{m.name}', '#{m.deployed}'"
+                 elsif m.track
+                   "mod '#{m.name}',\n  git: '#{remote_url(m)}',\n  branch: '#{m.branch}'"
+                 else
+                   "mod '#{m.name}',\n  git: '#{remote_url(m)}',\n  tag: '#{m.tag(versions.fetch(m.name))}'"
+                 end
       end
       lines.join("\n") + "\n"
     end
@@ -390,6 +518,10 @@ module Pupgrade
       FileUtils.mkdir_p(File.join(dir, 'manifests'))
       File.write(File.join(dir, 'metadata.json'), JSON.pretty_generate(metadata(mod, release)) + "\n")
       File.write(File.join(dir, 'manifests/init.pp'), "class #{mod.short} (\n  String $version = '#{release.version}',\n) {\n}\n")
+      EXTRAS.fetch(mod.name, {}).each do |rel, content|
+        FileUtils.mkdir_p(File.dirname(File.join(dir, rel)))
+        File.write(File.join(dir, rel), content)
+      end
       File.open(File.join(dir, 'CHANGELOG.md'), 'a') { |f| f.puts "## #{release.version}\n\n- Release #{release.version}\n" }
     end
 

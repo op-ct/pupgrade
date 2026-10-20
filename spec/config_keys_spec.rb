@@ -2,6 +2,7 @@ require 'spec_helper'
 
 require 'pupgrade/config_keys'
 require 'pupgrade/cli/check'
+require 'pupgrade/cli/compile'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -18,8 +19,15 @@ RSpec.describe Pupgrade::ConfigKeys do
       'modules.branchfile'               => Pupgrade::Inputs::Branchfile,
       'modules.check_order'              => Pupgrade::CLI::Check,
       'modules.check_sort'               => Pupgrade::CLI::Check,
+      'compile.factsets'                 => Pupgrade::CLI::Compile,
+      'compile.output_dir'               => Pupgrade::CLI::Compile,
+      'compile.environment'              => Pupgrade::Compile::Session,
+      'compile.stubs'                    => Pupgrade::Compile::Session,
+      'compile.on_leak'                  => Pupgrade::Compile::Session,
+      'compile.vars'                     => Pupgrade::Compile::Session,
+      'compile.server_facts'             => Pupgrade::Compile::Session,
     )
-    expect(described_class.subsystems.sort).to eq(%w[logging modules output])
+    expect(described_class.subsystems.sort).to eq(%w[compile logging modules output])
   end
 
   it 'keeps its registry apart from driftless\'s' do
