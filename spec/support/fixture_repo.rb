@@ -331,6 +331,42 @@ module Pupgrade
       },
     }.freeze
 
+    # Changes to the extras from a release on, so two releases' surfaces
+    # differ: stdlib 9 gives shout a second parameter and drops the 3.x
+    # function; firewall 7 adds a chain parameter.
+    EXTRAS_SINCE = {
+      'puppetlabs-stdlib' => {
+        '9.0.0' => {
+          'lib/puppet/functions/stdlib/shout.rb' => <<~RUBY,
+            Puppet::Functions.create_function(:'stdlib::shout') do
+              dispatch(:shout) do
+                param 'String', :text
+                optional_param 'Integer', :times
+              end
+              def shout(text, times = 1)
+                (text.upcase + ' ') * times
+              end
+            end
+          RUBY
+          'lib/puppet/parser/functions/legacy_shout.rb' => nil,
+        },
+      },
+      'puppetlabs-firewall' => {
+        '7.0.0' => {
+          'lib/puppet/type/firewall.rb' => <<~RUBY,
+            Puppet::Type.newtype(:firewall) do
+              ensurable
+              newparam(:name, namevar: true)
+              newparam(:action) do
+                newvalues(:accept, :drop, :reject)
+              end
+              newparam(:chain)
+            end
+          RUBY
+        },
+      },
+    }.freeze
+
     # The stub file the fixture ships, answering what its code runs.
     STUBS = <<~YAML.freeze
       ---
@@ -518,11 +554,26 @@ module Pupgrade
       FileUtils.mkdir_p(File.join(dir, 'manifests'))
       File.write(File.join(dir, 'metadata.json'), JSON.pretty_generate(metadata(mod, release)) + "\n")
       File.write(File.join(dir, 'manifests/init.pp'), "class #{mod.short} (\n  String $version = '#{release.version}',\n) {\n}\n")
-      EXTRAS.fetch(mod.name, {}).each do |rel, content|
-        FileUtils.mkdir_p(File.dirname(File.join(dir, rel)))
-        File.write(File.join(dir, rel), content)
+      extras(mod, release).each do |rel, content|
+        if content.nil?
+          FileUtils.rm_f(File.join(dir, rel))
+        else
+          FileUtils.mkdir_p(File.dirname(File.join(dir, rel)))
+          File.write(File.join(dir, rel), content)
+        end
       end
       File.open(File.join(dir, 'CHANGELOG.md'), 'a') { |f| f.puts "## #{release.version}\n\n- Release #{release.version}\n" }
+    end
+
+    # The extra files of a release: the module's extras, with every change
+    # declared for a version at or below it applied in version order; a nil
+    # content removes the file.
+    def extras(mod, release)
+      files = EXTRAS.fetch(mod.name, {}).dup
+      EXTRAS_SINCE.fetch(mod.name, {}).sort_by { |v, _| Gem::Version.new(v) }.each do |since, changes|
+        files.merge!(changes) if Gem::Version.new(release.version) >= Gem::Version.new(since)
+      end
+      files
     end
 
     # A bare remote with one commit and tag per release on the module's

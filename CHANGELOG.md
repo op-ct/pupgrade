@@ -73,6 +73,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the nodes it appears on; `--summary` counts per node; row filters
   `--certname`, `--resources`, `--changes`, `--skip-changes`, `--ignore-params`.
   Exits 1 when the catalogs differ
+- `pupgrade surface MODULE-DIR [-o FILE]` and `surface --git URL --ref REF`: a
+  module's API surfaces as a JSON document: classes and defined types with their
+  parameters' types and defaults, Puppet-language functions with parameters and
+  return type, 4.x Ruby functions with their dispatch signatures, 3.x functions
+  with arity, type aliases, resource types with their attributes (kind, required,
+  allowed values, namevars, features), providers with confines, commands,
+  defaults, and features, and custom and external facts by name. Ruby surfaces
+  are read by loading the module's code, so extraction runs in a process of its
+  own; files that fail to load are listed under `errors`
+- `pupgrade surface diff FROM TO`: what changed between two surface documents or
+  module directories: entries added and removed per surface, and each attribute
+  that differs, named by its path; `--surfaces`, `--names`, `--changes` filters,
+  `--summary`. Exits 1 when the surfaces differ
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
   pupgrade.yaml listing every known key under its subsystem, commented out with
   its default or an example, or set live by an argument; `-p --` prints it
