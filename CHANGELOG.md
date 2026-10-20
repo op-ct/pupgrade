@@ -7,37 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+It's a new gem to help upgrade the module base of large Puppet/OpenVox  control repos without breaking everyone's stuff (or at least having a pretty good idea about what to what out for).
+
+The first `pupgrade` commands were split from unreleased features in the `driftless` gem.
+
 ### Added
 
 - Gem skeleton: `pupgrade` CLI with `help` and `version`, layered `pupgrade.yaml`
   config (system, user, project) with strict key validation
-- Split the first `pupgrade` commands from unreleased changes in the `driftless` gem:
-  - `pupgrade check [-d DIR] [--propose PUPPETFILE]` (was `driftless modules resolve`):
-    - display conflicts between the deployed modules' `metadata.json`
-      (dependencies, Puppet versions, operating systems), exit 1 if any
-    - `--propose` resolves as if `PUPPETFILE` replaced the current entries,
-      fetching `metadata.json` from git for changed modules
-    - `--ignore MODULES` resolves as if those modules were removed
-      - `--propose` or `--ignore` only show a row change (`+`) or resolve (`-`)
-      - `--all-conflicts` adds the unchanged rows
-      - `--by-change`: (under a proposal) one table per changed Puppetfile entry
-    - row filters: `--modules`, `--subjects`, `--conflicts`, `--skip-conflicts`
-    - layout: `--order`, `--sort-by`, `--summary` (one row per module with a
-      count per kind; under a proposal `+a -b =c` for introduced, resolved,
-      unchanged)
-    - one-run exclusions: `--exclude-modules`, `--exclude-deps`,
-      `--exclude-requirements`, `--exclude-operatingsystems`
-  - `pupgrade module gitlog MODULE [REF] [-n NUM] [-f] [--fetch] [--branch BRANCH]
-    [--branchfile FILE]`
-    - a deployed module's git log, or what a ref or its tracking branch has beyond it
-  - `pupgrade module update MODULE REF [--dry-run]`
-    - check out a ref in a deployed git module, in place
-  - `pupgrade params compare FROM TO`: what changed between two schemas that
-    driftless's `params record` wrote
-  - Config subsystem `modules` in `pupgrade.yaml`:
-    - `operatingsystems`, `requirements`, `exclude_modules`,
-      `exclude_dependencies`, `exclude_requirements`,
-      `exclude_operatingsystems`, `branchfile`, `check_order`, `check_sort`
+- **`pupgrade check`**` [-d DIR] [--propose PUPPETFILE]`
+
+  Resolves deps, OSes, and requirements between all deployed modules'
+  `metadata.json`.  If conflicts, it displays them and exits with `1`.
+
+  Notable flags:
+  - `--propose` resolves with the info from `PUPPETFILE` overlaid on the
+    current entries, fetching `metadata.json` from git for changed modules
+    - `--propose` + `--ignore` show conflicts introduced (`+`) or resolved (`-`)
+    - `--all-conflicts` adds the unchanged rows
+    - `--by-change`: (under a proposal) one table per changed Puppetfile entry
+  - `--ignore MODULES` resolves as if those modules were gone
+  - `--summary` displays as a table of modules x conflict types
+    - with `--propose`, shows introduced (`+`), resolved (`-`), unchanged (`=`)
+  - row filters: `--modules`, `--subjects`, `--conflicts`, `--skip-conflicts`
+  - layout flags: `--order`, `--sort-by`
+  - one-run exclusions: `--exclude-modules`, `--exclude-deps`,
+    `--exclude-requirements`, `--exclude-operatingsystems`
+- **`pupgrade module`**` gitlog MODULE [REF] [-n NUM] [-f] [--fetch] [--branch BRANCH]
+  [--branchfile FILE]`
+
+  Displays a deployed module's git log (optionally at `REF`)
+  * Given a tracking `--branch` or `--branchfile`, shows what is further along
+    the tracking branch, beyond the current checkout/`REF`
+
+- **`pupgrade module update`**` MODULE REF [--dry-run]`
+
+  Check out `REF` in the deployed git `MODULE`, in place
+- `pupgrade params compare FROM TO`: what changed between two schemas that
+  driftless's `params record` wrote
+- Config subsystem `modules` in `pupgrade.yaml`:
+  - `operatingsystems`, `requirements`, `exclude_modules`,
+    `exclude_dependencies`, `exclude_requirements`,
+    `exclude_operatingsystems`, `branchfile`, `check_order`, `check_sort`
 - `pupgrade compile -d DIR --factsets PATH -o OUT`: one catalog per factset,
   compiled against the deployed environment directory through Puppet's own
   compiler, with a record of what each compile used
@@ -86,23 +97,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module directories: entries added and removed per surface, and each attribute
   that differs, named by its path; `--surfaces`, `--names`, `--changes` filters,
   `--summary`. Exits 1 when the surfaces differ
-- `pupgrade solve -d DIR [-o PUPPETFILE]`: a version for every deployed git module
-  from the tags its clone holds (past its current version; on its tracking branch
-  from `modules.branchfile` when known; the branch tip with `--include-heads`;
-  `--fetch` first). Modules are decided dependencies first, each at the first
-  candidate that satisfies its dependency ranges, the Puppet requirement
-  (`modules.requirements`), and the operating systems of interest against what
-  is already decided; a module with no fit is held at the candidate breaking the
-  fewest constraints, which the note names. `--order newest` (default) or
-  `oldest` (from the current version forward, driven by `--bump MODULE[=REF]`);
-  `--hold MODULES`; `-o` writes the moved modules as a Puppetfile overlay for
-  `check --propose`. With `--evidence DIR` (a `compile` output directory) and
-  `--prune-unused`, dependency edges to modules no compile used are not
-  constraints, and `--exclusions FILE` writes the pruned edges the result
-  violates as `modules.exclude_dependencies`; functions a module's code calls
-  from a module its metadata does not depend on are warned about. Forge entries
-  and modules that are not git clones keep their version. Exits 1 when any
-  module is held
+- `pupgrade solve -d DIR [-o PUPPETFILE]`: depsolve module upgrades across the
+  control repo, with hinting based on usage.
+  - For every deployed git module with a branch in `modules.branchfile`:
+    - Considers tagged commits further along the tracking branch
+      - also considers the untagged branch tip with `--include-heads`
+  - `--fetch` fetches the latest commits for each module before searching
+  - Solve order: Modules decide their dependencies first, at the first
+    candidate that satisfies its own:
+    - Module dependency ranges
+    - Puppet/OpenVox requirement (site: `modules.requirements`)
+    - Operating systems of interest (site: `modules.operatingsystems`)
+    ... against what is already decided
+    - a module with no fit is held at the candidate breaking the fewest constraints which is noted.
+  - `--order newest` (default) or `oldest`
+    `newest` searches from the latest ref and work backward
+    `oldest` search forward, tarting from the current (or `--bump`ed) version
+  - `--bump=MODULE[=REF]` move `MODULE` to its newest candidate or `REF`
+  - `--hold MODULES` - keep these `MODULES` at their current versions (delim:`,`)
+  - `-o` writes moved module versions as a `Puppetfile` overlay for `check
+    --propose`.
+  - With `--evidence DIR` (a `pupgrade compile` output directory) and
+    `--prune-unused`, dependency edges to modules unused in any compile used
+    are not constraints, and `--exclusions FILE` writes the pruned edges the
+    result violates as `modules.exclude_dependencies`
+    - functions a module's code calls from a module its metadata does not
+      depend on are warned about. Forge entries and modules that are not git
+      clones keep their version.
+  - Exits 1 when any module is held
   - config subsystem `solve` in `pupgrade.yaml`: `order`, `include_heads`,
     `evidence`
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
