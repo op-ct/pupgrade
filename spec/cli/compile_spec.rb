@@ -81,7 +81,7 @@ RSpec.describe Pupgrade::CLI::Compile do
       .to eq('stdlib::shout' => 'stdlib', 'legacy_shout' => 'stdlib', 'stdlib::whisper' => 'stdlib', 'stdlib::run_hostname' => 'stdlib')
     expect(probes['functions']['stdlib::shout']).to include('calls' => 1, 'sites' => ['site-modules/profile/manifests/base.pp:10'])
     expect(probes['functions']['include']['module']).to be_nil
-    expect(probes['facts']).to eq('networking.fqdn' => 1, 'os' => 1, 'os.family' => 2)
+    expect(probes['facts']).to eq('kernel' => 1, 'networking.fqdn' => 1, 'os' => 1, 'os.family' => 2, 'os.release.major' => 1)
     expect(probes['legacy_facts']).to eq('osfamily' => 1)
     expect(probes['type_aliases'].keys).to eq(['Stdlib::Port'])
     expect(probes['type_aliases']['Stdlib::Port']).to include('module' => 'stdlib', 'sites' => ['site-modules/profile/manifests/base.pp:4'])

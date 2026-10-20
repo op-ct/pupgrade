@@ -60,7 +60,7 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
     and the per-run uuid dropped, so compiles of the same code are identical
   - `OUT/<certname>/probes.json`: functions called (with the module providing
     each and the call sites), facts read through `$facts`, `$trusted`, Hiera
-    interpolation, and `Facter.value`, legacy fact variables, lookups
+    interpolation, `dig`, `in`, and `Facter.value`, legacy fact variables, lookups
     (automatic and explicit, found or not), warnings and deprecations,
     classes, defined types, resource types, and the providers resources name,
     each with its module, type aliases resolved with the module shipping each

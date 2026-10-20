@@ -66,6 +66,24 @@ module Pupgrade
         keys.each { |k| @facts[[prefix, k.to_s].reject(&:empty?).join('.')] += 1 }
       end
 
+      # The `dig` function walking keys from a value: recorded when the value
+      # is inside `$facts` or `$trusted`, by the path dug.
+      def dig(data, keys)
+        prefix = @prefixes[data.object_id]
+        return if prefix.nil?
+
+        @facts[([prefix] + keys.map(&:to_s)).reject(&:empty?).join('.')] += 1
+      end
+
+      # `key in $facts`: a membership test on a hash inside `$facts` or
+      # `$trusted`.
+      def membership(hash, key)
+        prefix = @prefixes[hash.object_id]
+        return if prefix.nil? || !key.is_a?(String)
+
+        @facts[[prefix, key].reject(&:empty?).join('.')] += 1
+      end
+
       # A dotted path walked from a value, as Hiera interpolation and the
       # `get`-style functions do.
       def sub_lookup(value, segments)
@@ -274,6 +292,7 @@ module Pupgrade
           Puppet::Pops::Evaluator::AccessOperator.prepend(AccessHooks)
           Puppet::Pops::Lookup::SubLookup.prepend(SubLookupHooks)
           Puppet::Pops::Evaluator::EvaluatorImpl.prepend(CallHooks)
+          Puppet::Functions.singleton_class.prepend(FunctionFactoryHooks)
           Puppet::Pops::Lookup.singleton_class.prepend(LookupHooks)
           Puppet::Pops::Types::TypeParser.prepend(TypeParserHooks)
           Puppet::Pops::Types::PTypeAliasType.prepend(TypeAliasHooks)
@@ -347,6 +366,15 @@ module Pupgrade
       end
 
       module CallHooks
+        # `key in $hash` hands the hash to the evaluator whole.
+        def eval_InExpression(o, scope) # rubocop:disable Naming/MethodName -- Puppet's name
+          if (rec = Probes.current)
+            right = evaluate(o.right_expr, scope)
+            rec.membership(right, evaluate(o.left_expr, scope)) if right.is_a?(Hash)
+          end
+          super
+        end
+
         def call_function(name, args, o, scope, &block)
           if (rec = Probes.current)
             file, line = extract_file_line(o)
@@ -354,6 +382,25 @@ module Pupgrade
             func   = loader.load(:function, name) if loader
             rec.function_call(name, func, file, line)
           end
+          super
+        end
+      end
+
+      # Puppet builds a function's class once per loader; the `dig` function
+      # gets the hook below as it is created, whichever loader builds it.
+      module FunctionFactoryHooks
+        def create_function(func_name, function_base = Puppet::Functions::Function, &block)
+          klass = super
+          klass.prepend(DigHooks) if func_name.to_s == 'dig'
+          klass
+        end
+      end
+
+      # `dig($facts, 'os', 'family')`, which `$facts.dig(...)` also calls,
+      # receives the hash itself.
+      module DigHooks
+        def dig(data, *args)
+          Probes.current&.dig(data, args)
           super
         end
       end
