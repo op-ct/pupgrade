@@ -3,14 +3,16 @@ require 'pupgrade/cli/root'
 
 module Pupgrade
   module CLI
-    # `pupgrade modules`: the parent of the module commands.
-    class Modules < Base
-      register_command name: 'modules', subcommand_of: Root
-      desc 'Check, follow, and update the modules a control repo deploys (see subcommands)'
+    # `pupgrade module`: the parent of the commands that act on one
+    # deployed module. Named apart from ::Module, which the command's name
+    # would shadow inside this namespace.
+    class ModuleCommand < Base
+      register_command name: 'module', subcommand_of: Root
+      desc 'Act on one deployed module: its git log, or moving it to a ref (see subcommands)'
 
       # What the commands acting on one module share: finding the repo and
       # the module named on the command line.
-      module OneModule
+      module Shared
         def declare_repo_option(o)
           o.on('-d', '--repo-dir=DIR',
                'Path to the control repo environment',
@@ -48,4 +50,4 @@ module Pupgrade
   end
 end
 
-Dir[File.join(__dir__, 'modules', '*.rb')].sort.each { |f| require f }
+Dir[File.join(__dir__, 'module', '*.rb')].sort.each { |f| require f }

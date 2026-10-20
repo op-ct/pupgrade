@@ -5,7 +5,7 @@ module Pupgrade
   module CLI
     class Help < Base
       register_command name: 'help', subcommand_of: Root
-      desc 'Show help for a command (e.g. `pupgrade help modules`)'
+      desc 'Show help for a command (e.g. `pupgrade help module`)'
 
       def run(argv)
         argv = argv.dup

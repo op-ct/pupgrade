@@ -7,7 +7,7 @@ require 'support/fixture_repo'
 require 'driftless/module_inventory'
 require 'pupgrade/module_resolver'
 require 'pupgrade/module_proposal'
-require 'pupgrade/cli/modules/resolve'
+require 'pupgrade/cli/check'
 
 RSpec.describe Pupgrade::FixtureRepo do
   # Built once: it clones every module.
@@ -73,13 +73,13 @@ RSpec.describe Pupgrade::FixtureRepo do
     expect(resolved).to include(['dependency-version', 'puppetlabs-tomcat', 'puppetlabs/stdlib'])
   end
 
-  it 'runs under modules resolve with its own config' do
+  it 'runs under check with its own config' do
     out      = StringIO.new
     original = $stdout
     $stdout  = out
     status   = nil
     begin
-      Pupgrade::CLI::Modules::Resolve.new.run(['-c', result.config, '-d', result.dir, '--summary'])
+      Pupgrade::CLI::Check.new.run(['-c', result.config, '-d', result.dir, '--summary'])
     rescue SystemExit => e
       status = e.status
     ensure

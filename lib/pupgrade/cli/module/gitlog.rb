@@ -1,34 +1,34 @@
 require 'pupgrade/cli/base'
-require 'pupgrade/cli/modules'
+require 'pupgrade/cli/module_command'
 require 'driftless/control_repo'
 require 'pupgrade/inputs/branchfile'
 
 module Pupgrade
   module CLI
-    class Modules
-      # `pupgrade modules gitlog`
+    class ModuleCommand
+      # `pupgrade module gitlog`
       #
       # The git log of one deployed module: with a ref or --branch, the
       # commits it has beyond the clone's HEAD; without either, the branch
       # a branchfile names for the module, else the clone's history.
       class Gitlog < Base
-        include Modules::OneModule
+        include ModuleCommand::Shared
 
-        register_command name: 'gitlog', subcommand_of: Modules
+        register_command name: 'gitlog', subcommand_of: ModuleCommand
         positional '<module>', '[<ref>]'
         desc 'Show a deployed module\'s git log, or what a ref has beyond it'
 
         def execute(argv)
-          fatal!('modules gitlog takes a module and an optional ref', help: true) unless argv.size.between?(1, 2)
+          fatal!('module gitlog takes a module and an optional ref', help: true) unless argv.size.between?(1, 2)
           selector, ref = argv
-          fatal!('modules gitlog: give a ref or --branch, not both', help: true) if ref && @options[:branch]
-          repo = control_repo!('modules gitlog')
-          entry, clone = git_module!('modules gitlog', repo, selector)
+          fatal!('module gitlog: give a ref or --branch, not both', help: true) if ref && @options[:branch]
+          repo = control_repo!('module gitlog')
+          entry, clone = git_module!('module gitlog', repo, selector)
           ref ||= @options[:branch] || branch_from_file(repo, entry)
           record_branch(repo, entry) if @options[:branch] && @options[:branchfile_given]
 
           if @options[:fetch]
-            fatal!("modules gitlog: fetch from #{clone.remote || 'origin'} failed", 3) unless clone.fetch
+            fatal!("module gitlog: fetch from #{clone.remote || 'origin'} failed", 3) unless clone.fetch
           end
 
           args = ['--abbrev-commit', "--format=format:#{line_format}",
@@ -38,10 +38,10 @@ module Pupgrade
           args << '--name-status' if @options[:name_status]
           args << range_for(clone, ref)
           out = clone.log(*args)
-          fatal!("modules gitlog: git log failed in #{entry.path}", 3) if out.nil?
+          fatal!("module gitlog: git log failed in #{entry.path}", 3) if out.nil?
 
           puts out unless out.empty?
-          ::Pupgrade.logger.info("modules gitlog: #{entry.path} at #{clone.tag_at_head || clone.branch_at_head || clone.sha&.slice(0, 12)}")
+          ::Pupgrade.logger.info("module gitlog: #{entry.path} at #{clone.tag_at_head || clone.branch_at_head || clone.sha&.slice(0, 12)}")
           exit 0
         end
 
@@ -90,12 +90,12 @@ module Pupgrade
 
           path   = File.expand_path(@options[:branchfile], repo.dir)
           result = ::Pupgrade::Inputs::Branchfile.load(path)
-          fatal!("modules gitlog: branchfile #{path}: no such file", 3) unless result.exists?
-          fatal!("modules gitlog: branchfile #{result.error}", 3) if result.error
+          fatal!("module gitlog: branchfile #{path}: no such file", 3) unless result.exists?
+          fatal!("module gitlog: branchfile #{result.error}", 3) if result.error
           result.warnings.each { |w| ::Pupgrade.logger.warn(w) }
 
           branch = [entry.declared&.name, entry.metadata.name, File.basename(entry.path)].compact.filter_map { |n| result.branch_for(n) }.first
-          ::Pupgrade.logger.debug("modules gitlog: #{entry.path} follows #{branch} per #{path}") if branch
+          ::Pupgrade.logger.debug("module gitlog: #{entry.path} follows #{branch} per #{path}") if branch
           branch
         end
 
@@ -105,9 +105,9 @@ module Pupgrade
           path = File.expand_path(@options[:branchfile], repo.dir)
           name = entry.declared&.name || entry.metadata.name || File.basename(entry.path)
           ::Pupgrade::Inputs::Branchfile.record(path, name, @options[:branch])
-          ::Pupgrade.logger.info("modules gitlog: recorded #{name}: #{@options[:branch]} in #{path}")
+          ::Pupgrade.logger.info("module gitlog: recorded #{name}: #{@options[:branch]} in #{path}")
         rescue ::Pupgrade::Inputs::Branchfile::Error => e
-          fatal!("modules gitlog: branchfile #{e.message}", 3)
+          fatal!("module gitlog: branchfile #{e.message}", 3)
         end
 
         def config_defaults
@@ -119,7 +119,7 @@ module Pupgrade
           return 'HEAD' if ref.nil?
 
           candidate = ["origin/#{ref}", ref].find { |r| clone.resolve(r) }
-          fatal!("modules gitlog: #{ref.inspect} is not a ref the clone knows (try --fetch)", 3) unless candidate
+          fatal!("module gitlog: #{ref.inspect} is not a ref the clone knows (try --fetch)", 3) unless candidate
           "HEAD..#{candidate}"
         end
       end

@@ -9,5 +9,5 @@ task :fixture, [:dir] do |_t, args|
   puts "  module remotes:     #{result.remotes_dir}"
   puts "  proposed Puppetfile: #{result.proposed}"
   puts "  config:              #{result.config}"
-  puts "try: bundle exec pupgrade modules resolve -d #{result.dir} -c #{result.config} --propose #{result.proposed}"
+  puts "try: bundle exec pupgrade check -d #{result.dir} -c #{result.config} --propose #{result.proposed}"
 end

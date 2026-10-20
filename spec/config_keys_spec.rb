@@ -1,7 +1,7 @@
 require 'spec_helper'
 
 require 'pupgrade/config_keys'
-require 'pupgrade/cli/modules/resolve'
+require 'pupgrade/cli/check'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -16,8 +16,8 @@ RSpec.describe Pupgrade::ConfigKeys do
       'modules.exclude_requirements'     => Pupgrade::ModuleResolver,
       'modules.exclude_operatingsystems' => Pupgrade::ModuleResolver,
       'modules.branchfile'               => Pupgrade::Inputs::Branchfile,
-      'modules.resolve_order'            => Pupgrade::CLI::Modules::Resolve,
-      'modules.resolve_sort'             => Pupgrade::CLI::Modules::Resolve,
+      'modules.check_order'              => Pupgrade::CLI::Check,
+      'modules.check_sort'               => Pupgrade::CLI::Check,
     )
     expect(described_class.subsystems.sort).to eq(%w[logging modules output])
   end

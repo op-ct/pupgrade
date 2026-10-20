@@ -15,7 +15,7 @@ module Pupgrade
       config_key 'modules.branchfile', type: :string, default: nil, example: 'branches.yaml',
                  about: 'A file naming the branch to follow per module, relative to the control repo: ' \
                         'YAML of module name to branch, or a Puppetfile overlay of `mod` entries with :branch. ' \
-                        '`modules gitlog` reads it for a module given no ref'
+                        '`module gitlog` reads it for a module given no ref'
 
       YAML_EXTENSIONS = %w[.yaml .yml].freeze
 

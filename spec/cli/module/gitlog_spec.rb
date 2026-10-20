@@ -4,9 +4,9 @@ require 'fileutils'
 require 'json'
 
 require 'spec_helper'
-require 'pupgrade/cli/modules/gitlog'
+require 'pupgrade/cli/module/gitlog'
 
-RSpec.describe Pupgrade::CLI::Modules::Gitlog do
+RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
   def git(dir, *args)
     system('git', '-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.com', *args, exception: true)
   end

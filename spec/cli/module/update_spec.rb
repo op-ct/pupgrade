@@ -4,10 +4,10 @@ require 'fileutils'
 require 'json'
 
 require 'spec_helper'
-require 'pupgrade/cli/modules/update'
+require 'pupgrade/cli/module/update'
 require 'driftless/git_clone'
 
-RSpec.describe Pupgrade::CLI::Modules::Update do
+RSpec.describe Pupgrade::CLI::ModuleCommand::Update do
   def git(dir, *args)
     system('git', '-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.com', *args, exception: true)
   end

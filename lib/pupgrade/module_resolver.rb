@@ -59,7 +59,16 @@ module Pupgrade
     #     "puppet", or the operating system with its release
     # @!attribute [r] detail
     #   @return [String] the claim and what was found instead
-    Conflict = Data.define(:kind, :module, :subject, :detail)
+    # @!attribute [r] parties
+    #   @return [Array<String>] the other modules the row involves, by
+    #     normalized name: the dependency for a dependency row, the modules
+    #     disagreed with for a Puppet-version row, none for an operating
+    #     system row
+    Conflict = Data.define(:kind, :module, :subject, :detail, :parties) do
+      def initialize(parties: [], **rest)
+        super
+      end
+    end
 
     # @!attribute [r] conflicts
     #   @return [Array<Conflict>] those not excluded, by kind, module, subject
@@ -113,13 +122,13 @@ module Pupgrade
 
           found = by_name[normalize(dep)]
           if found.nil?
-            Conflict.new(kind: 'missing-dependency', module: e.metadata.name, subject: dep,
+            Conflict.new(kind: 'missing-dependency', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
                          detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath")
           else
             version = version_for(found, warnings)
             next if version.nil? || range.include?(version)
 
-            Conflict.new(kind: 'dependency-version', module: e.metadata.name, subject: dep,
+            Conflict.new(kind: 'dependency-version', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
                          detail: "needs #{dep} #{requirement}; #{found.path} is #{found.metadata.version}")
           end
         end
@@ -158,6 +167,7 @@ module Pupgrade
         named = against.first(5).map { |other_name, r| "#{other_name} (#{r})" }
         named << "#{against.size - 5} more" if against.size > 5
         Conflict.new(kind: 'puppet-version', module: name, subject: 'puppet',
+                     parties: against.map(&:first).reject { |n| n == SITE }.map { |n| normalize(n) },
                      detail: "requires puppet #{range}; no version in common with #{named.join(', ')}")
       end
       [conflicts, nil, suppressed]

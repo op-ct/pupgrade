@@ -30,6 +30,37 @@ module Pupgrade
       @warnings  = []
     end
 
+    # One Puppetfile entry the proposal replaces, adds, or drops.
+    #
+    # @!attribute [r] path
+    #   @return [String] the deploy path
+    # @!attribute [r] name
+    #   @return [String] the module, by its declared name when there is
+    #     one, else its metadata name, else the path's last segment
+    # @!attribute [r] from
+    #   @return [String, nil] the current declaration: "tag v1.0.0",
+    #     "branch main", "1.0.0" for a Forge entry, "not in the Puppetfile"
+    #     for a directory only on disk; nil when the entry is added
+    # @!attribute [r] to
+    #   @return [String, nil] the proposed declaration; nil when dropped
+    Change = Data.define(:path, :name, :from, :to)
+
+    # @return [Array<Change>] by path; empty when the proposal changes nothing
+    # @raise [Error] as {#entries}
+    def changes
+      @changes ||= begin
+        current = @inventory.entries.to_h { |e| [e.path, e] }
+        after   = entries.to_h { |e| [e.path, e] }
+        (current.keys | after.keys).sort.filter_map do |path|
+          x = current[path]
+          y = after[path]
+          next if x && y && x.declared == y.declared
+
+          Change.new(path: path, name: name_of(y || x), from: x && describe(x.declared), to: y && describe(y.declared))
+        end
+      end
+    end
+
     # @return [Array<Driftless::ModuleInventory::Entry>] sorted by path
     # @raise [Error] when the proposed Puppetfile is absent or does not evaluate
     def entries
@@ -41,6 +72,19 @@ module Pupgrade
     end
 
     private
+
+    def name_of(entry)
+      entry.declared&.name || entry.metadata.name || File.basename(entry.path)
+    end
+
+    # @return [String] a declaration in words
+    def describe(declared)
+      return 'not in the Puppetfile' unless declared
+      return declared.version || '(no version)' unless declared.git
+      return 'HEAD' unless declared.ref
+
+      "#{declared.ref_type} #{declared.ref}"
+    end
 
     # @return [Array<Driftless::Inputs::Puppetfile::Module>] none without a Puppetfile
     def proposed_modules
