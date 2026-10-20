@@ -45,12 +45,12 @@ RSpec.describe Pupgrade::CLI::Config::New do
     expect { Pupgrade::ConfigValidator.new(cfg).validate! }.not_to raise_error
   end
 
-  it 'lists every settable key under its subsystem, compile first' do
+  it 'lists every settable key under its subsystem, compile first, logging last' do
     _path, content, = generate
     Pupgrade::ConfigKeys.all.each do |key|
       expect(content).to match(/^#   #{Regexp.escape(key.name)}:/), key.path
     end
-    indexes = %w[compile modules output logging].map { |name| content.index(/^# #{name}:/) }
+    indexes = %w[compile modules solve output logging].map { |name| content.index(/^# #{name}:/) }
     expect(indexes).to all(be_an(Integer))
     expect(indexes).to eq(indexes.sort)
   end

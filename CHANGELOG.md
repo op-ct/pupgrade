@@ -86,6 +86,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module directories: entries added and removed per surface, and each attribute
   that differs, named by its path; `--surfaces`, `--names`, `--changes` filters,
   `--summary`. Exits 1 when the surfaces differ
+- `pupgrade solve -d DIR [-o PUPPETFILE]`: a version for every deployed git module
+  from the tags its clone holds (past its current version; on its tracking branch
+  from `modules.branchfile` when known; the branch tip with `--include-heads`;
+  `--fetch` first). Modules are decided dependencies first, each at the first
+  candidate that satisfies its dependency ranges, the Puppet requirement
+  (`modules.requirements`), and the operating systems of interest against what
+  is already decided; a module with no fit is held at the candidate breaking the
+  fewest constraints, which the note names. `--order newest` (default) or
+  `oldest` (from the current version forward, driven by `--bump MODULE[=REF]`);
+  `--hold MODULES`; `-o` writes the moved modules as a Puppetfile overlay for
+  `check --propose`. With `--evidence DIR` (a `compile` output directory) and
+  `--prune-unused`, dependency edges to modules no compile used are not
+  constraints, and `--exclusions FILE` writes the pruned edges the result
+  violates as `modules.exclude_dependencies`; functions a module's code calls
+  from a module its metadata does not depend on are warned about. Forge entries
+  and modules that are not git clones keep their version. Exits 1 when any
+  module is held
+  - config subsystem `solve` in `pupgrade.yaml`: `order`, `include_heads`,
+    `evidence`
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
   pupgrade.yaml listing every known key under its subsystem, commented out with
   its default or an example, or set live by an argument; `-p --` prints it

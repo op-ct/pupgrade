@@ -26,14 +26,15 @@ end
 # Capture what pupgrade (and the driftless code it calls) logs while the
 # block runs, and return it as a string.
 def capture_log(level: Logger::DEBUG)
-  captured        = StringIO.new
-  original_logger = Pupgrade.logger
-  Pupgrade.logger           = Logger.new(captured, level: level)
-  Pupgrade.logger.formatter = Driftless::Logging.formatter
+  captured = StringIO.new
+  original = Driftless.instance_variable_get(:@logger)
+  logger   = Logger.new(captured, level: level)
+  logger.formatter = Driftless::Logging.formatter
+  Pupgrade.logger  = logger
   yield
   captured.string
 ensure
-  Pupgrade.logger = original_logger
+  Driftless.instance_variable_set(:@logger, original)
 end
 
 # Warnings from driftless's inventory and parsers are noise in the middle of

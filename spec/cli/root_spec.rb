@@ -34,6 +34,6 @@ RSpec.describe Pupgrade::CLI::Root do
     status, out = run(['help'])
     expect(status).to eq(0)
     expect(out).to include('Usage: pupgrade [options] <subcommand>')
-    expect(out.lines.grep(/^    (check|compile|config|help|module|params|surface|version) /).size).to eq(8)
+    expect(out.lines.grep(/^    (check|compile|config|help|module|params|solve|surface|version) /).size).to eq(9)
   end
 end

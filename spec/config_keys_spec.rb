@@ -3,6 +3,7 @@ require 'spec_helper'
 require 'pupgrade/config_keys'
 require 'pupgrade/cli/check'
 require 'pupgrade/cli/compile'
+require 'pupgrade/cli/solve'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -28,8 +29,11 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.on_leak'                  => Pupgrade::Compile::Session,
       'compile.vars'                     => Pupgrade::Compile::Session,
       'compile.server_facts'             => Pupgrade::Compile::Session,
+      'solve.order'                      => Pupgrade::CLI::Solve,
+      'solve.include_heads'              => Pupgrade::CLI::Solve,
+      'solve.evidence'                   => Pupgrade::CLI::Solve,
     )
-    expect(described_class.subsystems.sort).to eq(%w[compile logging modules output])
+    expect(described_class.subsystems.sort).to eq(%w[compile logging modules output solve])
   end
 
   it 'keeps its registry apart from driftless\'s' do
