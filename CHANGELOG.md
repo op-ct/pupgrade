@@ -66,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - config subsystem `compile` in `pupgrade.yaml`: `factsets`, `output_dir`,
     `environment`, `manifest`, `prepend_file`, `stubs`, `on_leak`, `vars`,
     `server_facts`
+- `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
+  pupgrade.yaml listing every known key under its subsystem, commented out with
+  its default or an example, or set live by an argument; `-p --` prints it
 - `rake fixture[DIR]` builds a fixture control repo to run pupgrade against:
   - 32 git modules as bare remotes with a tagged commit per release; stdlib,
     firewall, concat, and simplib also ship functions, a type and provider, a
