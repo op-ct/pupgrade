@@ -4,6 +4,7 @@ require 'pupgrade/config_keys'
 require 'pupgrade/cli/check'
 require 'pupgrade/cli/compile'
 require 'pupgrade/cli/solve'
+require 'pupgrade/cli/impact'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -32,8 +33,9 @@ RSpec.describe Pupgrade::ConfigKeys do
       'solve.order'                      => Pupgrade::CLI::Solve,
       'solve.include_heads'              => Pupgrade::CLI::Solve,
       'solve.evidence'                   => Pupgrade::CLI::Solve,
+      'impact.evidence'                  => Pupgrade::CLI::Impact,
     )
-    expect(described_class.subsystems.sort).to eq(%w[compile logging modules output solve])
+    expect(described_class.subsystems.sort).to eq(%w[compile impact logging modules output solve])
   end
 
   it 'keeps its registry apart from driftless\'s' do

@@ -1,0 +1,97 @@
+require 'spec_helper'
+require 'tmpdir'
+require 'fileutils'
+require 'stringio'
+require 'json'
+
+require 'support/fixture_repo'
+require 'pupgrade/cli/impact'
+require 'pupgrade/cli/compile'
+
+# `impact` on the fixture: a proposal moving stdlib, firewall, and apache,
+# with evidence from a compile of both factsets.
+RSpec.describe Pupgrade::CLI::Impact do
+  before(:all) do # rubocop:disable RSpec/BeforeAfterAll
+    @tmp      = Dir.mktmpdir
+    @fixture  = Pupgrade::FixtureRepo.build(File.join(@tmp, 'repo'))
+    @catalogs = File.join(@tmp, 'catalogs')
+    @proposed = File.join(@tmp, 'Puppetfile.proposed')
+    File.write(@proposed, %w[stdlib=v9.6.0 firewall=v8.0.0 apache=v12.0.0].map { |pair|
+      short, tag = pair.split('=')
+      "mod 'puppetlabs-#{short}',\n  git: '#{File.join(@fixture.remotes_dir, "puppetlabs-#{short}.git")}',\n  tag: '#{tag}'\n"
+    }.join)
+    silently { Pupgrade::CLI::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--stubs', 'pupgrade-stubs.yaml']) }
+  end
+
+  after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll
+
+  let(:fixture)  { @fixture }
+  let(:catalogs) { @catalogs }
+  let(:proposed) { @proposed }
+
+  # [exit status, stdout]
+  def run(argv)
+    status = nil
+    out = silently do
+      described_class.new.run(['--no-config', '-d', fixture.dir, '--propose', proposed] + argv)
+    rescue SystemExit => e
+      status = e.status
+    end
+    [status, out]
+  end
+
+  def silently
+    captured = StringIO.new
+    original = $stdout
+    $stdout  = captured
+    yield
+    captured.string
+  rescue SystemExit
+    captured.string
+  ensure
+    $stdout = original
+  end
+
+  def cells(output)
+    output.lines.map(&:rstrip).reject { |l| l.start_with?('--') }.map { |l| l.split('|', -1).map(&:strip) }
+  end
+
+  before(:each) { silence_logger }
+
+  it 'maps each surface change to the nodes, resources, and call sites the evidence shows' do
+    status, out = run(['--evidence', catalogs])
+    expect(status).to eq(1)
+    rows = cells(out).drop(1).map { |r| r.first(4) }
+    expect(rows).to eq([
+      ['puppetlabs-apache', 'class-param-default-changed', 'apache::version', 'nodes: db01.example.com, web01.example.com'],
+      ['puppetlabs-firewall', 'type-attribute-changed', 'firewall action',
+       'resources: firewall[100 allow ntp 123] on db01.example.com, firewall[100 allow ntp 123] on web01.example.com'],
+      ['puppetlabs-stdlib', 'function-removed', 'legacy_shout', 'sites: site-modules/profile/manifests/base.pp:11'],
+      ['puppetlabs-stdlib', 'function-changed', 'stdlib::shout', 'sites: site-modules/profile/manifests/base.pp:10'],
+    ])
+    expect(cells(out).last.last).to include('Callable[String, Integer, 1, 2]')
+  end
+
+  it 'summarises per module with the commits crossed, and prints the history on request' do
+    _, out = run(['--evidence', catalogs, '--summary'])
+    expect(cells(out)).to eq([
+      %w[module from to commits findings used],
+      ['puppetlabs-apache', 'tag v10.1.1', 'tag v12.0.0', '2', '1', '1'],
+      ['puppetlabs-firewall', 'tag v5.0.0', 'tag v8.0.0', '3', '1', '1'],
+      ['puppetlabs-stdlib', 'tag v8.6.0', 'tag v9.6.0', '3', '2', '2'],
+    ])
+    _, out = run(['--evidence', catalogs, '--modules', 'puppetlabs-stdlib', '--gitlog', '--changelog'])
+    expect(out).to include('puppetlabs-stdlib: tag v8.6.0 -> tag v9.6.0, 3 commit(s)', 'Release 9.0.0', '## 9.6.0')
+    expect(out).not_to include('puppetlabs-apache:')
+  end
+
+  it 'reports every change with its use unknown without evidence, and filters by kind' do
+    status, out = run(['--no-evidence'])
+    expect(status).to eq(0)
+    expect(cells(out).drop(1).map { |r| [r[1], r[3]] }).to all(match([a_string_matching(/\A(class|type|function)-/), 'use unknown']))
+    _, out = run(['--evidence', catalogs, '--impacts', 'function-removed'])
+    expect(cells(out).drop(1).map { |r| r[2] }).to eq(['legacy_shout'])
+    expect(run(['--impacts', 'bogus']).first).to eq(2)
+    expect(run(['--evidence', File.join(@tmp, 'nope')]).first).to eq(3)
+  end
+end

@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.email       = ['chris.tessmer@onyxpoint.com']
   spec.summary     = 'Puppet/OpenVox control-repo upgrade helper: what stuff will this break?'
   spec.description = <<~DESC
-    Plans module upgrades for a Puppet/OpenVox control repo: checks a
+    Helps plan module upgrades for a Puppet/OpenVox control repo: checks a
     proposed Puppetfile's modules against each other's metadata, follows
     each module's tracking branch, and compares recorded class-param
     schemas between refs. Reads the deployed repo through driftless and

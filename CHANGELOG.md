@@ -127,6 +127,20 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   - Exits 1 when any module is held
   - config subsystem `solve` in `pupgrade.yaml`: `order`, `include_heads`,
     `evidence`
+- `pupgrade impact -d DIR --propose PUPPETFILE [--evidence DIR]`: what the site
+  would feel from a proposed Puppetfile. For each git module it moves, the
+  surface changes between the deployed version and the proposed ref, each
+  mapped to its uses: a class removed or a parameter removed, retyped,
+  redefaulted, or newly required, to the nodes including the class and the
+  Hiera keys naming the parameter; defined-type and resource-type attribute
+  changes to the resources concerned; functions removed or changed to their call
+  sites; providers removed to the resources naming them; facts removed to the
+  nodes reading them. Evidence is a `compile` output directory
+  (`compile.output_dir` by default); without one, every change is a finding with
+  its use unknown. `--summary` per module with its commit count; `--gitlog` and
+  `--changelog` add each module's commits and CHANGELOG sections for the versions
+  crossed; `--modules`, `--impacts`, `--all`. Exits 1 when any finding has a use
+  - config subsystem `impact` in `pupgrade.yaml`: `evidence`
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
   pupgrade.yaml listing every known key under its subsystem, commented out with
   its default or an example, or set live by an argument; `-p --` prints it
