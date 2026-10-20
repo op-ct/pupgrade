@@ -1,5 +1,7 @@
 require 'json'
 
+require 'pupgrade/compile/probe_record'
+
 module Pupgrade
   module Solve
     # What a `compile` run shows the site using, read from its probe
@@ -28,9 +30,9 @@ module Pupgrade
         paths = Dir.glob(File.join(File.expand_path(dir), '*', 'probes.json')).sort
         raise Error, "#{dir}: no <certname>/probes.json under it" if paths.empty?
 
-        paths.each { |p| read(JSON.parse(File.read(p))) }
-      rescue JSON::ParserError => e
-        raise Error, "#{dir}: #{e.message}"
+        paths.each { |p| read(::Pupgrade::Compile::ProbeRecord.read(p)) }
+      rescue ::Pupgrade::Compile::ProbeRecord::Error => e
+        raise Error, e.message
       end
 
       # @param basename [String] a module's directory name

@@ -1,6 +1,8 @@
 require 'json'
 require 'set'
 
+require 'pupgrade/compile/probe_record'
+
 module Pupgrade
   module Impact
     # What a `compile` run shows each node using, from its probe record and
@@ -46,6 +48,8 @@ module Pupgrade
         raise Error, "#{dir}: no <certname>/probes.json under it" if paths.empty?
 
         @nodes = paths.map { |p| node(File.dirname(p)) }
+      rescue ::Pupgrade::Compile::ProbeRecord::Error => e
+        raise Error, e.message
       rescue JSON::ParserError => e
         raise Error, "#{dir}: #{e.message}"
       end
@@ -112,7 +116,7 @@ module Pupgrade
       private
 
       def node(dir)
-        probes  = JSON.parse(File.read(File.join(dir, 'probes.json')))
+        probes  = ::Pupgrade::Compile::ProbeRecord.read(File.join(dir, 'probes.json'))
         catalog = File.file?(File.join(dir, 'catalog.json')) ? JSON.parse(File.read(File.join(dir, 'catalog.json'))) : {}
         classes   = {}
         resources = []

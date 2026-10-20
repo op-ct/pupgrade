@@ -82,6 +82,8 @@ RSpec.describe Pupgrade::Surface do
     expect(described_class.load(path)['module']['version']).to eq('9.6.0')
     expect { described_class.checkout(File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), 'v0') { nil } }.to raise_error(described_class::Error, /git fetch/)
     expect { described_class.load(File.join(@tmp, 'nope')) }.to raise_error(described_class::Error, /no such file/)
+    File.write(path, JSON.generate(doc.merge('schema_version' => 99)))
+    expect { described_class.load(path) }.to raise_error(described_class::Error, /schema 99 is newer than this pupgrade reads \(1\)/)
     expect { described_class.extract(File.join(@tmp, 'nope')) }.to raise_error(described_class::Error, /no such directory/)
   end
 

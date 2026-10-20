@@ -4,6 +4,8 @@ require 'rbconfig'
 require 'tmpdir'
 require 'fileutils'
 
+require 'pupgrade/surface/extract'
+
 module Pupgrade
   # A module's API surfaces as a document, and the difference between two.
   # Extraction loads the module's Ruby, so it happens in a process of its
@@ -44,6 +46,11 @@ module Pupgrade
       data = JSON.parse(File.read(path))
       raise Error, "#{path}: not a surface document" unless data.is_a?(Hash) && data['document'] == 'surface'
 
+      version = data['schema_version']
+      unless version == Extract::SCHEMA_VERSION
+        side = (version.to_i > Extract::SCHEMA_VERSION) ? 'newer than this pupgrade reads' : 'older than this pupgrade reads'
+        raise Error, "#{path}: surface document schema #{version.inspect} is #{side} (#{Extract::SCHEMA_VERSION}); extract again with this pupgrade"
+      end
       data
     rescue JSON::ParserError => e
       raise Error, "#{path}: #{e.message}"

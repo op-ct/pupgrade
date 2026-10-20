@@ -145,6 +145,9 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
 - `pupgrade config new [-p PATH] [--force] [<subsystem.key>=<value> ...]`: writes a
   pupgrade.yaml listing every known key under its subsystem, commented out with
   its default or an example, or set live by an argument; `-p --` prints it
+- Probe records and surface documents carry a `schema_version`, and every reader
+  (`solve --evidence`, `impact`, `surface diff`) refuses one of another schema,
+  saying whether the file or this pupgrade is the newer
 - `rake fixture[DIR]` builds a fixture control repo to run pupgrade against:
   - 32 git modules as bare remotes with a tagged commit per release; stdlib,
     firewall, concat, and simplib also ship functions, a type and provider, a

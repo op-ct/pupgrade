@@ -6,6 +6,7 @@ require 'pupgrade/cli/table'
 require 'pupgrade/config_keys'
 require 'driftless/control_repo'
 require 'pupgrade/compile/factset'
+require 'pupgrade/compile/probe_record'
 require 'pupgrade/compile/session'
 require 'pupgrade/compile/stubs'
 
@@ -134,8 +135,8 @@ module Pupgrade
 
       def probes_document(result)
         {
-          'document'       => 'probes',
-          'schema_version' => 1,
+          'document'       => ::Pupgrade::Compile::ProbeRecord::DOCUMENT,
+          'schema_version' => ::Pupgrade::Compile::ProbeRecord::SCHEMA_VERSION,
           'certname'       => result.certname,
           'factset'        => result.factset.path,
           'environment'    => @options[:environment],
