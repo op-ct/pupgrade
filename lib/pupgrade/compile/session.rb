@@ -32,9 +32,9 @@ module Pupgrade
       config_key 'compile.on_leak', type: :string, default: 'raise',
                  about: 'What happens to a command the stubs do not answer: raise (stop that node\'s compile) ' \
                         'or allow (run it, and record it)'
-      config_key 'compile.vars', type: :hash, default: {}, example: { 'role' => 'web' },
+      config_key 'compile.vars', type: :hash, default: nil, example: { 'role' => 'web' },
                  about: 'Top-scope variables set before the manifest, as an ENC would'
-      config_key 'compile.server_facts', type: :hash, default: {}, example: { 'servername' => 'puppet.example.com' },
+      config_key 'compile.server_facts', type: :hash, default: nil, example: { 'servername' => 'puppet.example.com' },
                  about: 'Entries of $server_facts to set or override; servername, serverip, and serverversion have defaults'
 
       class Error < StandardError; end
