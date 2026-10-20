@@ -27,10 +27,13 @@ module Pupgrade
       #     dotted path
       # @!attribute [r] providers
       #   @return [Set<String>] "type/provider" named by resources
+      # @!attribute [r] aliases
+      #   @return [Set<String>] type aliases resolved during the compile,
+      #     lowercase
       # @!attribute [r] lookups
       #   @return [Hash{String => Boolean}] the automatic parameter lookups
       #     the compile made, "class::param" to whether Hiera answered
-      Node = Data.define(:certname, :classes, :resources, :functions, :facts, :providers, :lookups)
+      Node = Data.define(:certname, :classes, :resources, :functions, :facts, :providers, :lookups, :aliases)
 
       # @return [Array<Node>]
       attr_reader :nodes
@@ -94,6 +97,12 @@ module Pupgrade
         @nodes.select { |n| n.facts.any? { |f| f == name || f.start_with?("#{name}.") } }.map(&:certname)
       end
 
+      # @return [Array<String>] certnames whose compile resolved the type alias
+      def using_alias(name)
+        wanted = name.downcase
+        @nodes.select { |n| n.aliases.include?(wanted) }.map(&:certname)
+      end
+
       # @return [Array<String>] certnames whose resources name the provider
       def naming(type, provider)
         key = "#{type}/#{provider}".downcase
@@ -125,7 +134,8 @@ module Pupgrade
         end
         Node.new(certname: probes['certname'] || File.basename(dir), classes: classes, resources: resources,
                  functions: (probes['functions'] || {}).transform_values { |f| Array(f['sites']) },
-                 facts: facts, providers: (probes['providers_named'] || {}).keys.map(&:downcase).to_set, lookups: lookups)
+                 facts: facts, providers: (probes['providers_named'] || {}).keys.map(&:downcase).to_set, lookups: lookups,
+                 aliases: (probes['type_aliases'] || {}).keys.map(&:downcase).to_set)
       end
     end
   end

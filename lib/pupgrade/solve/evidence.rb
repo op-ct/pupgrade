@@ -42,7 +42,7 @@ module Pupgrade
 
       def read(probes)
         @nodes += 1
-        %w[classes defined_types types providers_named].each do |section|
+        %w[classes defined_types types providers_named type_aliases].each do |section|
           (probes[section] || {}).each_value { |v| @used << v['module'] if v.is_a?(Hash) && v['module'] }
         end
         (probes['functions'] || {}).each_value do |f|

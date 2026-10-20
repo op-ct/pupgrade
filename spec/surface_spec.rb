@@ -94,12 +94,14 @@ RSpec.describe Pupgrade::Surface do
         %w[classes stdlib changed],
         %w[functions legacy_shout removed],
         %w[functions stdlib::shout changed],
+        %w[type_aliases Stdlib::Port changed],
       ])
       expect(changes.map(&:detail)).to eq([
         '8.6.0 -> 9.6.0',
         "params.version.default: '8.6.0' -> '9.6.0'",
         'was ruby3x, in lib/puppet/parser/functions/legacy_shout.rb',
         'signatures: [{"params":["text"],"type":"Callable[String]"}] -> [{"params":["text","times"],"type":"Callable[String, Integer, 1, 2]"}]',
+        'type: Integer[0, 65535] -> Integer[1, 65535]',
       ])
       expect(described_class.documents(stdlib, stdlib)).to eq([])
     end

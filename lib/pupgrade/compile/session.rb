@@ -136,6 +136,7 @@ module Pupgrade
           Probes.current = nil
         end
         probes = recorder.to_h
+        probes['type_aliases'].each { |name, entry| entry['module'] = @index.type_alias(name) }
         probes.merge!(catalog_summary(catalog)) if catalog
         Result.new(certname: factset.certname, factset: factset, error: error,
                    catalog: catalog && CatalogDocument.build(catalog, version: @version, repo_dir: @repo_dir), probes: probes,

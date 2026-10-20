@@ -332,8 +332,8 @@ module Pupgrade
     }.freeze
 
     # Changes to the extras from a release on, so two releases' surfaces
-    # differ: stdlib 9 gives shout a second parameter and drops the 3.x
-    # function; firewall 7 adds a chain parameter.
+    # differ: stdlib 9 gives shout a second parameter, drops the 3.x
+    # function, and narrows the Port alias; firewall 7 adds a chain parameter.
     EXTRAS_SINCE = {
       'puppetlabs-stdlib' => {
         '9.0.0' => {
@@ -349,6 +349,7 @@ module Pupgrade
             end
           RUBY
           'lib/puppet/parser/functions/legacy_shout.rb' => nil,
+          'types/port.pp' => "type Stdlib::Port = Integer[1, 65535]\n",
         },
       },
       'puppetlabs-firewall' => {

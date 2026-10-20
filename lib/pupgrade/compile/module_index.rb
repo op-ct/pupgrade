@@ -15,6 +15,7 @@ module Pupgrade
         @types     = {}
         @providers = {}
         @facts     = {}
+        @aliases   = {}
         scan
       end
 
@@ -29,6 +30,12 @@ module Pupgrade
       # @return [String, nil] the module shipping lib/puppet/provider/<type>/<provider>.rb
       def provider(type, provider)
         @providers["#{type.to_s.downcase}/#{provider.to_s.downcase}"]
+      end
+
+      # @param name [String] a type alias, e.g. "Stdlib::Port"
+      # @return [String, nil] the module shipping types/<path>.pp for it
+      def type_alias(name)
+        @aliases[name.to_s.downcase]
       end
 
       # @param name [String] a fact, by its top-level name
@@ -67,6 +74,10 @@ module Pupgrade
               nil
             end
             Dir.glob(File.join(root, 'facts.d/*')).each { |f| @facts[File.basename(f, File.extname(f)).downcase] ||= mod }
+            Dir.glob(File.join(root, 'types/**/*.pp')).each do |f|
+              segments = f.delete_prefix("#{root}/types/").delete_suffix('.pp').split('/')
+              @aliases[([mod] + segments).join('::').downcase] ||= mod
+            end
           end
         rescue SystemCallError
           nil

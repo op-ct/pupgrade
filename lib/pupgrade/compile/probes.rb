@@ -33,6 +33,7 @@ module Pupgrade
         @legacy    = Hash.new(0)
         @lookups   = Hash.new { |h, k| h[k] = { 'found' => false, 'automatic' => 0, 'explicit' => 0 } }
         @providers = {}
+        @aliases   = Hash.new { |h, k| h[k] = { 'module' => nil, 'uses' => 0, 'sites' => [] } }
         @warnings  = []
         @deprecations = []
         @leaks = []
@@ -115,6 +116,23 @@ module Pupgrade
         entry['sites'] << site if site && entry['sites'].size < 20 && !entry['sites'].include?(site)
       end
 
+      # A value checked against a type alias: a parameter typed with it, a
+      # match, or a data type expression, once per check. Puppet's own
+      # aliases have no namespace; a module's or environment's always do.
+      def type_alias(name)
+        @aliases[name.to_s]['uses'] += 1 if name.to_s.include?('::')
+      end
+
+      # Where an alias is referenced: the parser resolves a definition's
+      # parameter types once per environment, so the sites are gathered
+      # process-wide by {Probes.alias_sites} and joined here.
+      def alias_sites!
+        @aliases.each do |name, entry|
+          sites = Probes.alias_sites.fetch(name, []).select { |file, _| file.to_s.start_with?("#{@repo_dir}/") }
+          entry['sites'] = sites.map { |file, line| site(file, line) }.compact.uniq.first(20)
+        end
+      end
+
       def lookup(name, found, automatic)
         entry = @lookups[name.to_s]
         entry['found'] ||= found
@@ -164,12 +182,14 @@ module Pupgrade
 
       # @return [Hash] the probe record, JSON-ready
       def to_h
+        alias_sites!
         {
           'functions'    => @functions.sort.to_h,
           'facts'        => @facts.sort.to_h,
           'legacy_facts' => @legacy.sort.to_h,
           'lookups'      => @lookups.sort.to_h,
           'providers'    => @providers.sort.to_h.values,
+          'type_aliases' => @aliases.sort.to_h,
           'warnings'     => @warnings,
           'deprecations' => @deprecations,
           'leaks'        => @leaks,
@@ -240,6 +260,12 @@ module Pupgrade
         # @return [Recorder, nil] the compile in progress
         attr_accessor :current
 
+        # @return [Hash{String => Array<Array(String, Integer)>}] where each
+        #   type alias is referenced, by name, for the whole process
+        def alias_sites
+          @alias_sites ||= Hash.new { |h, k| h[k] = [] }
+        end
+
         def install!
           return if @installed
 
@@ -249,6 +275,8 @@ module Pupgrade
           Puppet::Pops::Lookup::SubLookup.prepend(SubLookupHooks)
           Puppet::Pops::Evaluator::EvaluatorImpl.prepend(CallHooks)
           Puppet::Pops::Lookup.singleton_class.prepend(LookupHooks)
+          Puppet::Pops::Types::TypeParser.prepend(TypeParserHooks)
+          Puppet::Pops::Types::PTypeAliasType.prepend(TypeAliasHooks)
           Puppet::Util::Logging.prepend(DeprecationHooks)
           Puppet::Type.singleton_class.prepend(ProviderHooks)
           Puppet::Node::Environment.prepend(ConfigVersionHooks)
@@ -338,6 +366,28 @@ module Pupgrade
           value
         ensure
           Probes.current&.lookup(name, found, apl)
+        end
+      end
+
+      # Every type reference the evaluator resolves passes through here; one
+      # that resolves to an alias names a site referencing it. Puppet resolves
+      # a definition's parameter types once per environment, so this fires
+      # for the first compile only and the sites are kept for the process.
+      module TypeParserHooks
+        def interpret_QualifiedReference(name_ast, context) # rubocop:disable Naming/MethodName -- Puppet's name
+          type = super
+          if type.is_a?(Puppet::Pops::Types::PTypeAliasType) && Probes.current && name_ast.respond_to?(:file)
+            Probes.alias_sites[name_ast.cased_value] << [name_ast.file, name_ast.line]
+          end
+          type
+        end
+      end
+
+      # A value checked against an alias, which happens on every compile.
+      module TypeAliasHooks
+        def instance?(o, guard = nil)
+          Probes.current&.type_alias(name)
+          super
         end
       end
 

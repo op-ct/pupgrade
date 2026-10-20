@@ -69,12 +69,13 @@ RSpec.describe Pupgrade::CLI::Surface do
       %w[classes stdlib changed],
       %w[functions legacy_shout removed],
       %w[functions stdlib::shout changed],
+      %w[type_aliases Stdlib::Port changed],
     ])
 
     _, out = run(described_class, ['diff', '--surfaces', 'functions', '--changes', 'removed', stdlib, path])
     expect(cells(out).drop(1).map { |r| r[1] }).to eq(['legacy_shout'])
     _, out = run(described_class, ['diff', '--summary', stdlib, path])
-    expect(cells(out)).to eq([%w[surface added removed changed total], %w[module 0 0 1 1], %w[classes 0 0 1 1], %w[functions 0 1 1 2]])
+    expect(cells(out)).to eq([%w[surface added removed changed total], %w[module 0 0 1 1], %w[classes 0 0 1 1], %w[functions 0 1 1 2], %w[type_aliases 0 0 1 1]])
     expect(run(described_class, ['diff', stdlib, stdlib])).to eq([0, "(nothing matches)\n"])
     expect(run(described_class, ['diff', '--surfaces', 'bogus', stdlib, path]).first).to eq(2)
     expect(run(described_class, ['diff', stdlib]).first).to eq(2)

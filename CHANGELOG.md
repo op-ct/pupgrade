@@ -63,7 +63,8 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
     interpolation, and `Facter.value`, legacy fact variables, lookups
     (automatic and explicit, found or not), warnings and deprecations,
     classes, defined types, resource types, and the providers resources name,
-    each with its module, and the commands and facts that reached the guard
+    each with its module, type aliases resolved with the module shipping each
+    and the sites using them, and the commands and facts that reached the guard
   - `--environment`, `--manifest PATH`, `--code CODE` (in place of the
     manifest), `--prepend CODE|@FILE`, `--var NAME=VALUE`, `--server-fact
     NAME=VALUE`

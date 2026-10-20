@@ -29,14 +29,14 @@ module Pupgrade
       # @!attribute [r] detail
       #   @return [String] the surface change
       Finding = Data.define(:module, :kind, :subject, :where, :detail) do
-        # Whether the evidence shows the site touching it; a use unknown or
-        # not tracked is neither a use nor its absence.
+        # Whether the evidence shows the site touching it; a use unknown is
+        # neither a use nor its absence.
         def used?
           !where.empty? && !UNKNOWN.include?(where)
         end
       end
 
-      UNKNOWN = ['use unknown', 'use not tracked'].freeze
+      UNKNOWN = ['use unknown'].freeze
 
       # How many names a `where` lists before counting instead.
       NAMED = 3
@@ -132,7 +132,7 @@ module Pupgrade
 
         kind  = (change.kind == 'removed') ? 'function-removed' : 'function-changed'
         sites = @evidence&.call_sites(change.name)
-        [make(name, kind, change.name, sites.nil? ? nil : list('sites', sites), change.detail)]
+        [make(name, kind, change.name, (sites.nil? || sites.empty?) ? [] : [list('sites', sites)], change.detail)]
       end
 
       def type_findings(name, change, _to)
@@ -167,7 +167,7 @@ module Pupgrade
         return [] if change.kind == 'added'
 
         kind = (change.kind == 'removed') ? 'type-alias-removed' : 'type-alias-changed'
-        [Finding.new(module: name, kind: kind, subject: change.name, where: 'use not tracked', detail: change.detail)]
+        [make(name, kind, change.name, nodes(@evidence&.using_alias(change.name)), change.detail)]
       end
 
       # @return [Array(String, Symbol), nil] the parameter a detail is about
@@ -191,9 +191,12 @@ module Pupgrade
         param.is_a?(Hash) && !param.key?('default') && !param['captures_rest']
       end
 
+      # @param where [Array<String>] the parts naming the uses; none without
+      #   evidence means the use is unknown, none with it means no use
       def make(name, kind, subject, where, detail)
-        where = where.nil? ? 'use unknown' : where.reject(&:empty?).join('; ') if where.nil? || where.is_a?(Array)
-        Finding.new(module: name, kind: kind, subject: subject, where: where.to_s, detail: detail)
+        parts = Array(where).reject(&:empty?)
+        text  = (parts.empty? && @evidence.nil?) ? 'use unknown' : parts.join('; ')
+        Finding.new(module: name, kind: kind, subject: subject, where: text, detail: detail)
       end
 
       # @return [Array<String>] one "nodes: ..." part, or none

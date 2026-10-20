@@ -202,7 +202,7 @@ module Pupgrade
       end
 
       def shown?(finding)
-        (@options[:all] || finding.used? || finding.where == 'use unknown' || finding.where == 'use not tracked') &&
+        (@options[:all] || finding.used? || finding.where == 'use unknown') &&
           glob_any?(@options[:modules], finding.module) &&
           (Array(@options[:kinds]).empty? || @options[:kinds].include?(finding.kind))
       end

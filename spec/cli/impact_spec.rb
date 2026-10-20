@@ -68,8 +68,9 @@ RSpec.describe Pupgrade::CLI::Impact do
        'resources: firewall[100 allow ntp 123] on db01.example.com, firewall[100 allow ntp 123] on web01.example.com'],
       ['puppetlabs-stdlib', 'function-removed', 'legacy_shout', 'sites: site-modules/profile/manifests/base.pp:11'],
       ['puppetlabs-stdlib', 'function-changed', 'stdlib::shout', 'sites: site-modules/profile/manifests/base.pp:10'],
+      ['puppetlabs-stdlib', 'type-alias-changed', 'Stdlib::Port', 'nodes: db01.example.com, web01.example.com'],
     ])
-    expect(cells(out).last.last).to include('Callable[String, Integer, 1, 2]')
+    expect(cells(out).find { |r| r[2] == 'stdlib::shout' }.last).to include('Callable[String, Integer, 1, 2]')
   end
 
   it 'summarises per module with the commits crossed, and prints the history on request' do
@@ -78,7 +79,7 @@ RSpec.describe Pupgrade::CLI::Impact do
       %w[module from to commits findings used],
       ['puppetlabs-apache', 'tag v10.1.1', 'tag v12.0.0', '2', '1', '1'],
       ['puppetlabs-firewall', 'tag v5.0.0', 'tag v8.0.0', '3', '1', '1'],
-      ['puppetlabs-stdlib', 'tag v8.6.0', 'tag v9.6.0', '3', '2', '2'],
+      ['puppetlabs-stdlib', 'tag v8.6.0', 'tag v9.6.0', '3', '3', '3'],
     ])
     _, out = run(['--evidence', catalogs, '--modules', 'puppetlabs-stdlib', '--gitlog', '--changelog'])
     expect(out).to include('puppetlabs-stdlib: tag v8.6.0 -> tag v9.6.0, 3 commit(s)', 'Release 9.0.0', '## 9.6.0')
@@ -89,6 +90,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     status, out = run(['--no-evidence'])
     expect(status).to eq(0)
     expect(cells(out).drop(1).map { |r| [r[1], r[3]] }).to all(match([a_string_matching(/\A(class|type|function)-/), 'use unknown']))
+    expect(cells(out).drop(1).map { |r| r[1] }).to include('type-alias-changed')
     _, out = run(['--evidence', catalogs, '--impacts', 'function-removed'])
     expect(cells(out).drop(1).map { |r| r[2] }).to eq(['legacy_shout'])
     expect(run(['--impacts', 'bogus']).first).to eq(2)
