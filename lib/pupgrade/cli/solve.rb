@@ -32,9 +32,9 @@ module Pupgrade
                         'version forward to the first that fits, driven by --bump'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Whether the tip of a tag-pinned module\'s tracking branch (modules.branchfile) is a candidate'
-      config_key 'solve.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs',
-                 about: 'A `compile` output directory whose probe records say what the site uses, relative to the ' \
-                        'control repo; compile.output_dir when it exists and this is unset. Needed by --prune-unused'
+      config_key 'solve.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` output directory to read instead of compile.output_dir, relative to the control ' \
+                        'repo: evidence of what the site uses, for --prune-unused. Unset, the last compile is read'
 
       COLUMNS = %w[module current chosen candidates note].freeze
 

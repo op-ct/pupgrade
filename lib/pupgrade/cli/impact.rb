@@ -32,9 +32,9 @@ module Pupgrade
       register_command name: 'impact', subcommand_of: Root
       desc 'What a proposed Puppetfile would change for the site: surface changes mapped to their uses'
 
-      config_key 'impact.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs',
-                 about: 'A `compile` output directory whose probes and catalogs say what each node uses, relative to ' \
-                        'the control repo; compile.output_dir when it exists and this is unset'
+      config_key 'impact.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` output directory to read instead of compile.output_dir, relative to the control ' \
+                        'repo: evidence of what each node uses. Unset, the last compile is read'
 
       COLUMNS         = %w[module impact subject where detail].freeze
       SUMMARY_COLUMNS = %w[module from to commits findings used].freeze
