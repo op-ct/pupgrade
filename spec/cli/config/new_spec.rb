@@ -50,7 +50,7 @@ RSpec.describe Pupgrade::CLI::Config::New do
     Pupgrade::ConfigKeys.all.each do |key|
       expect(content).to match(/^#   #{Regexp.escape(key.name)}:/), key.path
     end
-    indexes = %w[compile modules solve impact output logging].map { |name| content.index(/^# #{name}:/) }
+    indexes = %w[compile surface modules solve impact output logging].map { |name| content.index(/^# #{name}:/) }
     expect(indexes).to all(be_an(Integer))
     expect(indexes).to eq(indexes.sort)
   end

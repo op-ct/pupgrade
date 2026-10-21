@@ -1,0 +1,131 @@
+require 'yaml'
+
+module Pupgrade
+  module Compile
+    # What the execution guard answers with: the site's mock file, with
+    # pupgrade's defaults for the probes package providers make when they
+    # load, after it.
+    #
+    #     ---
+    #     commands:
+    #       - match: '\A/usr/bin/rpm --version\z'   # a regexp against the command line
+    #         stdout: "RPM version 4.16.1.3\n"       # what it prints (default '')
+    #         exit: 0                                # its exit code (default 0)
+    #         when:                                  # only on nodes whose facts match
+    #           os.family: [RedHat, Suse]
+    #       - match: '^systemctl '
+    #         action: allow                          # run it for real, and record it
+    #     facts:                                     # Facter.value reads the factset lacks
+    #       fips_enabled: false
+    #
+    # The first entry whose `match` fits the command line and whose `when`
+    # fits the node's facts answers. A command no entry answers gets the
+    # run's `on_leak` policy: `raise` stops the node's compile, `allow` runs
+    # it and records it.
+    class Mocks
+      class Error < StandardError; end
+
+      ACTIONS = %w[mock allow].freeze
+
+      # The defaults shipped with pupgrade.
+      DEFAULTS_FILE = File.expand_path('default_mocks.yaml', __dir__)
+
+      # One `commands` entry.
+      #
+      # @!attribute [r] match
+      #   @return [Regexp]
+      # @!attribute [r] action
+      #   @return [String] "mock" or "allow"
+      # @!attribute [r] stdout
+      #   @return [String] what a mocked command prints
+      # @!attribute [r] exit
+      #   @return [Integer] a mocked command's exit code
+      # @!attribute [r] conditions
+      #   @return [Hash{String => Array<String>}] dotted fact path to the
+      #     values any of which the node must report; empty for any node
+      Command = Data.define(:match, :action, :stdout, :exit, :conditions) do
+        # @param facts [Hash] the node's facts
+        def for?(command_line, facts)
+          match.match?(command_line) && conditions.all? { |path, values| values.include?(dig(facts, path).to_s) }
+        end
+
+        def dig(facts, path)
+          path.split('.').reduce(facts) { |v, k| v.is_a?(Hash) ? v[k] : nil }
+        end
+      end
+
+      # @param path [String] the site's mock file
+      # @param defaults [Boolean] whether pupgrade's defaults follow it
+      # @return [Mocks]
+      # @raise [Error] when the file does not read as a mock file
+      def self.load(path, defaults: true)
+        data = YAML.safe_load(File.read(path), aliases: true, filename: path) || {}
+        raise Error, "#{path}: expected a mapping, got #{data.class}" unless data.is_a?(Hash)
+
+        new(data, path: path, defaults: defaults)
+      rescue Errno::ENOENT
+        raise Error, "#{path}: no such file"
+      rescue Psych::SyntaxError => e
+        raise Error, "#{path}: #{e.message}"
+      end
+
+      # @return [Mocks] pupgrade's defaults alone, or nothing with
+      #   `defaults: false`
+      def self.empty(defaults: true)
+        new({}, path: nil, defaults: defaults)
+      end
+
+      attr_reader :path, :commands, :facts
+
+      # @param data [Hash] the parsed mock file
+      def initialize(data, path:, defaults: true)
+        @path     = path
+        @commands = Array(data['commands']).map { |c| command(c) }
+        @facts    = (data['facts'] || {}).to_h { |k, v| [k.to_s, v] }
+        return unless defaults
+
+        shipped = YAML.safe_load(File.read(DEFAULTS_FILE)) || {}
+        @commands += Array(shipped['commands']).map { |c| command(c, DEFAULTS_FILE) }
+      end
+
+      # @param command_line [String]
+      # @param facts [Hash] the node's facts, for the entries' conditions
+      # @return [Command, nil] the first entry answering the command on this node
+      def for_command(command_line, facts = {})
+        @commands.find { |c| c.for?(command_line, facts) }
+      end
+
+      # @param name [String] a fact, dotted for a path into a structured one
+      # @return [Array(Boolean, Object)] whether the mocks answer, and with what
+      def fact(name)
+        return [true, @facts[name]] if @facts.key?(name)
+
+        head, rest = name.split('.', 2)
+        return [false, nil] unless rest && @facts.key?(head)
+
+        value = @facts[head]
+        rest.split('.').each do |k|
+          return [false, nil] unless value.is_a?(Hash) && value.key?(k)
+
+          value = value[k]
+        end
+        [true, value]
+      end
+
+      private
+
+      def command(entry, source = @path)
+        raise Error, "#{source}: each command needs a match, got #{entry.inspect}" unless entry.is_a?(Hash) && entry['match']
+
+        action = (entry['action'] || 'mock').to_s
+        raise Error, "#{source}: command action #{action.inspect} is not one of #{ACTIONS.join(', ')}" unless ACTIONS.include?(action)
+
+        conditions = (entry['when'] || {}).to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] }
+        Command.new(match: Regexp.new(entry['match'].to_s), action: action, stdout: entry['stdout'].to_s,
+                    exit: Integer(entry['exit'] || 0), conditions: conditions)
+      rescue ArgumentError, TypeError => e
+        raise Error, "#{source}: #{e.message}"
+      end
+    end
+  end
+end

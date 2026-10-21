@@ -1,12 +1,12 @@
 require 'puppet'
 require 'facter'
 
-require 'pupgrade/compile/stubs'
+require 'pupgrade/compile/mocks'
 
 module Pupgrade
   module Compile
     # Raised inside a compile when module code tries to run a command the
-    # stubs do not answer and the run's policy is to stop.
+    # mocks do not answer and the run's policy is to stop.
     class Leak < StandardError; end
 
     # What one node's compile used, as the hooks in {Probes} report it:
@@ -18,12 +18,12 @@ module Pupgrade
       LOGGED_LEVELS = %i[warning err alert emerg crit].freeze
 
       # @param factset [Factset] the node's facts, answering Facter reads
-      # @param stubs [Stubs] what the guard answers commands with
-      # @param on_leak [String] "raise" or "allow" for commands the stubs do not answer
+      # @param mocks [Mocks] what the guard answers commands with
+      # @param on_leak [String] "raise" or "allow" for commands the mocks do not answer
       # @param repo_dir [String] call sites are reported relative to it
-      def initialize(factset:, stubs:, on_leak:, repo_dir:)
+      def initialize(factset:, mocks:, on_leak:, repo_dir:)
         @factset  = factset
-        @stubs    = stubs
+        @mocks    = mocks
         @on_leak  = on_leak
         @repo_dir = File.expand_path(repo_dir)
         @prefixes = {}
@@ -113,9 +113,9 @@ module Pupgrade
           return [true, value]
         end
 
-        found, value = @stubs.fact(name)
+        found, value = @mocks.fact(name)
         if found
-          leak('fact', name, 'stubbed', nil)
+          leak('fact', name, 'mocked', nil)
           return [true, value]
         end
 
@@ -180,13 +180,13 @@ module Pupgrade
       #
       # @param kind [String] which entry point: "execute", "execpipe", "backtick", ...
       # @param command [String] the command line
-      # @return [Array(Symbol, String)] [:stub, stdout] or [:run, nil]
+      # @return [Array(Symbol, Mocks::Command|nil)] [:mock, the entry] or [:run, nil]
       # @raise [Leak] when nothing answers and the policy is to stop
       def guard(kind, command)
-        entry = @stubs.for_command(command)
-        if entry&.action == 'stub'
-          leak(kind, command, 'stubbed', location)
-          return [:stub, entry.stdout]
+        entry = @mocks.for_command(command, @factset.values)
+        if entry&.action == 'mock'
+          leak(kind, command, entry.exit.zero? ? 'mocked' : "mocked (exit #{entry.exit})", location)
+          return [:mock, entry]
         end
         if entry || @on_leak == 'allow'
           leak(kind, command, 'allowed', location)
@@ -195,7 +195,7 @@ module Pupgrade
 
         where = location
         leak(kind, command, 'raised', where)
-        raise Leak, "#{kind}: #{command.inspect} is not answered by the stubs (#{where})"
+        raise Leak, "#{kind}: #{command.inspect} is not answered by the mocks (#{where})"
       end
 
       # @return [Hash] the probe record, JSON-ready
@@ -466,8 +466,14 @@ module Pupgrade
           return super unless rec
 
           line = command.is_a?(Array) ? command.flatten.join(' ') : command.to_s
-          action, stdout = rec.guard('execute', line)
-          (action == :stub) ? Puppet::Util::Execution::ProcessOutput.new(stdout, 0) : super
+          action, entry = rec.guard('execute', line)
+          return super unless action == :mock
+
+          # as Puppet's execute does: a failing command raises unless told not to
+          failonfail = options.equal?(Puppet::Util::Execution::NoOptionsSpecified) ? true : options.fetch(:failonfail, false)
+          raise Puppet::ExecutionFailure, "Execution of '#{line}' returned #{entry.exit}: #{entry.stdout}" if failonfail && !entry.exit.zero?
+
+          Puppet::Util::Execution::ProcessOutput.new(entry.stdout, entry.exit)
         end
 
         def execpipe(command, failonfail = true, &block)
@@ -475,10 +481,11 @@ module Pupgrade
           return super unless rec
 
           line = command.respond_to?(:join) ? command.join(' ') : command.to_s
-          action, stdout = rec.guard('execpipe', line)
-          return super unless action == :stub
+          action, entry = rec.guard('execpipe', line)
+          return super unless action == :mock
+          raise Puppet::ExecutionFailure, entry.stdout if failonfail && !entry.exit.zero?
 
-          block ? yield(StringIO.new(stdout)) : stdout
+          block ? yield(StringIO.new(entry.stdout)) : entry.stdout
         end
       end
 
@@ -487,16 +494,16 @@ module Pupgrade
           rec = Probes.current
           return super unless rec
 
-          action, stdout = rec.guard('facter-execute', command.to_s)
-          (action == :stub) ? stdout : super
+          action, entry = rec.guard('facter-execute', command.to_s)
+          (action == :mock) ? entry.stdout : super
         end
 
         def exec(command)
           rec = Probes.current
           return super unless rec
 
-          action, stdout = rec.guard('facter-exec', command.to_s)
-          (action == :stub) ? stdout : super
+          action, entry = rec.guard('facter-exec', command.to_s)
+          (action == :mock) ? entry.stdout : super
         end
       end
 

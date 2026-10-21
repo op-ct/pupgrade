@@ -14,20 +14,21 @@ module Pupgrade
       # the surfaces differ.
       class Diff < Base
         include Table
+        include Surface::Shared
 
         register_command name: 'diff', subcommand_of: Surface
         positional '<from>', '<to>'
-        desc 'Compare two modules\' API surfaces (documents or directories)'
-        skip_config_load
+        desc 'Compare two modules\' API surfaces (documents, directories, or modules at refs)'
 
         COLUMNS         = %w[surface name change detail].freeze
         SUMMARY_COLUMNS = (['surface'] + ::Pupgrade::Surface::Diff::KINDS + ['total']).freeze
 
         def execute(argv)
-          fatal!('surface diff takes two documents or module directories', help: true) unless argv.size == 2
+          fatal!('surface diff takes two sides: documents, module directories, or modules at refs', help: true) unless argv.size == 2
           check_filters!
-          from    = ::Pupgrade::Surface.load(argv[0])
-          to      = ::Pupgrade::Surface.load(argv[1])
+          reader  = targets
+          from, = reader.document(reader.resolve(argv[0]))
+          to,   = reader.document(reader.resolve(argv[1]))
           changes = ::Pupgrade::Surface::Diff.documents(from, to)
           shown   = changes.select { |c| shown?(c) }
 
@@ -39,7 +40,7 @@ module Pupgrade
           count = (shown.size == changes.size) ? "#{changes.size} change(s)" : "#{shown.size} of #{changes.size} change(s) shown"
           ::Pupgrade.logger.info("surface diff: #{count}")
           exit(shown.empty? ? 0 : 1)
-        rescue ::Pupgrade::Surface::Error => e
+        rescue ::Pupgrade::Surface::Error, ::Pupgrade::Surface::Targets::Error => e
           fatal!("surface diff: #{e.message}", 3)
         end
 
@@ -55,9 +56,11 @@ module Pupgrade
           o.separator ''
           o.separator 'Layout:'
           o.on('--summary', 'One row per surface with a count per change kind') { @options[:summary] = true }
+          repo_option(o)
           o.separator ''
-          o.separator 'Each side is a document `surface` wrote, or a module directory to read now.'
-          o.separator 'Exits 1 when the surfaces differ.'
+          o.separator 'Each side is a document `surface` wrote, a module directory, or a module of the'
+          o.separator 'control repo by name, with `:REF` to read it at a ref of its clone: `stdlib:v9.6.0`.'
+          o.separator 'Sides read now are cached as `surface` caches them. Exits 1 when the surfaces differ.'
         end
 
         private
@@ -84,6 +87,10 @@ module Pupgrade
 
         def accumulate(key, values)
           (@options[key] ||= []).concat(values)
+        end
+
+        def config_defaults
+          surface_config_defaults
         end
       end
     end

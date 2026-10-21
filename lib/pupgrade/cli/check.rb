@@ -6,6 +6,7 @@ require 'driftless/control_repo'
 require 'driftless/module_inventory'
 require 'pupgrade/module_proposal'
 require 'pupgrade/module_resolver'
+require 'pupgrade/module_name'
 
 module Pupgrade
   module CLI
@@ -42,6 +43,9 @@ module Pupgrade
       # Prefixed to each row under --propose: how the conflict relates to
       # the current Puppetfile's.
       CHANGE_MARK = { new: '+', gone: '-', same: ' ' }.freeze
+
+      # How each mark is coloured when stdout takes colour.
+      MARK_STYLE = { new: [:red], gone: [:green], same: [] }.freeze
 
       # The sign each mark carries in a --summary cell under --propose.
       COUNT_SIGN = { new: '+', gone: '-', same: '=' }.freeze
@@ -80,7 +84,7 @@ module Pupgrade
           log_warnings(proposal.warnings + result.warnings)
           shown = shown_rows(result)
           rows  = change_rows(shown_rows(current), shown)
-          print_proposal(@options[:all_conflicts] ? rows : rows.reject { |r| r.mark == :same }, proposal.changes)
+          print_proposal(rows.reject { |r| hidden_mark?(r.mark) }, proposal.changes)
           ::Pupgrade.logger.info(proposal_summary(result, shown, rows))
         else
           result = current
@@ -107,11 +111,14 @@ module Pupgrade
         o.on('--propose=PUPPETFILE',
              'Resolve as if PUPPETFILE replaced the current entries at the same paths;',
              'metadata for a changed module is read from its git remote.',
-             'Rows are marked + (introduced) or - (resolved); unchanged rows are hidden') { |v| @options[:propose] = v }
+             'Rows are marked + (introduced), - (resolved), or blank (unchanged)') { |v| @options[:propose] = v }
         o.on('--ignore=MODULES', Array,
-             'Resolve as if these modules were removed (globs on name or path;',
-             'comma-separated, repeatable), with or without --propose') { |v| accumulate(:ignore, v) }
-        o.on('--all-conflicts', 'With --propose or --ignore, show the unchanged rows too (marked blank)') { @options[:all_conflicts] = true }
+             'Resolve as if these modules were removed from the Puppetfile: a what-if, so their',
+             'dependents then miss them (globs on any spelling of the name, or the deploy path;',
+             'comma-separated, repeatable), with or without --propose. Not an exclusion:',
+             'modules.exclude_modules leaves a module out of every check instead') { |v| accumulate(:ignore, v) }
+        o.on('--changed-only', 'With --propose or --ignore, show only the rows the change introduces or resolves') { @options[:changed_only] = true }
+        o.on('--hide-resolved', 'With --propose or --ignore, drop the rows the change resolves (-)') { @options[:hide_resolved] = true }
 
         o.separator ''
         o.separator 'Row filters (comma-separated, repeatable; globs are case-insensitive). Hidden rows'
@@ -130,7 +137,7 @@ module Pupgrade
              'Drop dependency conflicts matching module, dependency, or module:dependency') { |v| exclude('dependencies', v) }
         o.on('--exclude-requirements=GLOBS', Array,
              'Drop Puppet-version conflicts matching the module or a module it disagrees with') { |v| exclude('requirements', v) }
-        o.on('--exclude-operatingsystems=GLOBS', Array,
+        o.on('--exclude-os=GLOBS', '--exclude-operatingsystems=GLOBS', Array,
              'Drop operating-system conflicts matching module, "OS release", or module:OS release') { |v| exclude('operatingsystems', v) }
 
         o.separator ''
@@ -157,7 +164,13 @@ module Pupgrade
       end
 
       def marked_row(r)
-        [CHANGE_MARK.fetch(r.mark)] + row(r.conflict)
+        [paint(CHANGE_MARK.fetch(r.mark), *MARK_STYLE.fetch(r.mark))] + row(r.conflict)
+      end
+
+      # Which marks the view drops: unchanged rows under --changed-only,
+      # resolved rows under --hide-resolved.
+      def hidden_mark?(mark)
+        (mark == :same && @options[:changed_only]) || (mark == :gone && @options[:hide_resolved])
       end
 
       # Rows by the sort columns, then the rest in default order; kinds
@@ -207,11 +220,13 @@ module Pupgrade
 
       # One table per changed Puppetfile entry, headed by what changed and
       # how many rows it introduces and resolves, the most introduced
-      # first. A row involving two changed entries appears under both.
+      # first. A row involving two changed entries appears under both;
+      # unchanged rows appear under none.
       def print_groups(rows, changes)
         by_name = changes.to_h { |c| [normalize(c.name), c] }
         groups  = Hash.new { |h, k| h[k] = [] }
-        rows.each do |r|
+        # an unchanged row is about no change, so it has no group
+        rows.reject { |r| r.mark == :same }.each do |r|
           involved = ([r.conflict.module] + r.conflict.parties).filter_map { |n| by_name[normalize(n)] }.uniq
           involved.empty? ? groups[OTHER_GROUP] << r : involved.each { |c| groups[c] << r }
         end
@@ -249,7 +264,7 @@ module Pupgrade
       # @param rows [Array<Row>] every change row, before the mark filter
       def proposal_summary(result, shown, rows)
         marks  = rows.group_by(&:mark).transform_values(&:size)
-        hidden = @options[:all_conflicts] ? '' : ' (hidden; --all-conflicts shows them)'
+        hidden = @options[:changed_only] ? ' (hidden)' : ''
         "check: the proposal leaves #{count_text(result, shown)}: #{marks.fetch(:new, 0)} introduced, " \
           "#{marks.fetch(:gone, 0)} resolved, #{marks.fetch(:same, 0)} unchanged#{hidden}; " \
           "#{result.excluded} excluded; #{puppet_text(result)}"
@@ -276,7 +291,7 @@ module Pupgrade
       def marked_count(rows)
         parts = COUNT_SIGN.filter_map do |mark, sign|
           n = rows.count { |r| r.mark == mark }
-          "#{sign}#{n}" if n.positive?
+          paint("#{sign}#{n}", *MARK_STYLE.fetch(mark)) if n.positive?
         end
         parts.empty? ? '0' : parts.join(' ')
       end
@@ -287,8 +302,8 @@ module Pupgrade
       end
 
       def shown?(conflict)
-        glob_any?(@options[:modules], conflict.module) &&
-          glob_any?(@options[:subjects], conflict.subject) &&
+        (Array(@options[:modules]).empty? || ::Pupgrade::ModuleName.any?(@options[:modules], conflict.module)) &&
+          (Array(@options[:subjects]).empty? || ::Pupgrade::ModuleName.any?(@options[:subjects], conflict.subject)) &&
           (Array(@options[:conflicts]).empty? || @options[:conflicts].include?(conflict.kind)) &&
           !Array(@options[:skip_conflicts]).include?(conflict.kind)
       end
@@ -314,7 +329,8 @@ module Pupgrade
         proposing = @options[:propose] || @options[:ignore]
         fatal!('check: --summary and --by-change are one or the other', help: true) if @options[:summary] && @options[:by_change]
         fatal!('check: --by-change needs --propose or --ignore', help: true) if @options[:by_change] && !proposing
-        fatal!('check: --all-conflicts needs --propose or --ignore', help: true) if @options[:all_conflicts] && !proposing
+        fatal!('check: --changed-only needs --propose or --ignore', help: true) if @options[:changed_only] && !proposing
+        fatal!('check: --hide-resolved needs --propose or --ignore', help: true) if @options[:hide_resolved] && !proposing
       end
 
       def accumulate(key, values)

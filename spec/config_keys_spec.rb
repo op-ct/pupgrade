@@ -5,6 +5,7 @@ require 'pupgrade/cli/check'
 require 'pupgrade/cli/compile'
 require 'pupgrade/cli/solve'
 require 'pupgrade/cli/impact'
+require 'pupgrade/cli/surface'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -26,16 +27,18 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.environment'              => Pupgrade::Compile::Session,
       'compile.manifest'                 => Pupgrade::Compile::Session,
       'compile.prepend_file'             => Pupgrade::Compile::Session,
-      'compile.stubs'                    => Pupgrade::Compile::Session,
+      'compile.mocks'                    => Pupgrade::Compile::Session,
+      'compile.default_mocks'            => Pupgrade::Compile::Session,
       'compile.on_leak'                  => Pupgrade::Compile::Session,
       'compile.vars'                     => Pupgrade::Compile::Session,
       'compile.server_facts'             => Pupgrade::Compile::Session,
       'solve.order'                      => Pupgrade::CLI::Solve,
       'solve.include_heads'              => Pupgrade::CLI::Solve,
-      'solve.evidence'                   => Pupgrade::CLI::Solve,
-      'impact.evidence'                  => Pupgrade::CLI::Impact,
+      'solve.evidence_dir'               => Pupgrade::CLI::Solve,
+      'impact.evidence_dir'              => Pupgrade::CLI::Impact,
+      'surface.cache_dir'                => Pupgrade::CLI::Surface,
     )
-    expect(described_class.subsystems.sort).to eq(%w[compile impact logging modules output solve])
+    expect(described_class.subsystems.sort).to eq(%w[compile impact logging modules output solve surface])
   end
 
   it 'keeps its registry apart from driftless\'s' do

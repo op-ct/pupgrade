@@ -6,6 +6,7 @@ require 'pupgrade/cli/table'
 require 'pupgrade/config_keys'
 require 'driftless/control_repo'
 require 'driftless/module_inventory'
+require 'pupgrade/module_proposal'
 require 'pupgrade/module_resolver'
 require 'pupgrade/solve/candidates'
 require 'pupgrade/solve/evidence'
@@ -31,11 +32,14 @@ module Pupgrade
                         'version forward to the first that fits, driven by --bump'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Whether the tip of a tag-pinned module\'s tracking branch (modules.branchfile) is a candidate'
-      config_key 'solve.evidence', type: :string, default: nil, example: 'pupgrade-catalogs',
+      config_key 'solve.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs',
                  about: 'A `compile` output directory whose probe records say what the site uses, relative to the ' \
-                        'control repo; needed by --prune-unused'
+                        'control repo; compile.output_dir when it exists and this is unset. Needed by --prune-unused'
 
       COLUMNS = %w[module current chosen candidates note].freeze
+
+      # How a note is coloured when stdout takes colour.
+      NOTE_STYLE = { held: [:red], unresolved: [:yellow], moved: [:green] }.freeze
 
       def execute(argv)
         reject_extra_args!(argv)
@@ -47,15 +51,15 @@ module Pupgrade
         inventory  = ::Driftless::ModuleInventory.new(repo.dir)
         candidates = ::Pupgrade::Solve::Candidates.new(repo.dir, branchfile: @options[:branchfile], include_heads: @options[:include_heads],
                                                                  fetch: @options[:fetch])
-        evidence   = @options[:evidence] && ::Pupgrade::Solve::Evidence.new(File.expand_path(@options[:evidence], repo.dir))
+        evidence   = evidence_dir(repo) && ::Pupgrade::Solve::Evidence.new(evidence_dir(repo))
         solver     = ::Pupgrade::Solve::Solver.new(operatingsystems: @options[:operatingsystems], requirements: @options[:requirements],
                                                    exclude: exclusions, order: @options[:order], bumps: @options[:bumps] || {},
                                                    holds: @options[:holds] || [], evidence: evidence, prune_unused: @options[:prune_unused])
-        entries = inventory.entries
+        entries = ::Pupgrade::ModuleProposal.new(inventory, nil, ignore: @options[:ignore] || []).entries
         plan    = solver.solve(entries, entries.to_h { |e| [e.path, candidates.for(e)] })
         log_warnings(inventory.warnings + candidates.warnings)
 
-        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? }
+        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? }
         print_table(COLUMNS, shown.map { |c| row(c) })
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
         write_puppetfile(plan) if @options[:output]
@@ -72,7 +76,11 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('-o', '--output=PUPPETFILE', 'Write the moved modules as a Puppetfile overlay for `check --propose`') { |v| @options[:output] = v }
-        o.on('--all', 'Show every module, not only those that move or are held') { @options[:all] = true }
+        o.on('--all', 'Show every module, not only those that move, are held, or are unresolved') { @options[:all] = true }
+        o.on('--ignore=MODULES', Array,
+             'Solve as if these modules were removed from the Puppetfile (globs on any spelling of the name,',
+             'or the deploy path; comma-separated, repeatable). Unlike modules.exclude_modules, which leaves a',
+             'module out of every check, this is a what-if: its dependents then miss it') { |v| accumulate(:ignore, v) }
 
         o.separator ''
         o.separator 'Candidates:'
@@ -85,22 +93,24 @@ module Pupgrade
 
         o.separator ''
         o.separator 'Pruning by what the site uses:'
-        o.on('--evidence=DIR', 'A `compile` output directory (config: solve.evidence)') { |v| @options[:evidence] = v }
+        o.on('--evidence=DIR', 'A `compile` output directory (config: solve.evidence_dir, else compile.output_dir)') { |v| @options[:evidence] = v }
         o.on('--prune-unused', 'Ignore dependency edges to modules the evidence shows unused') { @options[:prune_unused] = true }
         o.on('--exclusions=FILE', 'Write the pruned edges the result violates as modules.exclude_dependencies YAML') { |v| @options[:exclusions] = v }
 
         o.separator ''
         o.separator 'Modules are decided dependencies first, each at the first candidate in order that'
         o.separator 'satisfies its dependency ranges, the Puppet requirement, and the operating systems'
-        o.separator 'of interest against what is already decided. One with no fit is held at the candidate'
-        o.separator 'breaking the fewest, which the note names. Exits 1 when any module is held.'
+        o.separator 'of interest against what is already decided. One with no fit stops at the candidate'
+        o.separator 'breaking the fewest, which the note names: "held" when a newer candidate was blocked,'
+        o.separator '"unresolved" when every newer one breaks the same. Exits 1 when any module is held.'
       end
 
       private
 
       def row(choice)
         chosen = choice.chosen
-        note   = choice.held? ? "held: #{choice.violations.join('; ')}" : choice.note
+        note   = choice.violations.empty? ? choice.note : "#{choice.note}: #{choice.violations.join('; ')}"
+        note   = paint(note, *NOTE_STYLE.fetch(choice.held? ? :held : (choice.unresolved? ? :unresolved : :moved)))
         [choice.name, current_text(choice), chosen.current ? '(current)' : chosen.ref,
          (choice.candidates.size - 1).to_s, note]
       end
@@ -138,10 +148,20 @@ module Pupgrade
       def summary(plan, evidence)
         moved = plan.choices.count(&:moved?)
         held  = plan.choices.count(&:held?)
-        text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{held} held"
+        open  = plan.choices.count(&:unresolved?)
+        text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{held} held, #{open} unresolved"
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text
+      end
+
+      # --evidence, the configured directory, else compile's output directory
+      # when it is there.
+      def evidence_dir(repo)
+        return File.expand_path(@options[:evidence], repo.dir) if @options[:evidence]
+
+        default = File.expand_path(@options[:output_dir], repo.dir)
+        File.directory?(default) ? default : nil
       end
 
       def bump(text)
@@ -171,7 +191,8 @@ module Pupgrade
           branchfile:       cfg.dig('modules', 'branchfile'),
           order:            cfg.dig('solve', 'order') || 'newest',
           include_heads:    cfg.dig('solve', 'include_heads') || false,
-          evidence:         cfg.dig('solve', 'evidence'),
+          evidence:         cfg.dig('solve', 'evidence_dir'),
+          output_dir:       cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
           exclude:          {
             'modules'          => cfg.dig('modules', 'exclude_modules'),
             'dependencies'     => cfg.dig('modules', 'exclude_dependencies'),

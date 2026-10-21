@@ -2,6 +2,7 @@ require 'pupgrade/git_remote'
 require 'driftless/inputs/module_metadata'
 require 'driftless/inputs/puppetfile'
 require 'driftless/module_inventory'
+require 'pupgrade/module_name'
 
 module Pupgrade
   # The module inventory as a proposed Puppetfile would leave it: each of
@@ -97,13 +98,12 @@ module Pupgrade
       proposed.modules
     end
 
-    # Names compare with "/" and "-" as one, so `org/mod` and `org-mod` match
-    # each other; the path compares as written.
+    # A glob names the module by any spelling of its name ({ModuleName}),
+    # or matches its deploy path as written.
     def ignored?(entry)
-      names = [entry.metadata.name, entry.declared&.name].compact.map { |n| n.tr('/', '-') }
       @ignore.any? do |g|
         File.fnmatch?(g, entry.path, File::FNM_CASEFOLD) ||
-          names.any? { |n| File.fnmatch?(g.tr('/', '-'), n, File::FNM_CASEFOLD) }
+          ModuleName.match?(g, entry.metadata.name, entry.declared&.name, File.basename(entry.path))
       end
     end
 

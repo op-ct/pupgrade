@@ -1,3 +1,5 @@
+require 'fileutils'
+
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/config'
 require 'pupgrade/config'
@@ -20,7 +22,7 @@ module Pupgrade
 
         # Section order of the generated file; a subsystem not listed here
         # follows alphabetically.
-        SUBSYSTEM_ORDER = %w[compile modules solve impact output logging].freeze
+        SUBSYSTEM_ORDER = %w[compile surface modules solve impact output logging].freeze
 
         def execute(argv)
           @given = assignments(argv)
@@ -35,6 +37,7 @@ module Pupgrade
             fatal!("#{path} already exists (pass --force to overwrite)", 3)
           end
 
+          FileUtils.mkdir_p(File.dirname(path))
           File.write(path, render)
           puts "wrote #{path}"
           exit 0
@@ -44,7 +47,7 @@ module Pupgrade
 
         def configure_parser(o)
           o.on('-p', '--path=PATH',
-               'Write to PATH instead of ./pupgrade.yaml',
+               'Write to PATH instead of ./pupgrade/pupgrade.yaml (directories are created)',
                "('--' prints to STDOUT)") { |v| @options[:path] = v }
           o.on('--force', 'Overwrite an existing file') { @options[:force] = true }
           o.separator ''

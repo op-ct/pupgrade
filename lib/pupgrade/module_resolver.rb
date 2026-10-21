@@ -3,6 +3,8 @@ require 'semantic_puppet'
 require 'pupgrade/config_keys'
 require 'driftless/inputs/module_metadata'
 require 'driftless/module_inventory'
+require 'pupgrade/exclusions'
+require 'pupgrade/module_name'
 
 module Pupgrade
   # Checks a control repo's modules against each other's metadata: every
@@ -64,8 +66,10 @@ module Pupgrade
     #     normalized name: the dependency for a dependency row, the modules
     #     disagreed with for a Puppet-version row, none for an operating
     #     system row
-    Conflict = Data.define(:kind, :module, :subject, :detail, :parties) do
-      def initialize(parties: [], **rest)
+    # @!attribute [r] requirement
+    #   @return [String, nil] the version range a dependency row declares
+    Conflict = Data.define(:kind, :module, :subject, :detail, :parties, :requirement) do
+      def initialize(parties: [], requirement: nil, **rest)
         super
       end
     end
@@ -104,7 +108,7 @@ module Pupgrade
       warnings = []
       puppet_conflicts, puppet_range, suppressed = puppet(mods, warnings)
       conflicts = dependencies(mods, warnings) + puppet_conflicts + operatingsystems(mods)
-      kept, dropped = conflicts.partition { |c| !excluded?(c) }
+      kept, dropped = conflicts.partition { |c| !excluded?(c, warnings) }
       Result.new(conflicts: kept.sort_by { |c| [KINDS.index(c.kind), c.module, c.subject] },
                  excluded: dropped.size + suppressed, puppet_range: puppet_range, warnings: warnings)
     end
@@ -123,13 +127,13 @@ module Pupgrade
           found = by_name[normalize(dep)]
           if found.nil?
             Conflict.new(kind: 'missing-dependency', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
-                         detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath")
+                         requirement: requirement, detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath")
           else
             version = version_for(found, warnings)
             next if version.nil? || range.include?(version)
 
             Conflict.new(kind: 'dependency-version', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
-                         detail: "needs #{dep} #{requirement}; #{found.path} is #{found.metadata.version}")
+                         requirement: requirement, detail: "needs #{dep} #{requirement}; #{found.path} is #{found.metadata.version}")
           end
         end
       end
@@ -160,7 +164,7 @@ module Pupgrade
         next if name == SITE
 
         disagreeing = ranges.reject { |other| other.equal?(pair) || range.intersection(other.last) != EMPTY }
-        against     = disagreeing.reject { |other_name, _| matches?('requirements', other_name) }
+        against     = disagreeing.reject { |other_name, _| Exclusions.requirement?(@exclude['requirements'], other_name) }
         suppressed += 1 if against.empty? && disagreeing.any?
         next if against.empty?
 
@@ -220,18 +224,25 @@ module Pupgrade
       declared == wanted || wanted.start_with?("#{declared}.")
     end
 
-    def excluded?(conflict)
-      matches?(EXCLUDE_LIST.fetch(conflict.kind), conflict.module, conflict.subject, "#{conflict.module}:#{conflict.subject}")
+    # Whether the row is dropped by its kind's exclusion list; a stale
+    # dependency exclusion is warned about.
+    def excluded?(conflict, warnings)
+      globs = @exclude.fetch(EXCLUDE_LIST.fetch(conflict.kind), [])
+      case conflict.kind
+      when 'missing-dependency', 'dependency-version'
+        hit, stale = Exclusions.dependency?(globs, [conflict.module], [conflict.subject], conflict.requirement)
+        stale.each { |w| warnings << w unless warnings.include?(w) }
+        hit
+      when 'puppet-version'
+        Exclusions.requirement?(globs, conflict.module)
+      else
+        Exclusions.operatingsystem?(globs, [conflict.module], conflict.subject)
+      end
     end
 
-    # A module `exclude_modules` names, by either spelling of its name.
+    # A module `exclude_modules` names, by any spelling of its name.
     def excluded_module?(name)
-      matches?('modules', name, normalize(name))
-    end
-
-    # Whether any glob in the named exclusion list matches any candidate.
-    def matches?(list, *candidates)
-      @exclude.fetch(list, []).any? { |g| candidates.any? { |c| File.fnmatch?(g, c, File::FNM_CASEFOLD) } }
+      Exclusions.module?(@exclude['modules'], name)
     end
 
     # Forge names are "owner-module"; dependencies often write "owner/module".

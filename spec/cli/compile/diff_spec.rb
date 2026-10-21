@@ -30,7 +30,7 @@ RSpec.describe Pupgrade::CLI::Compile::Diff do
   after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll
 
   def compile_into(dir, certnames)
-    session = Pupgrade::Compile::Session.new(repo_dir: @fixture.dir, stubs: Pupgrade::Compile::Stubs.load(@fixture.stubs)).start
+    session = Pupgrade::Compile::Session.new(repo_dir: @fixture.dir, mocks: Pupgrade::Compile::Mocks.load(@fixture.mocks)).start
     Pupgrade::Compile::Factset.load_all([@fixture.factsets]).select { |f| certnames.include?(f.certname) }.each do |factset|
       result = session.compile(factset)
       raise result.error if result.error

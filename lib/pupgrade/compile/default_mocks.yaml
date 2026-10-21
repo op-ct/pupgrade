@@ -1,0 +1,22 @@
+---
+# Mocks pupgrade applies after the site's own, for the commands Puppet's
+# package providers run while they load (a compile loads the types it
+# declares resources of, and some types load their providers). Each answers
+# only on nodes of the operating systems that have the command; elsewhere
+# it fails the way a missing command does, with exit 127, which the
+# providers handle.
+commands:
+  # Puppet::Type.type(:package).provide(:rpm) and :tdnf, :yum, :dnf
+  - match: '(\A|/)rpm --version\z'
+    stdout: "RPM version 4.16.1.3\n"
+    when:
+      os.family: [RedHat, Suse, Mandrake]
+  - match: '(\A|/)rpm --version\z'
+    exit: 127
+  # Puppet::Type.type(:package).provide(:aptrpm)
+  - match: '(\A|/)rpm -ql rpm\z'
+    stdout: "/usr/bin/rpm\n"
+    when:
+      os.family: [RedHat, Suse, Mandrake]
+  - match: '(\A|/)rpm -ql rpm\z'
+    exit: 127

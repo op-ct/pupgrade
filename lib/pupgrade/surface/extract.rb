@@ -1,4 +1,5 @@
 require 'json'
+require 'open3'
 require 'tmpdir'
 require 'yaml'
 require 'puppet'
@@ -22,32 +23,71 @@ module Pupgrade
       module_function
 
       # @param dir [String] the module directory
+      # @param modulepath [Array<String>] see {#document}
       # @return [String] the document as JSON
-      def json(dir)
-        JSON.pretty_generate(document(dir)) + "\n"
+      def json(dir, modulepath = [])
+        JSON.pretty_generate(document(dir, modulepath: modulepath)) + "\n"
       end
 
       # @param dir [String] the module directory
+      # @param modulepath [Array<String>] directories whose modules the
+      #   module's Ruby may need: types its providers extend, libraries it
+      #   requires. The module's own parent directory is always first.
       # @return [Hash] the document; `errors` lists files that could not be read
-      def document(dir)
+      def document(dir, modulepath: [])
         dir = File.expand_path(dir)
         boot!
         errors = []
-        classes, defines = manifests(dir, errors)
-        {
-          'document'       => 'surface',
-          'schema_version' => SCHEMA_VERSION,
-          'puppet_version' => Puppet.version,
-          'module'         => module_info(dir),
+        within_environment(dir, modulepath) do |loaders|
+          classes, defines = manifests(dir, errors)
+          {
+            'document'       => 'surface',
+            'schema_version' => SCHEMA_VERSION,
+            'puppet_version' => Puppet.version,
+            'module'         => module_info(dir),
+            'source'         => source(dir),
           'classes'        => classes,
           'defined_types'  => defines,
-          'functions'      => puppet_functions(dir, errors).merge(ruby_functions(dir, errors), legacy_functions(dir, errors)).sort.to_h,
-          'type_aliases'   => type_aliases(dir, errors),
-          'types'          => types(dir, errors),
-          'providers'      => providers(dir, errors),
-          'facts'          => facts(dir, errors),
-          'errors'         => errors,
-        }
+            'functions'      => puppet_functions(dir, errors).merge(ruby_functions(dir, errors, loaders), legacy_functions(dir, errors)).sort.to_h,
+            'type_aliases'   => type_aliases(dir, errors),
+            'types'          => types(dir, errors),
+            'providers'      => providers(dir, errors),
+            'facts'          => facts(dir, errors),
+            'errors'         => errors,
+          }
+        end
+      end
+
+      # An environment whose modulepath starts with the module's own parent
+      # directory, so Puppet's autoloader and loaders see the module by name
+      # and the modules it depends on, and every module's lib on the load
+      # path for what its Ruby requires.
+      #
+      # @yieldparam loaders [Puppet::Pops::Loaders]
+      def within_environment(dir, modulepath)
+        dirs = ([File.dirname(dir)] + modulepath.map { |m| File.expand_path(m) }).uniq
+        dirs.each { |d| Dir.glob(File.join(d, '*', 'lib')).each { |lib| $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib) } }
+        env     = Puppet::Node::Environment.create(:pupgrade_surface, dirs)
+        loaders = Puppet::Pops::Loaders.new(env)
+        Puppet.override(environments: Puppet::Environments::Static.new(env), current_environment: env, loaders: loaders) do
+          yield loaders
+        end
+      end
+
+      # Where the module came from: its git commit and tag when it is a clone.
+      def source(dir)
+        return { 'dir' => dir } unless File.exist?(File.join(dir, '.git'))
+
+        sha = git(dir, 'rev-parse', 'HEAD')
+        tag = git(dir, 'describe', '--tags', '--exact-match', 'HEAD')
+        { 'dir' => dir, 'sha' => sha, 'ref' => tag }.compact
+      end
+
+      def git(dir, *args)
+        out, _err, status = Open3.capture3('git', '-C', dir, *args)
+        status.success? ? out.strip : nil
+      rescue Errno::ENOENT
+        nil
       end
 
       # Puppet's settings under a scratch directory, once per process.
@@ -154,17 +194,21 @@ module Pupgrade
 
       # ---- Ruby surfaces ----------------------------------------------------------
 
-      # 4.x functions: each file evaluates to its function class, whose
-      # dispatcher holds the signatures.
-      def ruby_functions(dir, errors)
-        found = {}
+      # 4.x functions: loaded through the module's own loader, which is what
+      # gives a function its local types; a file the loader does not know
+      # by its path is evaluated directly instead.
+      def ruby_functions(dir, errors, loaders)
+        found  = {}
+        loader = module_loader(loaders, dir)
         Dir.glob(File.join(dir, 'lib/puppet/functions/**/*.rb')).sort.each do |path|
           rel = relative(path, dir)
           begin
-            klass = Object.class_eval(File.read(path), path, 1)
+            name = name_from_path(rel, 'lib/puppet/functions/')
+            func = loader&.load(:function, name)
+            klass = func ? func.class : Object.class_eval(File.read(path), path, 1)
             raise "did not define a function (#{klass.class})" unless klass.is_a?(Class) && klass < Puppet::Functions::Function
 
-            name = (klass.respond_to?(:name) && klass.name.is_a?(String)) ? klass.name : name_from_path(rel, 'lib/puppet/functions/')
+            name = klass.name if klass.respond_to?(:name) && klass.name.is_a?(String)
             found[name] = {
               'kind'       => 'ruby4x',
               'file'       => rel,
@@ -175,6 +219,13 @@ module Pupgrade
           end
         end
         found
+      end
+
+      # @return [Puppet::Pops::Loader::Loader, nil] the module's private loader
+      def module_loader(loaders, dir)
+        loaders.private_loader_for_module(File.basename(dir))
+      rescue StandardError
+        nil
       end
 
       def signature(dispatch)
@@ -260,19 +311,24 @@ module Pupgrade
             type = Puppet::Type.type(type_name)
             raise "type #{type_name} is not loadable here" unless type
 
+            before = type.providers
             load path
-            klass = type.provider(name)
-            raise "did not define provider #{name} for #{type_name}" unless klass
+            defined = type.providers - before
+            defined = [name.to_sym] if defined.empty? && type.provider(name)
+            raise "did not define a provider for #{type_name}" if defined.empty?
 
-            found["#{type_name}/#{name}"] = {
-              'type'     => type_name,
-              'name'     => name,
-              'file'     => rel,
-              'confines' => confines(klass),
-              'commands' => (klass.instance_variable_get(:@commands) || {}).keys.map(&:to_s).sort,
-              'defaults' => Array(klass.instance_variable_get(:@defaults)).map { |h| h.to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] } },
-              'features' => Array(klass.instance_variable_get(:@declared_features)).map(&:to_s).sort,
-            }
+            defined.each do |provider|
+              klass = type.provider(provider)
+              found["#{type_name}/#{provider}"] = {
+                'type'     => type_name,
+                'name'     => provider.to_s,
+                'file'     => rel,
+                'confines' => confines(klass),
+                'commands' => (klass.instance_variable_get(:@commands) || {}).keys.map(&:to_s).sort,
+                'defaults' => Array(klass.instance_variable_get(:@defaults)).map { |h| h.to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] } },
+                'features' => Array(klass.instance_variable_get(:@declared_features)).map(&:to_s).sort,
+              }
+            end
           rescue StandardError, ScriptError => e
             errors << "#{rel}: #{e.class}: #{e.message.lines.first.to_s.strip}"
           end

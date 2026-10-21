@@ -2,6 +2,8 @@ require 'semantic_puppet'
 
 require 'driftless/inputs/module_metadata'
 require 'driftless/module_inventory'
+require 'pupgrade/exclusions'
+require 'pupgrade/module_name'
 require 'pupgrade/module_resolver'
 require 'pupgrade/solve/candidates'
 
@@ -28,14 +30,21 @@ module Pupgrade
       #   @return [Array<String>] the constraints the choice breaks
       # @!attribute [r] note
       #   @return [String] why this candidate: "newest", "first fit", "current",
-      #     "bumped", "held", or an {Candidates::Unsolvable} reason
+      #     "bumped"; "held" when a newer candidate was blocked by the
+      #     violations; "unresolved" when every candidate at least as new
+      #     breaks the same constraints, so the choice went as far as it could
       Choice = Data.define(:entry, :candidates, :chosen, :violations, :note) do
         def moved?
           !chosen.current
         end
 
+        # A better candidate was blocked: what the exit status reports.
         def held?
-          !violations.empty?
+          note == 'held'
+        end
+
+        def unresolved?
+          note.start_with?('unresolved')
         end
 
         def name
@@ -75,8 +84,8 @@ module Pupgrade
         @exclude   = (exclude || {}).to_h { |list, globs| [list.to_s, Array(globs).map(&:to_s)] }
         @site      = ModuleResolver.new(requirements: requirements).instance_variable_get(:@site_range)
         @order     = order
-        @bumps     = bumps.to_h { |k, v| [normalize(k), v] }
-        @holds     = holds.map { |h| normalize(h) }
+        @bumps     = bumps.to_h { |k, v| [k.to_s, v] }
+        @holds     = holds.map(&:to_s)
         @evidence  = evidence
         @prune     = prune_unused
       end
@@ -107,8 +116,9 @@ module Pupgrade
         if list.is_a?(Candidates::Unsolvable)
           current = Candidates::Candidate.new(ref: entry.declared&.ref.to_s, ref_type: entry.declared&.ref_type || 'ref',
                                               version: parse(entry.metadata.version), metadata: entry.metadata, current: true)
-          return Choice.new(entry: entry, candidates: [current], chosen: current, note: list.reason,
-                            violations: violations(entry, current, by_name, decided))
+          broken  = violations(entry, current, by_name, decided)
+          return Choice.new(entry: entry, candidates: [current], chosen: current, violations: broken,
+                            note: broken.empty? ? list.reason : "unresolved (#{list.reason})")
         end
 
         considered = ordered_candidates(entry, list, name)
@@ -119,19 +129,22 @@ module Pupgrade
           return Choice.new(entry: entry, candidates: list, chosen: fit.first, violations: [], note: note)
         end
 
-        # Among equally broken candidates, staying put beats moving.
+        # Among equally broken candidates, staying put beats moving. The
+        # choice is held when a newer candidate exists that the violations
+        # kept it from; unresolved when it is the newest there is.
         best = scored.min_by.with_index { |(c, v), i| [v.size, c.current ? 0 : 1, i] }
-        Choice.new(entry: entry, candidates: list, chosen: best.first, violations: best.last, note: 'held')
+        newer = list.any? { |c| c.version && best.first.version && c.version > best.first.version }
+        Choice.new(entry: entry, candidates: list, chosen: best.first, violations: best.last, note: newer ? 'held' : 'unresolved')
       end
 
       # The candidates in the order they are tried: newest first, or from the
       # current version forward; a bump narrows them to its ref or the
       # newest; a hold to the current one.
       def ordered_candidates(_entry, list, name)
-        return list.select(&:current) if @holds.include?(name)
+        return list.select(&:current) if held_by_hand?(name)
 
-        if @bumps.key?(name)
-          target = @bumps[name]
+        if (bump = bump_for(name))
+          target = bump.last
           return [list.max_by { |c| [c.version || SemanticPuppet::Version.parse('0.0.0'), c.current ? 0 : 1] }] if target.nil?
 
           wanted = list.find { |c| [target, "v#{target}"].include?(c.ref) || c.version.to_s == target.sub(/\Av/, '') }
@@ -140,9 +153,19 @@ module Pupgrade
         (@order == 'newest') ? list.reverse : list
       end
 
+      # --hold and --bump name modules by any spelling.
+      def held_by_hand?(name)
+        ModuleName.any?(@holds, name)
+      end
+
+      # @return [Array(String, String|nil), nil] the bump glob and its ref
+      def bump_for(name)
+        @bumps.find { |glob, _| ModuleName.match?(glob, name) }
+      end
+
       def note_for(_entry, chosen, name, considered)
-        return 'held at current' if @holds.include?(name)
-        return 'bumped' if @bumps.key?(name)
+        return 'held at current' if held_by_hand?(name)
+        return 'bumped' if bump_for(name)
         return 'current' if chosen.current
 
         (chosen.equal?(considered.first) && @order == 'newest') ? 'newest' : 'first fit'
@@ -155,10 +178,11 @@ module Pupgrade
         out = []
         metadata.dependencies.each do |dep, requirement|
           dep_name = normalize(dep)
-          next if excluded_module?(dep) || excluded?('dependencies', entry.metadata.name, dep, "#{entry.metadata.name}:#{dep}")
-          next if @prune && !used?(by_name[dep_name])
-
           target = by_name[dep_name]
+          next if excluded_module?(dep) || Exclusions.dependency?(@exclude['dependencies'], [entry.metadata.name], [dep], requirement).first
+          # a module nobody deployed is used by nobody
+          next if @prune && (target.nil? || !used?(target))
+
           if target.nil?
             out << "needs #{dep} #{requirement || '(any version)'}; not on the modulepath"
             next
@@ -170,7 +194,7 @@ module Pupgrade
           out << "needs #{dep} #{requirement}; #{target.path} would be #{version}"
         end
         puppet = puppet_range(metadata)
-        if puppet && @site && puppet.intersection(@site) == ModuleResolver::EMPTY && !excluded?('requirements', entry.metadata.name)
+        if puppet && @site && puppet.intersection(@site) == ModuleResolver::EMPTY && !Exclusions.requirement?(@exclude['requirements'], entry.metadata.name)
           out << "requires puppet #{puppet}; the control repo requires #{@site}"
         end
         out.concat(os_violations(entry, metadata))
@@ -185,7 +209,7 @@ module Pupgrade
           declared = support.find { |n, _| n.casecmp?(os) }&.last
           (releases.empty? ? [nil] : releases).filter_map { |release|
             subject = [os, release].compact.join(' ')
-            next if excluded?('operatingsystems', entry.metadata.name, subject, "#{entry.metadata.name}:#{subject}")
+            next if Exclusions.operatingsystem?(@exclude['operatingsystems'], [entry.metadata.name], subject)
 
             if declared.nil?
               "missing #{os}"
@@ -267,15 +291,7 @@ module Pupgrade
       end
 
       def excluded_module?(name)
-        matches?('modules', name, normalize(name))
-      end
-
-      def excluded?(list, *candidates)
-        matches?(list, *candidates)
-      end
-
-      def matches?(list, *candidates)
-        @exclude.fetch(list, []).any? { |g| candidates.any? { |c| File.fnmatch?(g, c, File::FNM_CASEFOLD) } }
+        Exclusions.module?(@exclude['modules'], name)
       end
 
       def normalize(name)

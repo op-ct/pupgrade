@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
   spec.license = 'Apache-2.0'
   spec.required_ruby_version = ['>= 3.2', '< 4.0']
 
-  spec.files         = Dir['lib/**/*.rb', 'bin/*']
+  spec.files         = Dir['lib/**/*.{rb,yaml}', 'bin/*']
   spec.bindir        = 'bin'
   spec.executables   = ['pupgrade']
   spec.require_paths = ['lib']

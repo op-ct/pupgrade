@@ -81,9 +81,9 @@ module Pupgrade
     #   @return [String] pupgrade.yaml
     # @!attribute [r] factsets
     #   @return [String] the factsets directory
-    # @!attribute [r] stubs
-    #   @return [String] pupgrade-stubs.yaml
-    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :stubs)
+    # @!attribute [r] mocks
+    #   @return [String] pupgrade/mocks.yaml
+    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :mocks)
 
     OS_EL_OLD = { 'RedHat' => %w[7 8], 'CentOS' => %w[7], 'Ubuntu' => %w[18.04 20.04], 'Debian' => %w[10 11] }.freeze
     OS_EL     = { 'RedHat' => %w[8 9], 'Rocky' => %w[8 9], 'Ubuntu' => %w[20.04 22.04], 'Debian' => %w[11 12] }.freeze
@@ -368,12 +368,12 @@ module Pupgrade
       },
     }.freeze
 
-    # The stub file the fixture ships, answering what its code runs.
-    STUBS = <<~YAML.freeze
+    # The mock file the fixture ships, answering what its code runs.
+    MOCKS = <<~YAML.freeze
       ---
       commands:
         - match: '^hostname'
-          stdout: "stubbed.example.com\\n"
+          stdout: "mocked.example.com\\n"
       facts:
         simplib_fips: false
     YAML
@@ -439,9 +439,10 @@ module Pupgrade
       end
       File.write(puppetfile_path, puppetfile(CATALOGUE.to_h { |m| [m.name, m.deployed] }))
       File.write(proposed_path, puppetfile(CATALOGUE.to_h { |m| [m.name, PROPOSED.fetch(m.name, m.deployed)] }))
+      FileUtils.mkdir_p(File.dirname(config_path))
       File.write(config_path, CONFIG)
       Result.new(dir: @dir, remotes_dir: @remotes, puppetfile: puppetfile_path, proposed: proposed_path, config: config_path,
-                 factsets: File.join(@dir, 'factsets'), stubs: File.join(@dir, 'pupgrade-stubs.yaml'))
+                 factsets: File.join(@dir, 'factsets'), mocks: File.join(@dir, 'pupgrade/mocks.yaml'))
     end
 
     private
@@ -455,7 +456,7 @@ module Pupgrade
     end
 
     def config_path
-      File.join(@dir, 'pupgrade.yaml')
+      File.join(@dir, 'pupgrade/pupgrade.yaml')
     end
 
     def remote_url(mod)
@@ -517,7 +518,8 @@ module Pupgrade
       PP
       FileUtils.mkdir_p(File.join(@dir, 'factsets'))
       FACTSETS.each { |name, data| File.write(File.join(@dir, 'factsets', name), JSON.pretty_generate(data) + "\n") }
-      File.write(File.join(@dir, 'pupgrade-stubs.yaml'), STUBS)
+      FileUtils.mkdir_p(File.join(@dir, 'pupgrade'))
+      File.write(File.join(@dir, 'pupgrade/mocks.yaml'), MOCKS)
     end
 
     # One Puppetfile text: git modules at the given versions, Forge modules

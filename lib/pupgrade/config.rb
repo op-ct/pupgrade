@@ -9,6 +9,9 @@ module Pupgrade
     SYSTEM_PATH      = '/etc/puppetlabs/pupgrade/config.yaml'.freeze
     PROJECT_FILENAME = 'pupgrade.yaml'.freeze
 
+    # Where a project keeps pupgrade's files: its config, mocks, and cache.
+    PROJECT_DIR = 'pupgrade'.freeze
+
     # @return [Array<String>] absolute paths in load order
     def self.search_chain
       [SYSTEM_PATH, user_path, project_path]
@@ -22,9 +25,17 @@ module Pupgrade
       File.join(base, 'pupgrade', 'config.yaml')
     end
 
-    # @return [String] pupgrade.yaml in the current directory
+    # The project config: `pupgrade/pupgrade.yaml`, or `pupgrade.yaml` in
+    # the current directory; one or the other, not both.
+    #
+    # @return [String] the one that exists, else `pupgrade/pupgrade.yaml`
+    # @raise [ConfigLoadError] when both exist
     def self.project_path
-      File.join(Dir.pwd, PROJECT_FILENAME)
+      candidates = [File.join(Dir.pwd, PROJECT_DIR, PROJECT_FILENAME), File.join(Dir.pwd, PROJECT_FILENAME)]
+      present = candidates.select { |p| File.file?(p) }
+      raise ConfigLoadError, "both #{candidates.join(' and ')} exist; keep one" if present.size > 1
+
+      present.first || candidates.first
     end
   end
 

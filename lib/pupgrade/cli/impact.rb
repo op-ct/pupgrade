@@ -32,7 +32,7 @@ module Pupgrade
       register_command name: 'impact', subcommand_of: Root
       desc 'What a proposed Puppetfile would change for the site: surface changes mapped to their uses'
 
-      config_key 'impact.evidence', type: :string, default: nil, example: 'pupgrade-catalogs',
+      config_key 'impact.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs',
                  about: 'A `compile` output directory whose probes and catalogs say what each node uses, relative to ' \
                         'the control repo; compile.output_dir when it exists and this is unset'
 
@@ -88,7 +88,7 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('--propose=PUPPETFILE', 'The proposed Puppetfile (what `solve -o` wrote, or an overlay of your own)') { |v| @options[:propose] = v }
-        o.on('--evidence=DIR', 'A `compile` output directory (config: impact.evidence, else compile.output_dir)') { |v| @options[:evidence] = v }
+        o.on('--evidence=DIR', 'A `compile` output directory (config: impact.evidence_dir, else compile.output_dir)') { |v| @options[:evidence] = v }
         o.on('--no-evidence', 'Map nothing to nodes; every change is a finding with its use unknown') { @options[:no_evidence] = true }
 
         o.separator ''
@@ -229,8 +229,8 @@ module Pupgrade
       def config_defaults
         cfg = ::Pupgrade.config
         {
-          evidence:   cfg.dig('impact', 'evidence'),
-          output_dir: cfg.dig('compile', 'output_dir') || 'pupgrade-catalogs',
+          evidence:   cfg.dig('impact', 'evidence_dir'),
+          output_dir: cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
         }.compact
       end
     end

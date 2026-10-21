@@ -8,7 +8,7 @@ require 'pupgrade/compile/catalog_document'
 require 'pupgrade/compile/factset'
 require 'pupgrade/compile/module_index'
 require 'pupgrade/compile/probes'
-require 'pupgrade/compile/stubs'
+require 'pupgrade/compile/mocks'
 
 module Pupgrade
   module Compile
@@ -26,11 +26,14 @@ module Pupgrade
       config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
                  about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
                         'relative to the control repo'
-      config_key 'compile.stubs', type: :string, default: nil, example: 'pupgrade-stubs.yaml',
-                 about: 'A stub file answering commands and facts module code asks for during a compile, ' \
+      config_key 'compile.mocks', type: :string, default: nil, example: 'pupgrade/mocks.yaml',
+                 about: 'A mock file answering commands and facts module code asks for during a compile, ' \
                         'relative to the control repo'
+      config_key 'compile.default_mocks', type: :boolean, default: true,
+                 about: 'Whether pupgrade\'s own mocks for the probes package providers make while loading ' \
+                        'apply after the mock file'
       config_key 'compile.on_leak', type: :string, default: 'raise',
-                 about: 'What happens to a command the stubs do not answer: raise (stop that node\'s compile) ' \
+                 about: 'What happens to a command the mocks do not answer: raise (stop that node\'s compile) ' \
                         'or allow (run it, and record it)'
       config_key 'compile.vars', type: :hash, default: nil, example: { 'role' => 'web' },
                  about: 'Top-scope variables set before the manifest, as an ENC would'
@@ -71,10 +74,10 @@ module Pupgrade
       # @param prepend [String, nil] Puppet code evaluated before the manifest
       # @param vars [Hash{String => Object}] top-scope variables
       # @param server_facts [Hash{String => Object}]
-      # @param stubs [Stubs]
+      # @param mocks [Mocks]
       # @param on_leak [String] one of {ON_LEAK}
       def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {},
-                     server_facts: {}, stubs: Stubs.empty, on_leak: 'raise')
+                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise')
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
         raise Error, 'give code or prepend, not both' if code && prepend
         raise Error, "environment name #{environment.inspect} must be lowercase letters, digits, and underscores" unless environment.match?(/\A[a-z0-9_]+\z/)
@@ -86,7 +89,7 @@ module Pupgrade
         @prepend      = prepend
         @vars         = vars.to_h { |k, v| [k.to_s, v] }
         @server_facts = DEFAULT_SERVER_FACTS.merge(server_facts.to_h { |k, v| [k.to_s, v] })
-        @stubs        = stubs
+        @mocks        = mocks
         @on_leak      = on_leak
       end
 
@@ -121,7 +124,7 @@ module Pupgrade
       # @return [Result]
       def compile(factset)
         started  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        recorder = Recorder.new(factset: factset, stubs: @stubs, on_leak: @on_leak, repo_dir: @repo_dir)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir)
         catalog  = nil
         error    = nil
         Probes.current = recorder

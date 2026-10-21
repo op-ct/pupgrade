@@ -44,6 +44,7 @@ RSpec.describe Pupgrade::Surface do
         'action' => { 'kind' => 'param' },
         'ensure' => { 'kind' => 'property', 'values' => %w[present absent] },
         'name'   => { 'kind' => 'param', 'required' => true },
+        'provider' => { 'kind' => 'param' },
       },
     )
     expect(doc['providers']['firewall/iptables']).to eq(
@@ -58,6 +59,23 @@ RSpec.describe Pupgrade::Surface do
     simplib = described_class.extract(File.join(fixture.dir, 'modules/simplib'))
     expect(concat['defined_types']).to eq('concat::fragment' => { 'file' => 'manifests/fragment.pp', 'params' => { 'content' => { 'type' => 'String' } } })
     expect(simplib['facts']).to eq('simplib_fips' => { 'file' => 'lib/facter/simplib_fips.rb', 'kind' => 'custom' })
+  end
+
+  it 'reads a provider for a type another module ships, given the modulepath' do
+    base = File.join(@tmp, 'mp')
+    FileUtils.mkdir_p(File.join(base, 'core/lib/puppet/type'))
+    FileUtils.mkdir_p(File.join(base, 'core/lib/puppet_x/core'))
+    FileUtils.mkdir_p(File.join(base, 'ext/lib/puppet/provider/widget'))
+    File.write(File.join(base, 'core/metadata.json'), '{"name": "x-core", "version": "1.0.0"}')
+    File.write(File.join(base, 'core/lib/puppet/type/widget.rb'), "Puppet::Type.newtype(:widget) do\n  newparam(:name, namevar: true)\nend\n")
+    File.write(File.join(base, 'core/lib/puppet_x/core/helper.rb'), "module PuppetX; module Core; module Helper; end; end; end\n")
+    File.write(File.join(base, 'ext/metadata.json'), '{"name": "x-ext", "version": "1.0.0"}')
+    File.write(File.join(base, 'ext/lib/puppet/provider/widget/shiny.rb'),
+               "require 'puppet_x/core/helper'\nPuppet::Type.type(:widget).provide(:shiny) do\n  include PuppetX::Core::Helper\nend\n")
+    doc = described_class.extract(File.join(base, 'ext'), modulepath: [base])
+    expect(doc['errors']).to eq([])
+    expect(doc['providers'].keys).to eq(['widget/shiny'])
+    expect(doc['source']).to eq('dir' => File.join(base, 'ext'))
   end
 
   it 'lists a file that fails to load under errors and reads the rest' do

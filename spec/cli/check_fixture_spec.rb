@@ -45,17 +45,21 @@ RSpec.describe Pupgrade::CLI::Check do
     Pupgrade.instance_variable_set(:@config, original)
   end
 
-  it 'shows only what the proposal introduces and resolves, and says what it hides' do
+  it 'shows every row with its mark, narrows to the changed ones on request, and counts them' do
     log = capture_log(level: Logger::INFO) do
       status, out = run([])
       expect(status).to eq(1)
-      marks = cells(out).drop(1).map(&:first).tally
-      expect(marks).to eq('+' => 30, '-' => 12)
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '-' => 12, '' => 58)
     end
-    expect(log).to include('30 introduced, 12 resolved, 58 unchanged (hidden; --all-conflicts shows them)')
+    expect(log).to include('30 introduced, 12 resolved, 58 unchanged;')
 
-    _, out = run(['--all-conflicts'])
-    expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '-' => 12, '' => 58)
+    log = capture_log(level: Logger::INFO) do
+      _, out = run(['--changed-only'])
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '-' => 12)
+    end
+    expect(log).to include('58 unchanged (hidden)')
+    _, out = run(['--hide-resolved'])
+    expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '' => 58)
   end
 
   it 'summarises introduced and resolved rows per module' do
@@ -63,8 +67,9 @@ RSpec.describe Pupgrade::CLI::Check do
     rows = cells(out)
     expect(rows.first).to eq(%w[module missing-dependency dependency-version puppet-version operatingsystem total])
     expect(rows.assoc('puppetlabs-tomcat')).to eq(['puppetlabs-tomcat', '0', '-2', '0', '0', '-2'])
-    expect(rows.assoc('puppet-nginx')).to eq(['puppet-nginx', '0', '+2', '0', '0', '+2'])
-    expect(rows.none? { |r| r.include?('=') }).to be true
+    expect(rows.assoc('puppet-nginx')).to eq(['puppet-nginx', '0', '+2', '0', '=2', '+2 =2'])
+    _, out = run(['--summary', '--changed-only'])
+    expect(cells(out).assoc('puppet-nginx')).to eq(['puppet-nginx', '0', '+2', '0', '0', '+2'])
   end
 
   it 'groups by the changed entry, stdlib first, and names what moved' do
@@ -74,7 +79,7 @@ RSpec.describe Pupgrade::CLI::Check do
     expect(headings.map { |h| h[/\A\S+/] }).to eq(%w[puppetlabs-stdlib puppetlabs-concat puppetlabs-puppetdb puppetlabs-apache puppetlabs-postgresql puppetlabs-apt])
     expect(headings).not_to include(a_string_starting_with('(no changed entry'))
     # every introduced and resolved row lands in at least one group
-    all_rows = cells(run([]).last).drop(1)
+    all_rows = cells(run(['--changed-only']).last).drop(1)
     grouped  = cells(out).reject { |r| r.size < 2 }.reject { |r| r.first == 'change' }
     expect(grouped.uniq.size).to eq(all_rows.size)
   end

@@ -24,8 +24,9 @@ module Pupgrade
           fatal!('module gitlog: give a ref or --branch, not both', help: true) if ref && @options[:branch]
           repo = control_repo!('module gitlog')
           entry, clone = git_module!('module gitlog', repo, selector)
-          ref ||= @options[:branch] || branch_from_file(repo, entry)
-          record_branch(repo, entry) if @options[:branch] && @options[:branchfile_given]
+          branch = @options[:branch] && pick_branch(clone, @options[:branch])
+          ref ||= branch || branch_from_file(repo, entry)
+          record_branch(repo, entry, branch) if branch && @options[:branchfile]
 
           if @options[:fetch]
             fatal!("module gitlog: fetch from #{clone.remote || 'origin'} failed", 3) unless clone.fetch
@@ -36,10 +37,12 @@ module Pupgrade
           args << '--date=format:%Y-%m-%d %H:%M:%S' if @options[:date]
           args.push('-n', @options[:count].to_s) if @options[:count]
           args << '--name-status' if @options[:name_status]
+          args << '--simplify-by-decoration' if @options[:tags_only]
           args << range_for(clone, ref)
           out = clone.log(*args)
           fatal!("module gitlog: git log failed in #{entry.path}", 3) if out.nil?
 
+          out = tagged_lines(out, ref) if @options[:tags_only]
           puts out unless out.empty?
           ::Pupgrade.logger.info("module gitlog: #{entry.path} at #{clone.tag_at_head || clone.branch_at_head || clone.sha&.slice(0, 12)}")
           exit 0
@@ -57,11 +60,14 @@ module Pupgrade
           o.on('-f', '--name-status', 'List the files each commit changed') { @options[:name_status] = true }
           o.on('--[no-]date', 'Show each commit\'s date after its hash (default: on)') { |v| @options[:date] = v }
           o.on('--fetch', 'Fetch origin first, so a branch or tag the clone has not seen shows') { @options[:fetch] = true }
-          o.on('--branch=BRANCH', 'Follow BRANCH, as <ref> would; with --branchfile, record it there') { |v| @options[:branch] = v }
+          o.on('--branch=BRANCHES', Array, 'Follow the first of these branches the clone has, as <ref> would;',
+               'with a branchfile (flag or config), record it there') { |v| @options[:branch] = v }
+          o.on('-t', '--tags-only', 'Show only tagged commits (and the branch tip with --include-heads)') { @options[:tags_only] = true }
+          o.on('--include-heads', 'With --tags-only, keep the tip of the ref as well') { @options[:include_heads] = true }
           o.on('--branchfile=FILE',
                'Without <ref> or --branch, follow the branch FILE names for the module:',
                'YAML of module to branch, or a Puppetfile overlay of mod entries with',
-               ':branch (default: modules.branchfile in pupgrade.yaml, read only)') do |v|
+               ':branch (default: modules.branchfile in pupgrade.yaml)') do |v|
             @options[:branchfile]       = v
             @options[:branchfile_given] = true
           end
@@ -99,13 +105,31 @@ module Pupgrade
           branch
         end
 
-        # Writes --branch for the module into the branchfile given on the
-        # command line, under the Puppetfile's name for it.
-        def record_branch(repo, entry)
+        # The first of the branches the clone knows, as origin/<branch> or
+        # as given.
+        def pick_branch(clone, branches)
+          found = branches.find { |b| clone.resolve("origin/#{b}") || clone.resolve(b) }
+          fatal!("module gitlog: none of #{branches.join(', ')} is a branch the clone knows (try --fetch)", 3) unless found
+          found
+        end
+
+        # Only the lines of tagged commits, and the tip's line with
+        # --include-heads.
+        def tagged_lines(out, ref)
+          lines = out.lines
+          kept  = lines.select { |l| l.match?(/\(.*tag: /) }
+          kept.unshift(lines.first) if @options[:include_heads] && ref && lines.first && !kept.include?(lines.first)
+          kept.join
+        end
+
+        # Writes the branch for the module into the branchfile, the one on
+        # the command line or the configured one, under the Puppetfile's
+        # name for it.
+        def record_branch(repo, entry, branch)
           path = File.expand_path(@options[:branchfile], repo.dir)
           name = entry.declared&.name || entry.metadata.name || File.basename(entry.path)
-          ::Pupgrade::Inputs::Branchfile.record(path, name, @options[:branch])
-          ::Pupgrade.logger.info("module gitlog: recorded #{name}: #{@options[:branch]} in #{path}")
+          ::Pupgrade::Inputs::Branchfile.record(path, name, branch)
+          ::Pupgrade.logger.info("module gitlog: recorded #{name}: #{branch} in #{path}")
         rescue ::Pupgrade::Inputs::Branchfile::Error => e
           fatal!("module gitlog: branchfile #{e.message}", 3)
         end

@@ -157,7 +157,7 @@ RSpec.describe Pupgrade::CLI::Check do
   it 'resolves as if ignored modules were removed, with or without a proposal' do
     Dir.mktmpdir do |dir|
       control_repo(dir)
-      status, out = run(['--no-config', '-d', dir, '--ignore', 'PUPPETLABS/STDLIB'])
+      status, out = run(['--no-config', '-d', dir, '--ignore', 'PUPPETLABS/STDLIB', '--changed-only'])
       expect(status).to eq(1)
       expect(cells(out).map { |r| r.first(4) }).to eq([
         %w[change conflict module subject],
@@ -166,10 +166,12 @@ RSpec.describe Pupgrade::CLI::Check do
         ['-', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib'],
         ['-', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib'],
       ])
-      status, out = run(['--no-config', '-d', dir, '--ignore', 'PUPPETLABS/STDLIB', '--all-conflicts'])
+      status, out = run(['--no-config', '-d', dir, '--ignore', 'PUPPETLABS/STDLIB'])
       expect(status).to eq(1)
       expect(cells(out).map { |r| r.first(4) }[2]).to eq(['', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat'])
       expect(cells(out).size).to eq(6)
+      _, out = run(['--no-config', '-d', dir, '--ignore', 'stdlib', '--hide-resolved'])
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 2, '' => 1)
 
       proposed = File.join(dir, 'Puppetfile.new')
       File.write(proposed, "mod 'puppetlabs-concat', '9.0.0'\n")
@@ -224,13 +226,13 @@ RSpec.describe Pupgrade::CLI::Check do
       ])
       _, out = run(['--no-config', '-d', dir, '--summary', '--skip-conflicts', 'dependency-version'])
       expect(cells(out).map(&:first)).to eq(%w[module puppetlabs-apache])
-      _, out = run(['--no-config', '-d', dir, '--summary', '--ignore', 'puppetlabs/stdlib'])
+      _, out = run(['--no-config', '-d', dir, '--summary', '--ignore', 'puppetlabs/stdlib', '--changed-only'])
       expect(cells(out).map { |r| [r[0], r[1], r[2], r[5]] }).to eq([
         %w[module missing-dependency dependency-version total],
         ['org-nginx', '+1', '-1', '+1 -1'],
         ['puppetlabs-apache', '+1', '-1', '+1 -1'],
       ])
-      _, out = run(['--no-config', '-d', dir, '--summary', '--ignore', 'puppetlabs/stdlib', '--all-conflicts'])
+      _, out = run(['--no-config', '-d', dir, '--summary', '--ignore', 'puppetlabs/stdlib'])
       expect(cells(out).last).to eq(['puppetlabs-apache', '+1 =1', '-1', '0', '0', '+1 -1 =1'])
     end
   end
@@ -263,7 +265,8 @@ RSpec.describe Pupgrade::CLI::Check do
       expect(cells(out).drop(1).map { |r| r.first(3) }).to eq([%w[change conflict module], ['-', 'dependency-version', 'org-nginx']])
 
       expect(run(['--no-config', '-d', dir, '--by-change']).first).to eq(2)
-      expect(run(['--no-config', '-d', dir, '--all-conflicts']).first).to eq(2)
+      expect(run(['--no-config', '-d', dir, '--changed-only']).first).to eq(2)
+      expect(run(['--no-config', '-d', dir, '--hide-resolved']).first).to eq(2)
       expect(run(['--no-config', '-d', dir, '--propose', proposed, '--by-change', '--summary']).first).to eq(2)
     end
   end

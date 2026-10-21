@@ -52,8 +52,8 @@ RSpec.describe Pupgrade::CLI::Compile do
 
   before(:each) { silence_logger }
 
-  it 'compiles every factset with the stubs, in both layouts, and writes catalog and probes per node' do
-    status, text = run(['--stubs', 'pupgrade-stubs.yaml'])
+  it 'compiles every factset with the mocks, in both layouts, and writes catalog and probes per node' do
+    status, text = run(['--mocks', 'pupgrade/mocks.yaml'])
     expect(status).to eq(0)
     expect(cells(text)).to eq([
       %w[certname resources classes warnings leaks status],
@@ -71,7 +71,7 @@ RSpec.describe Pupgrade::CLI::Compile do
       catalog['resources'].map { |r| "#{r['type']}[#{r['title']}]" }.sort_by { |s| s.split('[', 2) },
     )
     fragment = catalog['resources'].find { |r| r['type'] == 'Notify' }
-    expect(fragment['parameters']['message']).to eq('RedHat on web01.example.com: RedHat RedHat HI HI hi stubbed.example.com time.example.com default')
+    expect(fragment['parameters']['message']).to eq('RedHat on web01.example.com: RedHat RedHat HI HI hi mocked.example.com time.example.com default')
     firewall = catalog['resources'].find { |r| r['type'] == 'Firewall' }
     expect(firewall['parameters']).to include('provider' => 'iptables', 'action' => 'accept')
 
@@ -95,7 +95,7 @@ RSpec.describe Pupgrade::CLI::Compile do
     )
     expect(probes['deprecations']).to eq([{ 'message' => 'legacy_shout is deprecated; use stdlib::shout' }])
     expect(probes['warnings'].map { |w| w['level'] }).to eq(%w[warning])
-    expect(probes['leaks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'stubbed',
+    expect(probes['leaks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'mocked',
                                      'location' => 'site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4' }])
     expect(probes['classes']).to include('apache' => { 'module' => 'apache' }, 'profile::base' => { 'module' => 'profile' })
     expect(probes['defined_types']).to eq('concat::fragment' => { 'module' => 'concat', 'resources' => 1 })
@@ -107,12 +107,25 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(read('db01.example.com', 'catalog.json')['resources'].find { |r| r['type'] == 'Notify' }['parameters']['message']).to start_with('Debian on db01.example.com')
   end
 
-  it 'stops a compile at a command the stubs do not answer, records it, and exits 1' do
+  it 'removes node directories no factset names after a full run, not after a filtered one or with --keep-stale' do
+    gone = File.join(out, 'gone.example.com')
+    FileUtils.mkdir_p(gone)
+    File.write(File.join(gone, 'probes.json'), "{}\n")
+    FileUtils.mkdir_p(File.join(out, 'notes'))
+    run(['--mocks', 'pupgrade/mocks.yaml', '--certname', 'web*'])
+    expect(Dir.children(out).sort).to eq(%w[gone.example.com notes web01.example.com])
+    run(['--mocks', 'pupgrade/mocks.yaml', '--keep-stale'])
+    expect(Dir.children(out).sort).to eq(%w[db01.example.com gone.example.com notes web01.example.com])
+    run(['--mocks', 'pupgrade/mocks.yaml'])
+    expect(Dir.children(out).sort).to eq(%w[db01.example.com notes web01.example.com])
+  end
+
+  it 'stops a compile at a command the mocks do not answer, records it, and exits 1' do
     status, text = run([])
     expect(status).to eq(1)
     expect(cells(text).drop(1).map(&:last)).to eq(%w[failed failed])
     expect(Dir.children(File.join(out, 'web01.example.com')).sort).to eq(%w[error.txt probes.json])
-    expect(File.read(File.join(out, 'web01.example.com/error.txt'))).to include('execute: "hostname -f" is not answered by the stubs')
+    expect(File.read(File.join(out, 'web01.example.com/error.txt'))).to include('execute: "hostname -f" is not answered by the mocks')
     probes = read('web01.example.com', 'probes.json')
     expect(probes['status']).to eq('failed')
     expect(probes['leaks'].first).to include('action' => 'raised')
@@ -120,7 +133,7 @@ RSpec.describe Pupgrade::CLI::Compile do
   end
 
   it 'compiles code in place of the manifest, with top-scope variables and a certname filter' do
-    status, text = run(['--stubs', 'pupgrade-stubs.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
+    status, text = run(['--mocks', 'pupgrade/mocks.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
     expect(status).to eq(0)
     expect(cells(text).drop(1).map(&:first)).to eq(['web01.example.com'])
     catalog = read('web01.example.com', 'catalog.json')
@@ -128,7 +141,7 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(catalog['classes']).to eq(%w[settings])
   end
 
-  it 'takes the manifest, the prepended file, the stubs, and the factsets from the config file' do
+  it 'takes the manifest, the prepended file, the mocks, and the factsets from the config file' do
     File.write(File.join(fixture.dir, 'before.pp'), "notify { 'from before': }\n")
     File.write(File.join(fixture.dir, 'alt.pp'), "notify { 'from alt': }\n")
     cfg = File.join(@tmp, 'pupgrade.yaml')
@@ -137,7 +150,7 @@ RSpec.describe Pupgrade::CLI::Compile do
         factsets: [factsets]
         manifest: alt.pp
         prepend_file: before.pp
-        stubs: pupgrade-stubs.yaml
+        mocks: pupgrade/mocks.yaml
         output_dir: #{out}
         vars:
           role: db
@@ -158,9 +171,9 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(titles).to eq(['from alt', 'from before'])
   end
 
-  it 'refuses missing factsets, a bad stub file, and an unknown leak policy' do
+  it 'refuses missing factsets, a bad mock file, and an unknown leak policy' do
     expect(run(['--factsets', 'nope']).first).to eq(3)
-    expect(run(['--stubs', 'nope.yaml']).first).to eq(3)
+    expect(run(['--mocks', 'nope.yaml']).first).to eq(3)
     expect(run(['--on-leak', 'ignore']).first).to eq(2)
     expect(run(['--certname', 'nothing']).first).to eq(3)
   end

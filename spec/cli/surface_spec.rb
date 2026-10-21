@@ -16,6 +16,7 @@ RSpec.describe Pupgrade::CLI::Surface do
   after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll
 
   let(:fixture) { @fixture }
+  let(:cache)   { File.join(fixture.dir, 'pupgrade/cache/api_surfaces') }
 
   # [exit status, stdout]
   def run(command, argv)
@@ -24,7 +25,7 @@ RSpec.describe Pupgrade::CLI::Surface do
     $stdout  = captured
     status   = nil
     begin
-      command.new.run(argv)
+      command.new.run(['--no-config', '-d', fixture.dir] + argv)
     rescue SystemExit => e
       status = e.status
     ensure
@@ -39,29 +40,54 @@ RSpec.describe Pupgrade::CLI::Surface do
 
   before(:each) { silence_logger }
 
-  it 'prints a module directory\'s document, writes a ref\'s to a file, and refuses bad arguments' do
-    status, out = run(described_class, [File.join(fixture.dir, 'modules/concat')])
+  it 'reads modules by name or directory into the cache, by version and ref, and reuses what it holds' do
+    status, out = run(described_class, ['concat'])
     expect(status).to eq(0)
-    doc = JSON.parse(out)
-    expect(doc['defined_types'].keys).to eq(['concat::fragment'])
-    expect(doc['source']).to eq(File.join(fixture.dir, 'modules/concat'))
+    expect(out).to eq("#{cache}/concat-7.3.0.json\n")
+    expect(JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))['defined_types'].keys).to eq(['concat::fragment'])
 
-    path = File.join(@tmp, 'stdlib-9.json')
-    status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.6.0', '-o', path])
-    expect([status, out]).to eq([0, "#{path}\n"])
-    expect(JSON.parse(File.read(path))['source']).to end_with('puppetlabs-stdlib.git@v9.6.0')
+    status, out = run(described_class, ['stdlib:v9.6.0', File.join(fixture.dir, 'modules/concat')])
+    expect(status).to eq(0)
+    expect(out).to eq("#{cache}/stdlib-9.6.0--v9.6.0.json\n\n#{cache}/concat-7.3.0.json\n")
+    doc = JSON.parse(File.read(File.join(cache, 'stdlib-9.6.0--v9.6.0.json')))
+    expect(doc['module']['version']).to eq('9.6.0')
+    expect(doc['source']).to include('ref' => 'v9.6.0')
+    expect(doc['source']['sha']).to match(/\A[0-9a-f]{40}\z/)
+
+    stamp = File.mtime(File.join(cache, 'concat-7.3.0.json'))
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log { run(described_class, ['concat']) }
+    expect(log).to include('(cached)')
+    expect(File.mtime(File.join(cache, 'concat-7.3.0.json'))).to eq(stamp)
+    log = capture_log { run(described_class, ['concat', '--refresh']) }
+    expect(log).not_to include('(cached)')
+  end
+
+  it 'reads every module with --all, one to a file or stdout, and a remote at a ref' do
+    status, out = run(described_class, ['--all'])
+    expect(status).to eq(0)
+    expect(out.lines.reject { |l| l.strip.empty? }.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size)
+    expect(Dir.children(cache)).to include('stdlib-8.6.0.json', 'translate-2.2.0.json')
+
+    path = File.join(@tmp, 'firewall.json')
+    expect(run(described_class, ['firewall', '-o', path])).to eq([0, "#{path}\n"])
+    expect(JSON.parse(File.read(path))['types'].keys).to eq(['firewall'])
+    _, out = run(described_class, ['firewall', '-o', '-'])
+    expect(JSON.parse(out)['providers'].keys).to eq(['firewall/iptables'])
+
+    status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])
+    expect(status).to eq(0)
+    expect(out).to eq("#{cache}/stdlib-9.0.0--v9.0.0.json\n")
 
     expect(run(described_class, []).first).to eq(2)
     expect(run(described_class, ['--git', 'x']).first).to eq(2)
-    expect(run(described_class, [File.join(@tmp, 'nope')]).first).to eq(3)
+    expect(run(described_class, ['concat', 'firewall', '-o', path]).first).to eq(2)
+    expect(run(described_class, ['nope']).first).to eq(3)
+    expect(run(described_class, ['stdlib:v0']).first).to eq(3)
   end
 
-  it 'diffs two sides given as a directory and a document, with filters and a summary' do
-    path = File.join(@tmp, 'stdlib-9.json')
-    run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.6.0', '-o', path])
-    stdlib = File.join(fixture.dir, 'modules/stdlib')
-
-    status, out = run(described_class, ['diff', stdlib, path])
+  it 'diffs modules at refs, documents, and directories, with filters and a summary' do
+    status, out = run(described_class, ['diff', 'stdlib', 'stdlib:v9.6.0'])
     expect(status).to eq(1)
     expect(cells(out).map { |r| r.first(3) }).to eq([
       %w[surface name change],
@@ -72,12 +98,15 @@ RSpec.describe Pupgrade::CLI::Surface do
       %w[type_aliases Stdlib::Port changed],
     ])
 
-    _, out = run(described_class, ['diff', '--surfaces', 'functions', '--changes', 'removed', stdlib, path])
+    stdlib = File.join(fixture.dir, 'modules/stdlib')
+    newer  = File.join(cache, 'stdlib-9.6.0--v9.6.0.json')
+    _, out = run(described_class, ['diff', '--surfaces', 'functions', '--changes', 'removed', stdlib, newer])
     expect(cells(out).drop(1).map { |r| r[1] }).to eq(['legacy_shout'])
-    _, out = run(described_class, ['diff', '--summary', stdlib, path])
+    _, out = run(described_class, ['diff', '--summary', stdlib, newer])
     expect(cells(out)).to eq([%w[surface added removed changed total], %w[module 0 0 1 1], %w[classes 0 0 1 1], %w[functions 0 1 1 2], %w[type_aliases 0 0 1 1]])
     expect(run(described_class, ['diff', stdlib, stdlib])).to eq([0, "(nothing matches)\n"])
-    expect(run(described_class, ['diff', '--surfaces', 'bogus', stdlib, path]).first).to eq(2)
+    expect(run(described_class, ['diff', '--surfaces', 'bogus', stdlib, newer]).first).to eq(2)
     expect(run(described_class, ['diff', stdlib]).first).to eq(2)
+    expect(run(described_class, ['diff', 'stdlib', 'nope']).first).to eq(3)
   end
 end

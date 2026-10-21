@@ -8,7 +8,7 @@ require 'driftless/control_repo'
 require 'pupgrade/compile/factset'
 require 'pupgrade/compile/probe_record'
 require 'pupgrade/compile/session'
-require 'pupgrade/compile/stubs'
+require 'pupgrade/compile/mocks'
 
 module Pupgrade
   module CLI
@@ -28,7 +28,7 @@ module Pupgrade
 
       config_key 'compile.factsets', type: :array, default: [], example: ['spec/factsets'],
                  about: 'Factset files or directories (onceover layout or a plain facts hash), relative to the control repo'
-      config_key 'compile.output_dir', type: :string, default: 'pupgrade-catalogs',
+      config_key 'compile.output_dir', type: :string, default: 'pupgrade/cache/catalogs',
                  about: 'Where `compile` writes OUT/<certname>/{catalog,probes}.json, relative to the control repo'
 
       COLUMNS = %w[certname resources classes warnings leaks status].freeze
@@ -57,7 +57,9 @@ module Pupgrade
           session.close
         end
         print_table(COLUMNS, rows)
-        ::Pupgrade.logger.info("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}")
+        stale = Array(@options[:certnames]).empty? && !@options[:keep_stale] ? remove_stale(out, factsets) : []
+        ::Pupgrade.logger.info("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}" \
+                               "#{stale.empty? ? '' : "; removed #{stale.size} node(s) no factset names: #{stale.join(', ')}"}")
         exit(failed.zero? ? 0 : 1)
       end
 
@@ -70,6 +72,7 @@ module Pupgrade
              '(config: compile.factsets)') { |v| accumulate(:factsets, v) }
         o.on('-o', '--output-dir=DIR', 'Where to write OUT/<certname>/ (config: compile.output_dir)') { |v| @options[:output_dir] = v }
         o.on('--certname=GLOBS', Array, 'Only factsets whose certname matches (case-insensitive)') { |v| accumulate(:certnames, v) }
+        o.on('--keep-stale', 'Keep OUT/<certname>/ directories of nodes the factsets no longer name') { @options[:keep_stale] = true }
 
         o.separator ''
         o.separator 'What to compile:'
@@ -83,9 +86,10 @@ module Pupgrade
 
         o.separator ''
         o.separator 'The execution guard:'
-        o.on('--stubs=FILE', 'YAML answering commands and facts module code asks for (config: compile.stubs)') { |v| @options[:stubs] = v }
+        o.on('--mocks=FILE', 'YAML answering commands and facts module code asks for (config: compile.mocks)') { |v| @options[:mocks] = v }
+        o.on('--[no-]default-mocks', 'Apply pupgrade\'s own mocks for package-provider probes after the file (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
         o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK,
-             'For a command the stubs do not answer: raise (default) or allow (config: compile.on_leak)') { |v| @options[:on_leak] = v }
+             'For a command the mocks do not answer: raise (default) or allow (config: compile.on_leak)') { |v| @options[:on_leak] = v }
 
         o.separator ''
         o.separator 'Writes OUT/<certname>/catalog.json (Puppet\'s catalog data, sorted) and probes.json'
@@ -107,16 +111,17 @@ module Pupgrade
       end
 
       def build_session(repo)
-        stubs = @options[:stubs] ? ::Pupgrade::Compile::Stubs.load(File.expand_path(@options[:stubs], repo.dir)) : ::Pupgrade::Compile::Stubs.empty
+        defaults = @options.fetch(:default_mocks, true)
+        mocks = @options[:mocks] ? ::Pupgrade::Compile::Mocks.load(File.expand_path(@options[:mocks], repo.dir), defaults: defaults) : ::Pupgrade::Compile::Mocks.empty(defaults: defaults)
         prepend = @options[:prepend]
         prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
         prepend = File.read(File.expand_path(prepend.delete_prefix('@'), repo.dir)) if prepend&.start_with?('@')
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
           prepend: prepend, vars: @options[:vars] || {}, server_facts: @options[:server_facts] || {},
-          stubs: stubs, on_leak: @options[:on_leak],
+          mocks: mocks, on_leak: @options[:on_leak],
         ).start
-      rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Stubs::Error, Errno::ENOENT => e
+      rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, Errno::ENOENT => e
         fatal!("compile: #{e.message}", 3)
       end
 
@@ -131,6 +136,20 @@ module Pupgrade
         end
         error = File.join(dir, 'error.txt')
         result.ok? ? FileUtils.rm_f(error) : File.write(error, result.error + "\n")
+      end
+
+      # A full run owns its output directory: a node directory from an
+      # earlier run whose factset is gone is removed, so the evidence never
+      # outlives the factsets.
+      #
+      # @return [Array<String>] the certnames removed
+      def remove_stale(out, factsets)
+        return [] unless File.directory?(out)
+
+        current = factsets.map(&:certname)
+        Dir.children(out).select { |n| File.directory?(File.join(out, n)) && File.file?(File.join(out, n, 'probes.json')) && !current.include?(n) }.sort.each do |name|
+          FileUtils.rm_rf(File.join(out, name))
+        end
       end
 
       def probes_document(result)
@@ -170,11 +189,12 @@ module Pupgrade
         cfg = ::Pupgrade.config
         {
           factsets:     cfg.dig('compile', 'factsets'),
-          output_dir:   cfg.dig('compile', 'output_dir') || 'pupgrade-catalogs',
+          output_dir:   cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
           environment:  cfg.dig('compile', 'environment') || 'production',
           manifest:     cfg.dig('compile', 'manifest'),
           prepend_file: cfg.dig('compile', 'prepend_file'),
-          stubs:        cfg.dig('compile', 'stubs'),
+          mocks:        cfg.dig('compile', 'mocks'),
+          default_mocks: cfg.dig('compile', 'default_mocks'),
           on_leak:      cfg.dig('compile', 'on_leak') || 'raise',
           vars:         cfg.dig('compile', 'vars'),
           server_facts: cfg.dig('compile', 'server_facts'),

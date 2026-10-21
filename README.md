@@ -30,35 +30,40 @@ bundle exec pupgrade --help
 ## Usage
 
 * `pupgrade help` lists the commands.
-  * Today, they are `check`, `compile`, `compile diff`, `config new`, `impact`, `solve`, `surface`, `surface diff`, `module gitlog`, `module update`, and `params compare`.
+  * Today, they are `check`, `compile`, `compile diff`, `config new`, `config print`, `impact`, `solve`, `surface`, `surface diff`, `module list`, `module info`, `module gitlog`, `module update`, and `params compare`.
   * `pupgrade config new` writes a `pupgrade.yaml` with every key commented out
+  * `pupgrade config print [KEY]` shows the config as this run resolves it (`-d` adds unset defaults)
+  * `pupgrade module list` and `pupgrade module info MODULE` show what is deployed and what it could move to
 
 
 
 
 ```sh
-# Compile catalogs from factsets + stubbed functions
+# Compile catalogs from factsets, with mocks answering the commands module code runs
 pupgrade compile --factsets pupgrade/factsets/ \
-  --stubs pupgrade-stubs.yaml -o pupgrade/catalogs/
+  --mocks pupgrade/mocks.yaml -o pupgrade/cache/catalogs/
 
-pupgrade solve --evidence pupgrade/catalogs/ --prune-unused \
+pupgrade solve --evidence pupgrade/cache/catalogs/ --prune-unused \
   --exclusions exclusions.yaml -o Puppetfile.solved
 
 pupgrade check --propose Puppetfile.solved --by-change
+
+pupgrade impact --propose Puppetfile.solved --summary
 ```
 
-To make the second and third steps repeatable, put the inputs in `pupgrade.yaml`:
+To make the steps repeatable, put the inputs in `pupgrade/pupgrade.yaml`:
 
 ```yaml
 compile:
-  factsets: [factsets]
-  stubs: pupgrade-stubs.yaml
-  output_dir: pupgrade/catalogs
-solve:
-  evidence: pupgrade/catalogs
+  factsets: [pupgrade/factsets]
+  mocks: pupgrade/mocks.yaml
 ```
 
-After which `pupgrade compile` and `pupgrade solve --prune-unused` need no flags.
+After which `pupgrade compile`, `pupgrade solve --prune-unused`, and `pupgrade
+impact` need no flags: `compile` writes to `pupgrade/cache/catalogs` and the
+others read from there by default. `pupgrade surface` keeps what it reads under
+`pupgrade/cache/api_surfaces`. `pupgrade config print -d` shows every path in
+effect.
 
 
 

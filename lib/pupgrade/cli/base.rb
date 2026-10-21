@@ -133,10 +133,19 @@ module Pupgrade
       # Parses this command's own options, then dispatches to a subcommand or
       # executes. The color preference is set at every level, so a fatal raised
       # while dispatching honours --[no-]color.
+      # A command with subcommands parses its own options up to the first
+      # positional and dispatches on it. One that runs without a subcommand
+      # looks at that positional: a subcommand's name dispatches, anything
+      # else makes this a leaf run, and the rest of the arguments are parsed
+      # as its own.
       def run(argv)
         argv = argv.dup
-        leaf = self.class.subcommands.empty? || (self.class.runs_without_subcommand? && !names_subcommand?(argv))
+        leaf = self.class.subcommands.empty?
         parse_own_options!(argv, leaf: leaf)
+        if !leaf && self.class.runs_without_subcommand? && !names_subcommand?(argv)
+          leaf = true
+          parse_own_options!(argv, leaf: true)
+        end
         ::Pupgrade::Ansi.preference = @options[:color]
         return dispatch(argv) unless leaf
 

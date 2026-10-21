@@ -53,16 +53,16 @@ RSpec.describe Pupgrade::CLI::Solve do
   it 'moves every module as far as its constraints allow, holds what cannot follow, and writes the overlay' do
     overlay = File.join(@tmp, 'Puppetfile.solved')
     status, out = run(['-o', overlay])
-    expect(status).to eq(1)
+    expect(status).to eq(0)
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.6.0', '3', 'newest'])
     expect(table['puppetlabs-apache']).to eq(['tag v10.1.1', 'v12.0.0', '2', 'newest'])
     expect(table['puppetlabs-puppetdb']).to eq(['tag v7.13.0', 'v8.1.0', '2', 'newest'])
     expect(table['saz-timezone']).to eq(['tag 6.1.0', '7.0.0', '1', 'newest'])
-    expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('held: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0; modules/stdlib would be 9.6.0')])
-    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'held: needs puppet/zookeeper >= 1.0.0 < 2.0.0; not on the modulepath'])
-    expect(table['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('held: requires puppet >= 4.10.0 < 8.0.0')])
-    expect(table['puppetlabs-apt'].last).to eq('held: missing RedHat')
+    expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0; modules/stdlib would be 9.6.0')])
+    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'unresolved: needs puppet/zookeeper >= 1.0.0 < 2.0.0; not on the modulepath'])
+    expect(table['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('unresolved (Forge module): requires puppet >= 4.10.0 < 8.0.0')])
+    expect(table['puppetlabs-apt'].last).to eq('unresolved: missing RedHat')
     expect(table).not_to have_key('puppetlabs-facts')
 
     proposed = Driftless::Inputs::Puppetfile.load_file(overlay)
@@ -105,8 +105,10 @@ RSpec.describe Pupgrade::CLI::Solve do
       'classes'   => { 'redis' => { 'module' => 'redis' }, 'stdlib' => { 'module' => 'stdlib' }, 'yumrepo_core' => { 'module' => 'yumrepo_core' } },
       'functions' => { 'stdlib::shout' => { 'module' => 'stdlib', 'sites' => ['modules/yumrepo_core/manifests/init.pp:3'] } },
     ))
-    _, out = run(['--hold', 'puppetlabs-apt'])
-    expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'held: needs puppetlabs/apt >= 9.0.0 < 10.0.0; modules/apt would be 8.5.0'])
+    status, out = run(['--hold', 'puppetlabs-apt'])
+    expect(status).to eq(1)
+    expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0; modules/apt would be 8.5.0'])
+    expect(rows(out)['puppetlabs-apt']).to match(['tag v8.5.0', '(current)', '2', a_string_starting_with('held: ')])
 
     exclusions = File.join(@tmp, 'exclusions.yaml')
     allow(Driftless).to receive(:logger).and_call_original
@@ -118,6 +120,9 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(log).to include('solve: puppetlabs-yumrepo_core -> stdlib: used, but not a declared dependency')
     expect(log).to include('evidence from 1 node(s)')
 
+    _, out = run(['--ignore', 'apt,zookeeper'])
+    expect(rows(out)).not_to have_key('puppetlabs-apt')
+    expect(rows(out)['puppet-redis'].last).to start_with('unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0; not on the modulepath')
     expect(run(['--prune-unused']).first).to eq(2)
     expect(run(['--evidence', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)

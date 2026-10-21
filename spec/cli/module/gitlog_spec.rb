@@ -154,4 +154,26 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
       expect(run(['--no-config', '-d', dir]).first).to eq(2)
     end
   end
+
+  it 'tries branches in order, records into the configured branchfile, and shows tags only' do
+    Dir.mktmpdir do |dir|
+      control_repo(dir)
+      status, out = run(['--no-config', '-d', dir, 'stdlib', '--branch', 'nope,main'])
+      expect(status).to eq(0)
+      expect(subjects(out)).to match([a_string_matching(/ two\z/)])
+      expect(run(['--no-config', '-d', dir, 'stdlib', '--branch', 'nope,none']).first).to eq(3)
+
+      cfg = File.join(dir, 'pupgrade.yaml')
+      File.write(cfg, "modules:\n  branchfile: branches.yaml\n")
+      status, = run(['-c', cfg, '-d', dir, 'stdlib', '--branch', 'nope,main'])
+      expect(status).to eq(0)
+      expect(File.read(File.join(dir, 'branches.yaml'))).to eq("---\npuppetlabs-stdlib: main\n")
+
+      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '--fetch', '-t'])
+      expect(subjects(out)).to match([a_string_matching(/\(tag: v2.*\) two\z/)])
+      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '-t', '--include-heads'])
+      expect(out.lines.size).to eq(2)
+      expect(out.lines.first).to match(/ three$/)
+    end
+  end
 end

@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'tmpdir'
+require 'fileutils'
 
 require 'pupgrade/config'
 
@@ -7,7 +8,7 @@ RSpec.describe Pupgrade::Config do
   it 'searches pupgrade paths, not driftless ones' do
     expect(described_class.search_chain.first).to eq('/etc/puppetlabs/pupgrade/config.yaml')
     expect(described_class.user_path).to end_with('/pupgrade/config.yaml')
-    expect(described_class.project_path).to eq(File.join(Dir.pwd, 'pupgrade.yaml'))
+    expect(described_class.project_path).to eq(File.join(Dir.pwd, 'pupgrade', 'pupgrade.yaml'))
     expect(Driftless::Config.project_path).to eq(File.join(Dir.pwd, 'driftless.yaml'))
   end
 
@@ -19,6 +20,19 @@ RSpec.describe Pupgrade::Config do
       expect(config).to be_a(described_class)
       expect(config.dig('logging', 'level')).to eq('debug')
       expect(config.sources).to eq([path])
+    end
+  end
+
+  it 'takes the project config from pupgrade/ or the current directory, and refuses both at once' do
+    Dir.mktmpdir do |dir|
+      Dir.chdir(dir) do
+        expect(described_class.project_path).to eq(File.join(dir, 'pupgrade', 'pupgrade.yaml'))
+        File.write('pupgrade.yaml', '')
+        expect(described_class.project_path).to eq(File.join(dir, 'pupgrade.yaml'))
+        FileUtils.mkdir_p('pupgrade')
+        File.write('pupgrade/pupgrade.yaml', '')
+        expect { described_class.project_path }.to raise_error(Pupgrade::ConfigLoadError, /both .* exist; keep one/)
+      end
     end
   end
 end

@@ -162,4 +162,19 @@ RSpec.describe Pupgrade::ModuleResolver do
     result = resolve([nameless, broken, entry('a', deps: { 'x' => nil })])
     expect(keys(result)).to eq([%w[missing-dependency a x]])
   end
+
+  it 'takes exclusions by any spelling of a module name, and edge exclusions with a constraint that go stale' do
+    entries = [entry('simp-fips', deps: { 'simp/simplib' => '>= 4.0.0 < 5.0.0', 'puppetlabs/stdlib' => '< 9.0.0' }),
+               entry('simp-simplib', version: '7.0.0'), entry('puppetlabs-stdlib', version: '9.4.0')]
+    expect(keys(resolve(entries, exclude: { 'modules' => ['fips'] }))).to eq([])
+    expect(keys(resolve(entries, exclude: { 'dependencies' => ['simplib'] }))).to eq([%w[dependency-version simp-fips puppetlabs/stdlib]])
+    expect(keys(resolve(entries, exclude: { 'dependencies' => ['fips:simplib'] }))).to eq([%w[dependency-version simp-fips puppetlabs/stdlib]])
+
+    current = resolve(entries, exclude: { 'dependencies' => ['simp/fips:simp/simplib >= 4.0.0 < 5.0.0'] })
+    expect(keys(current)).to eq([%w[dependency-version simp-fips puppetlabs/stdlib]])
+    expect(current.warnings).to eq([])
+    stale = resolve(entries, exclude: { 'dependencies' => ['simp/fips:simp/simplib >= 3.0.0 < 5.0.0'] })
+    expect(keys(stale).size).to eq(2)
+    expect(stale.warnings).to eq(['exclusion "simp/fips:simp/simplib >= 3.0.0 < 5.0.0" is stale: simp-fips now needs simp/simplib >= 4.0.0 < 5.0.0'])
+  end
 end
