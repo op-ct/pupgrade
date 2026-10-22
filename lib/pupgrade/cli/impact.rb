@@ -12,6 +12,7 @@ require 'driftless/params_schema/validate'
 require 'pupgrade/module_proposal'
 require 'pupgrade/surface'
 require 'pupgrade/surface/diff'
+require 'pupgrade/surface/targets'
 require 'pupgrade/impact/analysis'
 require 'pupgrade/impact/evidence'
 require 'pupgrade/impact/history'
@@ -30,6 +31,7 @@ module Pupgrade
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'impact', subcommand_of: Root
+      positional '<puppetfile>'
       desc 'What a proposed Puppetfile would change for the site: surface changes mapped to their uses'
 
       config_key 'impact.catalogs_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
@@ -41,19 +43,22 @@ module Pupgrade
       SUMMARY_COLUMNS = %w[module from to commits findings used].freeze
 
       def execute(argv)
-        reject_extra_args!(argv)
+        reject_extra_args!(argv, max: 1)
         repo = @options[:repo_dir] ? ::Driftless::ControlRepo.new(@options[:repo_dir]) : ::Driftless::ControlRepo.detect(Dir.pwd)
         fatal!('impact requires --repo-dir (auto-detection did not supply it)', help: true) unless repo
         fatal!("repo-dir not readable: #{repo.dir}", 3) unless repo.readable?
-        fatal!('impact needs --propose PUPPETFILE', help: true) unless @options[:propose]
+        puppetfile = argv.first || @options[:propose]
+        fatal!('impact needs the proposed Puppetfile', help: true) unless puppetfile
         check_kinds!
 
         inventory = ::Driftless::ModuleInventory.new(repo.dir)
-        proposal  = ::Pupgrade::ModuleProposal.new(inventory, File.expand_path(@options[:propose], repo.dir))
+        proposal  = ::Pupgrade::ModuleProposal.new(inventory, File.expand_path(puppetfile, repo.dir))
         changes   = proposal.changes.select { |c| c.to && c.from }
         log_warnings(inventory.warnings + proposal.warnings)
+        ::Pupgrade.logger.info("impact: #{puppetfile} moves #{changes.size} module(s)")
         evidence  = load_evidence(repo)
         surfaces  = surfaces_for(repo, inventory, proposal, changes)
+        ::Pupgrade.logger.info('impact: checking Hiera data against the proposed classes')
         hiera     = hiera_references(repo, inventory, surfaces)
         analysis  = ::Pupgrade::Impact::Analysis.new(evidence: evidence, hiera: hiera)
 
@@ -62,6 +67,8 @@ module Pupgrade
         surfaces.each do |change, (from, to)|
           diff  = ::Pupgrade::Surface::Diff.documents(from, to)
           found = analysis.findings(change.name, diff, to)
+          ::Pupgrade.logger.info("impact: #{change.name}: #{diff.size} change(s), #{found.size} finding(s)")
+          found.each { |f| ::Pupgrade.logger.debug("impact: #{change.name}: #{f.kind} #{f.subject}: #{f.where}") }
           entry = inventory.entries.find { |e| e.path == change.path }
           history = ::Pupgrade::Impact::History.between(File.join(repo.dir, change.path), entry.declared.ref.to_s, proposed_ref(change),
                                                         from_version: from.dig('module', 'version'), to_version: to.dig('module', 'version'))
@@ -79,7 +86,8 @@ module Pupgrade
         ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
                                "#{shown.count { |f| !f.used? }} without#{' (no catalogs; uses unknown)' unless evidence}")
         exit(shown.any?(&:used?) ? 1 : 0)
-      rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::Surface::Error, ::Pupgrade::Impact::Evidence::Error => e
+      rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::Surface::Error, ::Pupgrade::Surface::Targets::Error,
+             ::Pupgrade::Impact::Evidence::Error => e
         fatal!("impact: #{e.message}", 3)
       end
 
@@ -88,7 +96,9 @@ module Pupgrade
       def configure_parser(o)
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
-        o.on('--propose=PUPPETFILE', 'The proposed Puppetfile (what `solve -o` wrote, or an overlay of your own)') { |v| @options[:propose] = v }
+        o.on('--propose=PUPPETFILE', 'The proposed Puppetfile, as `check` takes it; the same as giving it first') { |v| @options[:propose] = v }
+        o.on('--cache-dir=DIR', 'Where surface documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
+        o.on('--refresh', 'Read the surfaces again, ignoring what the cache holds') { @options[:refresh] = true }
         o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: impact.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
         o.on('--no-catalogs', 'Read no catalogs: every change is a finding with its use unknown') { @options[:no_catalogs] = true }
 
@@ -105,8 +115,10 @@ module Pupgrade
         o.on('--changelog', 'After the table, each module\'s CHANGELOG sections for the versions crossed') { @options[:changelog] = true }
 
         o.separator ''
-        o.separator 'Surfaces are read from the deployed module and from the proposed ref (through the'
-        o.separator 'clone when it has the ref, else the remote). Exits 1 when any finding has a use.'
+        o.separator '<puppetfile> is what `solve -o` wrote, or an overlay of your own. Surfaces are read'
+        o.separator 'from the deployed module and from the proposed ref (through the clone when it has'
+        o.separator 'the ref, else the remote), into the cache `surface` keeps, and reused from there.'
+        o.separator 'Exits 1 when any finding has a use.'
       end
 
       private
@@ -128,6 +140,7 @@ module Pupgrade
       #
       # @return [Hash{ModuleProposal::Change => Array(Hash, Hash)}]
       def surfaces_for(repo, inventory, proposal, changes)
+        reader = ::Pupgrade::Surface::Targets.new(repo_dir: repo.dir, cache_dir: @options[:cache_dir], refresh: @options[:refresh])
         changes.filter_map { |change|
           entry    = inventory.entries.find { |e| e.path == change.path }
           proposed = proposal.entries.find { |e| e.path == change.path }
@@ -135,18 +148,11 @@ module Pupgrade
 
           clone = File.join(repo.dir, change.path)
           ref   = proposed_ref(change)
-          ::Pupgrade.logger.debug("impact: reading #{change.name} at #{entry.declared.ref} and #{ref}")
-          from = ::Pupgrade::Surface.extract(clone)
-          to   = surface_at(clone, proposed.declared.git, ref)
+          ::Pupgrade.logger.info("impact: #{change.name}: surfaces at #{entry.declared.ref} and #{ref}")
+          from, = reader.document(reader.resolve(clone))
+          to,   = reader.document(ref_in?(clone, ref) ? reader.resolve("#{clone}:#{ref}") : reader.remote(proposed.declared.git, ref))
           [change, [from, to]]
         }.to_h
-      end
-
-      # The proposed surface, fetched from the clone when it already holds
-      # the ref, else from the remote.
-      def surface_at(clone, url, ref)
-        source = ref_in?(clone, ref) ? clone : url
-        ::Pupgrade::Surface.checkout(source, ref) { |dir| ::Pupgrade::Surface.extract(dir) }
       end
 
       def ref_in?(clone, ref)
@@ -234,6 +240,7 @@ module Pupgrade
         {
           catalogs_dir:         cfg.dig('impact', 'catalogs_dir'),
           compile_catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
+          cache_dir:            cfg.dig('surface', 'cache_dir') || 'pupgrade/cache/api_surfaces',
         }.compact
       end
     end

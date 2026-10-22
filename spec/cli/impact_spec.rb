@@ -33,7 +33,7 @@ RSpec.describe Pupgrade::CLI::Impact do
   def run(argv)
     status = nil
     out = silently do
-      described_class.new.run(['--no-config', '-d', fixture.dir, '--propose', proposed] + argv)
+      described_class.new.run(['--no-config', '-d', fixture.dir] + argv + [proposed])
     rescue SystemExit => e
       status = e.status
     end
@@ -95,5 +95,25 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(cells(out).drop(1).map { |r| r[2] }).to eq(['legacy_shout'])
     expect(run(['--impacts', 'bogus']).first).to eq(2)
     expect(run(['--catalogs-dir', File.join(@tmp, 'nope')]).first).to eq(3)
+  end
+
+  it 'keeps the surfaces it reads in the cache, reuses them, and takes --propose as well as the positional' do
+    cache = File.join(fixture.dir, 'pupgrade/cache/api_surfaces')
+    expect(Dir.children(cache)).to include('stdlib-8.6.0.json', 'stdlib-9.6.0--v9.6.0.json', 'apache-10.1.1.json')
+    stamp = File.mtime(File.join(cache, 'stdlib-9.6.0--v9.6.0.json'))
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log do
+      status = nil
+      silently do
+        described_class.new.run(['--no-config', '-v', '-d', fixture.dir, '--no-catalogs', '--propose', proposed])
+      rescue SystemExit => e
+        status = e.status
+      end
+      expect(status).to eq(0)
+    end
+    expect(log).to include("info: surface: #{File.join(fixture.dir, 'modules/stdlib')}:v9.6.0: cached at")
+    expect(log).to include('info: impact: puppetlabs-stdlib: surfaces at v8.6.0 and v9.6.0')
+    expect(File.mtime(File.join(cache, 'stdlib-9.6.0--v9.6.0.json'))).to eq(stamp)
+    expect(run(['extra', 'args']).first).to eq(2)
   end
 end
