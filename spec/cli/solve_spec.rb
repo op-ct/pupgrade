@@ -59,10 +59,10 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-apache']).to eq(['tag v10.1.1', 'v12.0.0', '2', 'newest'])
     expect(table['puppetlabs-puppetdb']).to eq(['tag v7.13.0', 'v8.1.0', '2', 'newest'])
     expect(table['saz-timezone']).to eq(['tag 6.1.0', '7.0.0', '1', 'newest'])
-    expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0; modules/stdlib would be 9.6.0')])
-    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'unresolved: needs puppet/zookeeper >= 1.0.0 < 2.0.0; not on the modulepath'])
+    expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.6.0')])
+    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'unresolved: needs puppet/zookeeper >= 1.0.0 < 2.0.0, but zookeeper is not on the modulepath'])
     expect(table['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('unresolved (Forge module): requires puppet >= 4.10.0 < 8.0.0')])
-    expect(table['puppetlabs-apt'].last).to eq('unresolved: missing RedHat')
+    expect(table['puppetlabs-apt'].last).to eq('unresolved: supports Ubuntu, Debian, but missing RedHat')
     expect(table).not_to have_key('puppetlabs-facts')
 
     proposed = Driftless::Inputs::Puppetfile.load_file(overlay)
@@ -86,15 +86,45 @@ RSpec.describe Pupgrade::CLI::Solve do
     _, out = run(['--order', 'oldest', '--bump', 'puppetlabs-stdlib=v9.0.0', '--hold', 'puppetlabs-concat'])
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.0.0', '3', 'bumped'])
-    expect(table['puppetlabs-concat'].last).to start_with('held: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0')
+    expect(table['puppetlabs-concat'][0..2]).to eq(['tag v7.3.0', '(current)', '2'])
+    expect(table['puppetlabs-concat'].last).to start_with('held at current: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.0.0')
     # with nothing required of the operating systems or Puppet, the current
     # versions fit and only what cannot fit is listed
     _, out = run(['--order', 'oldest'], config: ['--no-config'])
     table = rows(out)
     expect(table.keys).not_to include('puppetlabs-stdlib', 'puppetlabs-apache')
     expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', '(current)', '1',
-                                              'held: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0; modules/stdlib would be 8.6.0; ' \
-                                              'needs puppetlabs/concat >= 9.0.0 < 10.0.0; modules/concat would be 7.3.0'])
+                                              'held: v7.1.0 needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
+                                              'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0 (so does v7.0.0)'])
+  end
+
+  it 'takes bumps and holds by any spelling, warns about the ones that name nothing, and explains candidates' do
+    allow(Driftless).to receive(:logger).and_call_original
+    out = nil
+    log = capture_log(level: :warning) do
+      _, out = run(['--bump', 'voxpupuli-stdlib=v9.4.0', '--bump', 'nope', '--hold', 'orangutan', '--bump', 'puppetlabs-concat=v99',
+                    '--explain', 'stdlib,concat'])
+    end
+    expect(log.lines.map(&:chomp).grep(/\Awarning:/)).to contain_exactly(
+      'warning: solve: --bump puppetlabs-concat=v99: v99 is not a candidate of modules/concat (candidates: v9.0.0, v9.1.0; try --fetch)',
+      'warning: solve: --bump nope matches no module',
+      'warning: solve: --hold orangutan matches no module',
+    )
+    main, explain = out.split("\n\n", 2)
+    expect(rows(main)['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.4.0', '3', 'bumped'])
+    expect(rows(main)['puppetlabs-concat']).to eq(['tag v7.3.0', 'v9.1.0', '2', 'newest'])
+    verdicts = explain.lines.map(&:rstrip).reject { |l| l.start_with?('--') }.map { |l| l.split('|', -1).map(&:strip) }
+    expect(verdicts.first).to eq(%w[module candidate verdict violations])
+    expect(verdicts.drop(1).map { |r| r.first(3) }).to eq([
+      ['puppetlabs-stdlib', 'v8.6.0 (current)', 'breaks 2'],
+      ['puppetlabs-stdlib', 'v9.0.0', 'fits'],
+      ['puppetlabs-stdlib', 'v9.4.0', 'chosen (bumped)'],
+      ['puppetlabs-stdlib', 'v9.6.0', 'fits'],
+      ['puppetlabs-concat', 'v7.3.0 (current)', 'breaks 3'],
+      ['puppetlabs-concat', 'v9.0.0', 'fits'],
+      ['puppetlabs-concat', 'v9.1.0', 'chosen (newest)'],
+    ])
+    expect(verdicts[1].last).to eq('supports RedHat 7, 8, but missing RedHat 9; supports Ubuntu 18.04, 20.04, but missing Ubuntu 22.04')
   end
 
   it 'prunes dependency edges to modules the evidence shows unused, and writes them as exclusions' do
@@ -106,9 +136,9 @@ RSpec.describe Pupgrade::CLI::Solve do
       'functions' => { 'stdlib::shout' => { 'module' => 'stdlib', 'sites' => ['modules/yumrepo_core/manifests/init.pp:3'] } },
     ))
     status, out = run(['--hold', 'puppetlabs-apt'])
-    expect(status).to eq(1)
-    expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0; modules/apt would be 8.5.0'])
-    expect(rows(out)['puppetlabs-apt']).to match(['tag v8.5.0', '(current)', '2', a_string_starting_with('held: ')])
+    expect(status).to eq(0)
+    expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0, but apt is 8.5.0'])
+    expect(rows(out)['puppetlabs-apt']).to match(['tag v8.5.0', '(current)', '2', a_string_starting_with('held at current: ')])
 
     exclusions = File.join(@tmp, 'exclusions.yaml')
     allow(Driftless).to receive(:logger).and_call_original
@@ -122,7 +152,7 @@ RSpec.describe Pupgrade::CLI::Solve do
 
     _, out = run(['--ignore', 'apt,zookeeper'])
     expect(rows(out)).not_to have_key('puppetlabs-apt')
-    expect(rows(out)['puppet-redis'].last).to start_with('unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0; not on the modulepath')
+    expect(rows(out)['puppet-redis'].last).to start_with('unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0, but apt is not on the modulepath')
     expect(run(['--prune-unused']).first).to eq(2)
     expect(run(['--evidence', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)

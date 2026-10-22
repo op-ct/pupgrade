@@ -6,6 +6,7 @@ require 'pupgrade/cli/table'
 require 'pupgrade/config_keys'
 require 'driftless/control_repo'
 require 'driftless/module_inventory'
+require 'pupgrade/module_name'
 require 'pupgrade/module_proposal'
 require 'pupgrade/module_resolver'
 require 'pupgrade/solve/candidates'
@@ -36,9 +37,11 @@ module Pupgrade
                  about: 'A `compile` output directory to read instead of compile.output_dir, relative to the control ' \
                         'repo: evidence of what the site uses, for --prune-unused. Unset, the last compile is read'
 
-      COLUMNS = %w[module current chosen candidates note].freeze
+      COLUMNS         = %w[module current chosen candidates note].freeze
+      EXPLAIN_COLUMNS = %w[module candidate verdict violations].freeze
 
-      # How a note is coloured when stdout takes colour.
+      # How a note's status word is coloured when stdout takes colour; the
+      # part of each violation that stands in the way is red.
       NOTE_STYLE = { held: [:red], unresolved: [:yellow], moved: [:green] }.freeze
 
       def execute(argv)
@@ -46,21 +49,26 @@ module Pupgrade
         repo = @options[:repo_dir] ? ::Driftless::ControlRepo.new(@options[:repo_dir]) : ::Driftless::ControlRepo.detect(Dir.pwd)
         fatal!('solve requires --repo-dir (auto-detection did not supply it)', help: true) unless repo
         fatal!("repo-dir not readable: #{repo.dir}", 3) unless repo.readable?
-        fatal!('solve: --prune-unused needs --evidence DIR (config: solve.evidence)', help: true) if @options[:prune_unused] && @options[:evidence].nil?
+        dir = evidence_dir(repo)
+        if @options[:prune_unused] && dir.nil?
+          fatal!('solve: --prune-unused needs a `compile` output directory: --evidence DIR, solve.evidence_dir, or ' \
+                 "compile.output_dir (#{@options[:output_dir]}) once `compile` has written it", help: true)
+        end
 
         inventory  = ::Driftless::ModuleInventory.new(repo.dir)
         candidates = ::Pupgrade::Solve::Candidates.new(repo.dir, branchfile: @options[:branchfile], include_heads: @options[:include_heads],
                                                                  fetch: @options[:fetch])
-        evidence   = evidence_dir(repo) && ::Pupgrade::Solve::Evidence.new(evidence_dir(repo))
+        evidence   = dir && ::Pupgrade::Solve::Evidence.new(dir)
         solver     = ::Pupgrade::Solve::Solver.new(operatingsystems: @options[:operatingsystems], requirements: @options[:requirements],
                                                    exclude: exclusions, order: @options[:order], bumps: @options[:bumps] || {},
                                                    holds: @options[:holds] || [], evidence: evidence, prune_unused: @options[:prune_unused])
         entries = ::Pupgrade::ModuleProposal.new(inventory, nil, ignore: @options[:ignore] || []).entries
         plan    = solver.solve(entries, entries.to_h { |e| [e.path, candidates.for(e)] })
-        log_warnings(inventory.warnings + candidates.warnings)
+        log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
-        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? }
+        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? || !c.violations.empty? }
         print_table(COLUMNS, shown.map { |c| row(c) })
+        print_explanations(plan) if @options[:explain]
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
         write_puppetfile(plan) if @options[:output]
         write_exclusions(plan) if @options[:exclusions]
@@ -76,7 +84,9 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('-o', '--output=PUPPETFILE', 'Write the moved modules as a Puppetfile overlay for `check --propose`') { |v| @options[:output] = v }
-        o.on('--all', 'Show every module, not only those that move, are held, or are unresolved') { @options[:all] = true }
+        o.on('--all', 'Show every module, not only those that move, are held, unresolved, or break a constraint') { @options[:all] = true }
+        o.on('--explain=MODULES', Array, 'After the table, every candidate of these modules (globs, or all) with what',
+             'each breaks: why the solve went where it did') { |v| accumulate(:explain, v) }
         o.on('--ignore=MODULES', Array,
              'Solve as if these modules were removed from the Puppetfile (globs on any spelling of the name,',
              'or the deploy path; comma-separated, repeatable). Unlike modules.exclude_modules, which leaves a',
@@ -101,18 +111,61 @@ module Pupgrade
         o.separator 'Modules are decided dependencies first, each at the first candidate in order that'
         o.separator 'satisfies its dependency ranges, the Puppet requirement, and the operating systems'
         o.separator 'of interest against what is already decided. One with no fit stops at the candidate'
-        o.separator 'breaking the fewest, which the note names: "held" when a newer candidate was blocked,'
-        o.separator '"unresolved" when every newer one breaks the same. Exits 1 when any module is held.'
+        o.separator 'breaking the fewest: "held" when a newer candidate was blocked, and the note says which'
+        o.separator 'and by what; "unresolved" when the choice is the newest there is and still breaks'
+        o.separator 'something. --explain shows every candidate\'s verdict. Exits 1 when any module is held.'
       end
 
       private
 
       def row(choice)
         chosen = choice.chosen
-        note   = choice.violations.empty? ? choice.note : "#{choice.note}: #{choice.violations.join('; ')}"
-        note   = paint(note, *NOTE_STYLE.fetch(choice.held? ? :held : (choice.unresolved? ? :unresolved : :moved)))
         [choice.name, current_text(choice), chosen.current ? '(current)' : chosen.ref,
-         (choice.candidates.size - 1).to_s, note]
+         (choice.candidates.size - 1).to_s, note(choice)]
+      end
+
+      # The status word coloured by outcome; a held row names the blocked
+      # candidate and what blocked it, then what the choice itself breaks.
+      def note(choice)
+        style  = if choice.held? then :held
+                 elsif choice.unresolved? then :unresolved
+                 else :moved
+                 end
+        status = paint(choice.note, *NOTE_STYLE.fetch(style))
+        return status if choice.blocked.nil? && choice.violations.empty?
+        return "#{status}: #{violations_text(choice.violations)}" if choice.blocked.nil?
+
+        candidate, broken = choice.blocked
+        text  = "#{status}: #{candidate.ref} #{violations_text(broken)}"
+        own   = choice.violations.reject { |v| broken.include?(v) }
+        if own.empty?
+          text += " (so does #{choice.chosen.ref})" unless choice.violations.empty?
+        else
+          text += "; at #{choice.chosen.ref} #{violations_text(own)}"
+        end
+        text
+      end
+
+      def violations_text(violations)
+        violations.map { |v| "#{v.text}, but #{paint(v.fault, :red)}" }.join('; ')
+      end
+
+      # One row per candidate of the modules asked about: what each would
+      # break, and which was chosen.
+      def print_explanations(plan)
+        globs = @options[:explain]
+        wanted = plan.choices.select { |c| globs.include?('all') || ::Pupgrade::ModuleName.any?(globs, c.name, c.entry.metadata.name, File.basename(c.entry.path)) }
+        puts ''
+        rows = wanted.flat_map do |choice|
+          choice.verdicts.map do |candidate, broken|
+            verdict = if candidate.equal?(choice.chosen) then "chosen (#{choice.note})"
+                      elsif broken.empty? then 'fits'
+                      else "breaks #{broken.size}"
+                      end
+            [choice.name, candidate.to_s, verdict, violations_text(broken)]
+          end
+        end
+        print_table(EXPLAIN_COLUMNS, rows)
       end
 
       def current_text(choice)
@@ -155,10 +208,11 @@ module Pupgrade
         text
       end
 
-      # --evidence, the configured directory, else compile's output directory
-      # when it is there.
+      # --evidence or the configured directory, else compile's output
+      # directory when it is there and the solve will read it.
       def evidence_dir(repo)
         return File.expand_path(@options[:evidence], repo.dir) if @options[:evidence]
+        return nil unless @options[:prune_unused]
 
         default = File.expand_path(@options[:output_dir], repo.dir)
         File.directory?(default) ? default : nil
