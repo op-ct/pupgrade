@@ -3,6 +3,7 @@ require 'semantic_puppet'
 require 'driftless/inputs/module_metadata'
 require 'driftless/module_inventory'
 require 'pupgrade/exclusions'
+require 'pupgrade/logging'
 require 'pupgrade/module_name'
 require 'pupgrade/module_resolver'
 require 'pupgrade/solve/candidates'
@@ -95,14 +96,14 @@ module Pupgrade
       # @return [Plan]
       def solve(entries, candidates)
         entries   = entries.select { |e| e.metadata.name && e.metadata.error.nil? && !excluded_module?(e.metadata.name) }
-        by_name   = entries.to_h { |e| [normalize(e.metadata.name), e] }
+        by_name   = index(entries)
         decided   = {}
         choices   = []
         pruned    = []
         ordered(entries, by_name).each do |entry|
           list = candidates.fetch(entry.path) { Candidates::Unsolvable.new(reason: 'no candidates') }
           choice = decide(entry, list, by_name, decided)
-          decided[normalize(entry.metadata.name)] = choice.chosen.version
+          decided[key(entry.metadata.name)] = choice.chosen.version
           choices << choice
           pruned.concat(pruned_edges(entry, choice.chosen, by_name, decided))
         end
@@ -110,6 +111,21 @@ module Pupgrade
       end
 
       private
+
+      # Modules by short name: owners differ between a dependent's metadata
+      # and the module's own (`voxpupuli/firewalld` for `puppet-firewalld`),
+      # and a modulepath holds one module of a name. Two deployed modules
+      # sharing a short name is a warning; the first by path wins.
+      def index(entries)
+        entries.sort_by(&:path).each_with_object({}) do |e, h|
+          k = key(e.metadata.name)
+          if h.key?(k)
+            Pupgrade.logger.warn("solve: #{e.path} and #{h[k].path} are both #{k}; only #{h[k].path} is considered")
+            next
+          end
+          h[k] = e
+        end
+      end
 
       def decide(entry, list, by_name, decided)
         name = normalize(entry.metadata.name)
@@ -177,7 +193,7 @@ module Pupgrade
         metadata = candidate.metadata
         out = []
         metadata.dependencies.each do |dep, requirement|
-          dep_name = normalize(dep)
+          dep_name = key(dep)
           target = by_name[dep_name]
           next if excluded_module?(dep) || Exclusions.dependency?(@exclude['dependencies'], [entry.metadata.name], [dep], requirement).first
           # a module nobody deployed is used by nobody
@@ -226,20 +242,20 @@ module Pupgrade
         return [] unless @prune
 
         chosen.metadata.dependencies.filter_map do |dep, requirement|
-          target = by_name[normalize(dep)]
+          target = by_name[key(dep)]
           next if target.nil? || used?(target)
 
           range   = range_for(requirement)
-          version = decided.fetch(normalize(dep)) { parse(target.metadata.version) }
+          version = decided.fetch(key(dep)) { parse(target.metadata.version) }
           "#{entry.metadata.name}:#{dep}" if range && version && !range.include?(version)
         end
       end
 
       # Modules in dependency order: a module after everything its current
       # metadata depends on; a cycle's members follow by name.
-      def ordered(entries, _by_name)
-        remaining = entries.to_h { |e| [normalize(e.metadata.name), e] }
-        deps_of   = remaining.to_h { |n, e| [n, e.metadata.dependencies.keys.map { |d| normalize(d) }.select { |d| remaining.key?(d) && d != n }] }
+      def ordered(entries, by_name)
+        remaining = by_name.dup
+        deps_of   = remaining.to_h { |n, e| [n, e.metadata.dependencies.keys.map { |d| key(d) }.select { |d| remaining.key?(d) && d != n }] }
         order = []
         until remaining.empty?
           ready = remaining.keys.select { |n| deps_of[n].none? { |d| remaining.key?(d) } }.sort
@@ -259,7 +275,7 @@ module Pupgrade
           entry = by_base[user]
           next [] unless entry
 
-          declared = entry.metadata.dependencies.keys.map { |d| normalize(d).split('-').last }
+          declared = entry.metadata.dependencies.keys.map { |d| key(d) }
           providers.sort.filter_map { |p| "#{entry.metadata.name} -> #{p}" unless declared.include?(p) || p == user }
         }.sort
       end
@@ -295,7 +311,12 @@ module Pupgrade
       end
 
       def normalize(name)
-        name.to_s.tr('/', '-').downcase
+        ModuleName.normalize(name)
+      end
+
+      # The name modules are indexed by.
+      def key(name)
+        ModuleName.short(name)
       end
     end
   end

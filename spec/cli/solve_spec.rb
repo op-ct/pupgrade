@@ -116,7 +116,7 @@ RSpec.describe Pupgrade::CLI::Solve do
       _, out = run(['--hold', 'puppetlabs-apt', '--evidence', evidence, '--prune-unused', '--exclusions', exclusions])
     end
     expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'newest'])
-    expect(YAML.safe_load(File.read(exclusions))).to eq('modules' => { 'exclude_dependencies' => ['puppet-redis:puppetlabs/apt', 'puppetlabs-postgresql:puppetlabs/apt'] })
+    expect(YAML.safe_load(File.read(exclusions))).to eq('modules' => { 'exclude_dependencies' => ['puppetlabs-postgresql:puppetlabs/apt', 'puppet-redis:puppetlabs/apt'] })
     expect(log).to include('solve: puppetlabs-yumrepo_core -> stdlib: used, but not a declared dependency')
     expect(log).to include('evidence from 1 node(s)')
 

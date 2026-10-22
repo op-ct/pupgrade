@@ -223,11 +223,11 @@ module Pupgrade
       # first. A row involving two changed entries appears under both;
       # unchanged rows appear under none.
       def print_groups(rows, changes)
-        by_name = changes.to_h { |c| [normalize(c.name), c] }
+        by_name = changes.to_h { |c| [::Pupgrade::ModuleName.short(c.name), c] }
         groups  = Hash.new { |h, k| h[k] = [] }
         # an unchanged row is about no change, so it has no group
         rows.reject { |r| r.mark == :same }.each do |r|
-          involved = ([r.conflict.module] + r.conflict.parties).filter_map { |n| by_name[normalize(n)] }.uniq
+          involved = ([r.conflict.module] + r.conflict.parties).filter_map { |n| by_name[::Pupgrade::ModuleName.short(n)] }.uniq
           involved.empty? ? groups[OTHER_GROUP] << r : involved.each { |c| groups[c] << r }
         end
         if groups.empty?

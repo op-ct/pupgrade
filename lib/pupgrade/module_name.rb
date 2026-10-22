@@ -1,10 +1,11 @@
 module Pupgrade
-  # How a glob names a module. A module goes by up to three spellings:
-  # `simp/fips` and `simp-fips` in metadata and Puppetfiles, and `fips`
-  # on the modulepath and in conversation. A glob matches when it matches
-  # the full name in either spelling or the short name, and a glob with an
-  # owner also matches by its short part when the module declares no owner
-  # at all. Globs are case-insensitive.
+  # Matches a glob against a module's name. A module is known by its
+  # short name (`fips`): that is what a modulepath holds one of, and owners
+  # vary between a Puppetfile, a dependent's metadata, and the module's own
+  # (`voxpupuli-firewalld`, `puppet/firewalld`). So a glob matches the
+  # short name, whatever owner either side carries, except that a glob
+  # which says nothing of the module, `puppet-*` or `*-stdlib`, matches the
+  # full name as written: the one way to say "owned by". Case-insensitive.
   module ModuleName
     FLAGS = File::FNM_CASEFOLD
 
@@ -25,13 +26,11 @@ module Pupgrade
     # @return [Boolean]
     def match?(glob, *names)
       pattern = normalize(glob)
+      owner, dash, rest = pattern.partition('-')
+      by_owner = !dash.empty? && (owner.match?(/[*?\[]/) || rest.match?(/\A[*?]+\z/))
       names.compact.any? do |name|
         full = normalize(name)
-        next true if File.fnmatch?(pattern, full, FLAGS) || File.fnmatch?(pattern, short(full), FLAGS)
-
-        # "puppet-augeasproviders" against a module whose metadata says
-        # only "augeasproviders"
-        !full.include?('-') && !pattern.include?('*') && pattern.include?('-') && File.fnmatch?(short(pattern), full, FLAGS)
+        by_owner ? File.fnmatch?(pattern, full, FLAGS) : File.fnmatch?(short(pattern), short(full), FLAGS)
       end
     end
 

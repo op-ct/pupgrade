@@ -14,10 +14,21 @@ RSpec.describe Pupgrade::ModuleName do
     expect(described_class.match?('fips', nil, 'simp-fips')).to be(true)
   end
 
-  it 'lets a glob with an owner name a module that declares none, unless the glob has wildcards' do
+  it 'disregards the owner: a module is its short name, whoever owns it' do
+    expect(described_class.match?('voxpupuli-firewalld', 'puppet-firewalld')).to be(true)
+    expect(described_class.match?('puppet/authselect', 'jcpunk-authselect')).to be(true)
     expect(described_class.match?('puppet-augeasproviders', 'augeasproviders')).to be(true)
+    expect(described_class.match?('augeasproviders', 'puppet-augeasproviders')).to be(true)
+    expect(described_class.match?('puppet-augeasproviders', 'other-augeasproviders_core')).to be(false)
+    expect(described_class.match?('puppet-augeas*', 'other-augeasproviders_core')).to be(true)
+  end
+
+  it 'takes a wildcard in the owner part as "owned by", matched on the full name' do
+    expect(described_class.match?('puppet-*', 'puppet-fips')).to be(true)
+    expect(described_class.match?('puppet-*', 'simp-fips')).to be(false)
     expect(described_class.match?('puppet-*', 'augeasproviders')).to be(false)
-    expect(described_class.match?('puppet-augeasproviders', 'other-augeasproviders')).to be(false)
+    expect(described_class.match?('*-fips', 'simp/fips')).to be(true)
+    expect(described_class.match?('*/fips', 'fips')).to be(false)
   end
 
   it 'gives the short name and a list check' do

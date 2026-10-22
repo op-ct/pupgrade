@@ -39,6 +39,18 @@ RSpec.describe Pupgrade::ModuleResolver do
     expect(result.warnings).to eq([])
   end
 
+  it 'finds a dependency whatever owner either side names, and warns when two modules share a name' do
+    result = resolve([
+      entry('voxpupuli-firewalld', deps: { 'puppetlabs/augeas_core' => '>= 1.5.0 < 2.0.0' }),
+      entry('puppetlabs-augeas_core', version: '2.0.1'),
+      entry('treydock-kdump', deps: { 'puppet/firewalld' => '>= 1.0.0' }),
+      entry('example42-augeas_core', version: '0.1.0', path: 'site-modules/augeas_core'),
+    ])
+    expect(keys(result)).to eq([['dependency-version', 'voxpupuli-firewalld', 'puppetlabs/augeas_core']])
+    expect(result.conflicts.first.detail).to eq('needs puppetlabs/augeas_core >= 1.5.0 < 2.0.0; modules/augeas_core is 2.0.1')
+    expect(result.warnings).to eq(['site-modules/augeas_core and modules/augeas_core are both augeas_core; dependencies resolve to modules/augeas_core'])
+  end
+
   it 'warns instead of comparing when a requirement or version does not parse' do
     result = resolve([
       entry('a', deps: { 'b' => 'banana', 'c' => '>= 1.0.0' }),

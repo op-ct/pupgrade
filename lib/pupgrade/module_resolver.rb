@@ -119,7 +119,7 @@ module Pupgrade
     private
 
     def dependencies(mods, warnings)
-      by_name = mods.to_h { |e| [normalize(e.metadata.name), e] }
+      by_name = index(mods, warnings)
       mods.flat_map do |e|
         e.metadata.dependencies.filter_map do |dep, requirement|
           next if excluded_module?(dep)
@@ -127,7 +127,7 @@ module Pupgrade
           range = range_for(requirement, "#{e.metadata.name}: dependency #{dep}", warnings)
           next unless range
 
-          found = by_name[normalize(dep)]
+          found = by_name[ModuleName.short(dep)]
           if found.nil?
             Conflict.new(kind: 'missing-dependency', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
                          requirement: requirement, detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath")
@@ -246,6 +246,21 @@ module Pupgrade
     # A module `exclude_modules` names, by any spelling of its name.
     def excluded_module?(name)
       Exclusions.module?(@exclude['modules'], name)
+    end
+
+    # Modules by short name: a dependent's metadata may name an owner the
+    # module's own does not (`voxpupuli/firewalld` for `puppet-firewalld`),
+    # and a modulepath holds one module of a name. Two deployed modules
+    # sharing a short name is a warning; the first by path wins.
+    def index(mods, warnings)
+      mods.sort_by(&:path).each_with_object({}) do |e, h|
+        k = ModuleName.short(e.metadata.name)
+        if h.key?(k)
+          warnings << "#{e.path} and #{h[k].path} are both #{k}; dependencies resolve to #{h[k].path}"
+          next
+        end
+        h[k] = e
+      end
     end
 
     # Forge names are "owner-module"; dependencies often write "owner/module".
