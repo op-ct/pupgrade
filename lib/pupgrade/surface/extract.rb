@@ -18,7 +18,7 @@ module Pupgrade
     # Ruby surfaces are read by loading the module's code, so this runs in a
     # process of its own (see {Surface.extract}); nothing here is undone.
     module Extract
-      SCHEMA_VERSION = 1
+      SCHEMA_VERSION = 2
 
       module_function
 
@@ -45,6 +45,7 @@ module Pupgrade
             'schema_version' => SCHEMA_VERSION,
             'puppet_version' => Puppet.version,
             'module'         => module_info(dir),
+            'metadata'       => metadata_info(dir),
             'source'         => source(dir),
           'classes'        => classes,
           'defined_types'  => defines,
@@ -102,6 +103,17 @@ module Pupgrade
       def module_info(dir)
         metadata = ::Driftless::Inputs::ModuleMetadata.load(dir)
         { 'name' => metadata.name, 'version' => metadata.version }
+      end
+
+      # What metadata.json declares about the module's place among others:
+      # the surfaces `module diff` compares beside the code's.
+      def metadata_info(dir)
+        metadata = ::Driftless::Inputs::ModuleMetadata.load(dir)
+        {
+          'dependencies'            => metadata.dependencies.sort.to_h,
+          'requirements'            => metadata.requirements.sort.to_h,
+          'operatingsystem_support' => metadata.operatingsystem_support.sort.to_h { |os, rel| [os, Array(rel).map(&:to_s)] },
+        }
       end
 
       # ---- Puppet-language surfaces -----------------------------------------

@@ -1,4 +1,5 @@
 require 'pupgrade/surface/diff'
+require 'pupgrade/surface/render'
 
 module Pupgrade
   module Impact
@@ -77,22 +78,22 @@ module Pupgrade
         klass = change.name
         case change.kind
         when 'removed'
-          [make(name, 'class-removed', klass, nodes(@evidence&.including(klass)) + hiera(klass), change.detail)]
+          [make(name, 'class-removed', klass, nodes(@evidence&.including(klass)) + hiera(klass), change)]
         when 'changed'
-          param, what = param_change(change.detail)
+          param, what = param_change(change)
           return [] unless param
 
           case what
           when :removed
-            [make(name, 'class-param-removed', "#{klass}::#{param}", nodes(@evidence&.setting(klass, param)) + hiera("#{klass}::#{param}"), change.detail)]
+            [make(name, 'class-param-removed', "#{klass}::#{param}", nodes(@evidence&.setting(klass, param)) + hiera("#{klass}::#{param}"), change)]
           when :added
             return [] unless required?(to.dig('classes', klass, 'params', param))
 
-            [make(name, 'class-param-added-required', "#{klass}::#{param}", nodes(@evidence&.including(klass)), change.detail)]
+            [make(name, 'class-param-added-required', "#{klass}::#{param}", nodes(@evidence&.including(klass)), change)]
           when :type
-            [make(name, 'class-param-type-changed', "#{klass}::#{param}", nodes(@evidence&.setting(klass, param)) + hiera("#{klass}::#{param}"), change.detail)]
+            [make(name, 'class-param-type-changed', "#{klass}::#{param}", nodes(@evidence&.setting(klass, param)) + hiera("#{klass}::#{param}"), change)]
           when :default
-            [make(name, 'class-param-default-changed', "#{klass}::#{param}", nodes(@evidence&.defaulting(klass, param)), change.detail)]
+            [make(name, 'class-param-default-changed', "#{klass}::#{param}", nodes(@evidence&.defaulting(klass, param)), change)]
           else []
           end
         else []
@@ -103,24 +104,24 @@ module Pupgrade
         type = change.name
         case change.kind
         when 'removed'
-          [make(name, 'define-removed', type, resources(@evidence&.resources(type)), change.detail)]
+          [make(name, 'define-removed', type, resources(@evidence&.resources(type)), change)]
         when 'changed'
-          param, what = param_change(change.detail)
+          param, what = param_change(change)
           return [] unless param
 
           case what
           when :removed
-            [make(name, 'define-param-removed', "#{type} #{param}", resources(@evidence&.resources(type, with: param)), change.detail)]
+            [make(name, 'define-param-removed', "#{type} #{param}", resources(@evidence&.resources(type, with: param)), change)]
           when :added
             return [] unless required?(to.dig('defined_types', type, 'params', param))
 
             lacking = @evidence&.resources(type)&.reject { |_, r| r['parameters'].key?(param) }
-            [make(name, 'define-param-added-required', "#{type} #{param}", resources(lacking), change.detail)]
+            [make(name, 'define-param-added-required', "#{type} #{param}", resources(lacking), change)]
           when :type
-            [make(name, 'define-param-type-changed', "#{type} #{param}", resources(@evidence&.resources(type, with: param)), change.detail)]
+            [make(name, 'define-param-type-changed', "#{type} #{param}", resources(@evidence&.resources(type, with: param)), change)]
           when :default
             defaulting = @evidence&.resources(type)&.reject { |_, r| r['parameters'].key?(param) }
-            [make(name, 'define-param-default-changed', "#{type} #{param}", resources(defaulting), change.detail)]
+            [make(name, 'define-param-default-changed', "#{type} #{param}", resources(defaulting), change)]
           else []
           end
         else []
@@ -132,20 +133,20 @@ module Pupgrade
 
         kind  = (change.kind == 'removed') ? 'function-removed' : 'function-changed'
         sites = @evidence&.call_sites(change.name)
-        [make(name, kind, change.name, (sites.nil? || sites.empty?) ? [] : [list('sites', sites)], change.detail)]
+        [make(name, kind, change.name, (sites.nil? || sites.empty?) ? [] : [list('sites', sites)], change)]
       end
 
       def type_findings(name, change, _to)
         type = change.name
         case change.kind
         when 'removed'
-          [make(name, 'type-removed', type, resources(@evidence&.resources(type)), change.detail)]
+          [make(name, 'type-removed', type, resources(@evidence&.resources(type)), change)]
         when 'changed'
-          attribute, what = param_change(change.detail)
+          attribute, what = param_change(change)
           return [] unless attribute && %i[removed type default values].include?(what)
 
           kind = (what == :removed) ? 'type-attribute-removed' : 'type-attribute-changed'
-          [make(name, kind, "#{type} #{attribute}", resources(@evidence&.resources(type, with: attribute)), change.detail)]
+          [make(name, kind, "#{type} #{attribute}", resources(@evidence&.resources(type, with: attribute)), change)]
         else []
         end
       end
@@ -154,34 +155,34 @@ module Pupgrade
         return [] unless change.kind == 'removed'
 
         type, provider = change.name.split('/', 2)
-        [make(name, 'provider-removed', change.name, nodes(@evidence&.naming(type, provider)), change.detail)]
+        [make(name, 'provider-removed', change.name, nodes(@evidence&.naming(type, provider)), change)]
       end
 
       def fact_findings(name, change)
         return [] unless change.kind == 'removed'
 
-        [make(name, 'fact-removed', change.name, nodes(@evidence&.reading(change.name)), change.detail)]
+        [make(name, 'fact-removed', change.name, nodes(@evidence&.reading(change.name)), change)]
       end
 
       def alias_findings(name, change)
         return [] if change.kind == 'added'
 
         kind = (change.kind == 'removed') ? 'type-alias-removed' : 'type-alias-changed'
-        [make(name, kind, change.name, nodes(@evidence&.using_alias(change.name)), change.detail)]
+        [make(name, kind, change.name, nodes(@evidence&.using_alias(change.name)), change)]
       end
 
-      # @return [Array(String, Symbol), nil] the parameter a detail is about
+      # @return [Array(String, Symbol), nil] the parameter a change is about
       #   and what happened: :removed, :added, :type, :default, :values, or :other
-      def param_change(detail)
-        m = detail.match(/\Aparams\.([^.:]+)(?:\.([^:]+))?: (added|removed)?/)
-        return nil unless m
+      def param_change(change)
+        path = change.path
+        return nil unless path.first == 'params' && path.size >= 2
 
-        param, attribute, verb = m.captures
+        param = path[1]
         what =
-          if attribute.nil? then (verb == 'added') ? :added : :removed
-          elsif attribute == 'type' then :type
-          elsif attribute == 'default' then :default
-          elsif attribute == 'values' then :values
+          if path.size == 2 then change.old.nil? ? :added : :removed
+          elsif path[2] == 'type' then :type
+          elsif path[2] == 'default' then :default
+          elsif path[2] == 'values' then :values
           else :other
           end
         [param, what]
@@ -193,10 +194,11 @@ module Pupgrade
 
       # @param where [Array<String>] the parts naming the uses; none without
       #   evidence means the use is unknown, none with it means no use
-      def make(name, kind, subject, where, detail)
+      def make(name, kind, subject, where, change)
         parts = Array(where).reject(&:empty?)
         text  = (parts.empty? && @evidence.nil?) ? 'use unknown' : parts.join('; ')
-        Finding.new(module: name, kind: kind, subject: subject, where: text, detail: detail)
+        Finding.new(module: name, kind: kind, subject: subject, where: text,
+                    detail: "#{Surface::Render.difference(change)}: #{Surface::Render.detail(change)}")
       end
 
       # @return [Array<String>] one "nodes: ..." part, or none

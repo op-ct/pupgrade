@@ -85,28 +85,4 @@ RSpec.describe Pupgrade::CLI::Surface do
     expect(run(described_class, ['nope']).first).to eq(3)
     expect(run(described_class, ['stdlib:v0']).first).to eq(3)
   end
-
-  it 'diffs modules at refs, documents, and directories, with filters and a summary' do
-    status, out = run(described_class, ['diff', 'stdlib', 'stdlib:v9.6.0'])
-    expect(status).to eq(1)
-    expect(cells(out).map { |r| r.first(3) }).to eq([
-      %w[surface name change],
-      %w[module version changed],
-      %w[classes stdlib changed],
-      %w[functions legacy_shout removed],
-      %w[functions stdlib::shout changed],
-      %w[type_aliases Stdlib::Port changed],
-    ])
-
-    stdlib = File.join(fixture.dir, 'modules/stdlib')
-    newer  = File.join(cache, 'stdlib-9.6.0--v9.6.0.json')
-    _, out = run(described_class, ['diff', '--surfaces', 'functions', '--changes', 'removed', stdlib, newer])
-    expect(cells(out).drop(1).map { |r| r[1] }).to eq(['legacy_shout'])
-    _, out = run(described_class, ['diff', '--summary', stdlib, newer])
-    expect(cells(out)).to eq([%w[surface added removed changed total], %w[module 0 0 1 1], %w[classes 0 0 1 1], %w[functions 0 1 1 2], %w[type_aliases 0 0 1 1]])
-    expect(run(described_class, ['diff', stdlib, stdlib])).to eq([0, "(nothing matches)\n"])
-    expect(run(described_class, ['diff', '--surfaces', 'bogus', stdlib, newer]).first).to eq(2)
-    expect(run(described_class, ['diff', stdlib]).first).to eq(2)
-    expect(run(described_class, ['diff', 'stdlib', 'nope']).first).to eq(3)
-  end
 end

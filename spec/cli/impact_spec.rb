@@ -70,7 +70,7 @@ RSpec.describe Pupgrade::CLI::Impact do
       ['puppetlabs-stdlib', 'function-changed', 'stdlib::shout', 'sites: site-modules/profile/manifests/base.pp:10'],
       ['puppetlabs-stdlib', 'type-alias-changed', 'Stdlib::Port', 'nodes: db01.example.com, web01.example.com'],
     ])
-    expect(cells(out).find { |r| r[2] == 'stdlib::shout' }.last).to include('Callable[String, Integer, 1, 2]')
+    expect(cells(out).find { |r| r[2] == 'stdlib::shout' }.last).to eq('changed signatures: […] -> […]')
   end
 
   it 'summarises per module with the commits crossed, and prints the history on request' do

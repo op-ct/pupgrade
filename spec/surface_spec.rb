@@ -21,7 +21,7 @@ RSpec.describe Pupgrade::Surface do
   let(:stdlib)  { @stdlib }
 
   it 'reads classes, every kind of function, and type aliases from stdlib' do
-    expect(stdlib).to include('document' => 'surface', 'schema_version' => 1, 'errors' => [])
+    expect(stdlib).to include('document' => 'surface', 'schema_version' => 2, 'errors' => [])
     expect(stdlib['module']).to eq('name' => 'puppetlabs-stdlib', 'version' => '8.6.0')
     expect(stdlib['classes']).to eq('stdlib' => { 'file' => 'manifests/init.pp', 'params' => { 'version' => { 'type' => 'String', 'default' => "'8.6.0'" } } })
     expect(stdlib['defined_types']).to eq({})
@@ -101,7 +101,7 @@ RSpec.describe Pupgrade::Surface do
     expect { described_class.checkout(File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), 'v0') { nil } }.to raise_error(described_class::Error, /git fetch/)
     expect { described_class.load(File.join(@tmp, 'nope')) }.to raise_error(described_class::Error, /no such file/)
     File.write(path, JSON.generate(doc.merge('schema_version' => 99)))
-    expect { described_class.load(path) }.to raise_error(described_class::Error, /schema 99 is newer than this pupgrade reads \(1\)/)
+    expect { described_class.load(path) }.to raise_error(described_class::Error, /schema 99 is newer than this pupgrade reads \(2\)/)
     expect { described_class.extract(File.join(@tmp, 'nope')) }.to raise_error(described_class::Error, /no such directory/)
   end
 
@@ -109,15 +109,25 @@ RSpec.describe Pupgrade::Surface do
     it 'lists the module, entries added and removed, and each attribute that changed' do
       newer = Pupgrade::Surface.checkout(File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), 'v9.6.0') { |dir| Pupgrade::Surface.extract(dir) }
       changes = described_class.documents(stdlib, newer)
-      expect(changes.map { |c| [c.section, c.name, c.kind] }).to eq([
-        %w[module version changed],
-        %w[classes stdlib changed],
-        %w[functions legacy_shout removed],
-        %w[functions stdlib::shout changed],
-        %w[type_aliases Stdlib::Port changed],
+      expect(changes.map { |c| [c.section, c.name, c.kind, c.path] }).to eq([
+        ['module', 'version', 'changed', []],
+        ['metadata', 'CentOS', 'removed', ['operatingsystem_support']],
+        ['metadata', 'Debian', 'changed', ['operatingsystem_support']],
+        ['metadata', 'RedHat', 'changed', ['operatingsystem_support']],
+        ['metadata', 'Rocky', 'added', ['operatingsystem_support']],
+        ['metadata', 'Ubuntu', 'changed', ['operatingsystem_support']],
+        ['classes', 'stdlib', 'changed', %w[params version default]],
+        ['functions', 'legacy_shout', 'removed', []],
+        ['functions', 'stdlib::shout', 'changed', %w[signatures]],
+        ['type_aliases', 'Stdlib::Port', 'changed', %w[type]],
       ])
-      expect(changes.map(&:detail)).to eq([
+      expect(changes.map { |c| [c.old, c.new] }.values_at(0, 1, 4, 6, 9)).to eq([
+        %w[8.6.0 9.6.0], [%w[7], nil], [nil, %w[8 9]], ["'8.6.0'", "'9.6.0'"], ['Integer[0, 65535]', 'Integer[1, 65535]'],
+      ])
+      expect(changes.map(&:detail).values_at(0, 1, 3, 6, 7, 8, 9)).to eq([
         '8.6.0 -> 9.6.0',
+        'was ["7"]',
+        'operatingsystem_support: ["7","8"] -> ["8","9"]',
         "params.version.default: '8.6.0' -> '9.6.0'",
         'was ruby3x, in lib/puppet/parser/functions/legacy_shout.rb',
         'signatures: [{"params":["text"],"type":"Callable[String]"}] -> [{"params":["text","times"],"type":"Callable[String, Integer, 1, 2]"}]',

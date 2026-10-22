@@ -8,7 +8,7 @@ require 'pupgrade/surface'
 
 module Pupgrade
   module Surface
-    # What `surface` and `surface diff` are pointed at, and how each becomes
+    # What `surface` and `module diff` are pointed at, and how each becomes
     # a document: a module directory, a module on the control repo's
     # modulepath by name, either at a ref of its own clone, a document file,
     # or a git remote at a ref. Documents are kept in a cache directory,
@@ -115,7 +115,7 @@ module Pupgrade
           return [Surface.load(path), path, true]
         end
 
-        doc  = extract(target)
+        doc = extract(target)
         Array(doc['errors']).each { |e| @logger.warn("surface: #{target.spec}: #{e}") }
         path ||= cache_path_for(doc, target)
         FileUtils.mkdir_p(File.dirname(path))

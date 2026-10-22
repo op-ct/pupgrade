@@ -15,20 +15,20 @@ module Pupgrade
     # Modules' API surfaces as JSON documents in the cache directory: a
     # module directory or a module of the control repo by name, at the
     # deployed version or at a ref of its clone, several at once, or every
-    # module on the modulepath. `surface diff` compares two.
+    # module on the modulepath. `module diff` compares two.
     class Surface < Base
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'surface', subcommand_of: Root
       positional '[<module>[:<ref>] ...]'
-      desc 'Read modules\' API surfaces (classes, functions, types, providers, facts) into the cache; `diff` compares two'
+      desc 'Read modules\' API surfaces (classes, functions, types, providers, facts) into the cache for `module diff`'
       runs_without_subcommand
 
       config_key 'surface.cache_dir', type: :string, default: 'pupgrade/cache/api_surfaces',
                  about: 'Where `surface` keeps each module\'s document, named by module, version, and ref, relative to ' \
                         'the control repo; read from there unless --refresh'
 
-      # What is shared with `surface diff`: finding the repo and building the
+      # What is shared with `module diff`: finding the repo and building the
       # target reader from the options.
       module Shared
         def repo_option(o)
@@ -95,7 +95,8 @@ module Pupgrade
         o.separator 'in the cache as <module>-<version>[--<ref>].json and are reused until --refresh.'
         o.separator 'Loading a module\'s Ruby is how its functions, types, providers, and facts are read, so'
         o.separator 'extraction runs in a process of its own, with the repo\'s modulepath in reach. Files that'
-        o.separator 'fail to load are listed under "errors" in the document and warned about.'
+        o.separator 'fail to load are listed under "errors" in the document and warned about. The'
+        o.separator 'document also carries what metadata.json declares; `module diff` compares two.'
       end
 
       private
@@ -124,4 +125,3 @@ module Pupgrade
   end
 end
 
-Dir[File.join(__dir__, 'surface', '*.rb')].sort.each { |f| require f }
