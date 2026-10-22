@@ -30,10 +30,12 @@ bundle exec pupgrade --help
 ## Usage
 
 * `pupgrade help` lists the commands.
-  * Today, they are `check`, `compile`, `compile diff`, `config new`, `config print`, `impact`, `solve`, `surface`, `surface diff`, `module list`, `module info`, `module gitlog`, `module update`, and `params compare`.
+  * Today, they are `check`, `compile`, `compile diff`, `config new`, `config print`, `impact`, `solve`, `surface`, `module list`, `module info`, `module diff`, `module gitlog`, `module update`, and `params compare`.
   * `pupgrade config new` writes a `pupgrade.yaml` with every key commented out
   * `pupgrade config print [KEY]` shows the config as this run resolves it (`-d` adds unset defaults)
   * `pupgrade module list` and `pupgrade module info MODULE` show what is deployed and what it could move to
+  * `pupgrade module diff MODULE MODULE:REF` shows what a move would change: metadata and API surfaces
+  * `-v`, `-vv`, and `-vvv` show progressively more of what a command is doing; `--width` wraps tables
 
 
 
@@ -48,7 +50,7 @@ pupgrade solve --prune-unused \
 
 pupgrade check --propose Puppetfile.solved --by-change
 
-pupgrade impact --propose Puppetfile.solved --summary
+pupgrade impact Puppetfile.solved --summary
 ```
 
 To make the steps repeatable, put the inputs in `pupgrade/pupgrade.yaml`:
