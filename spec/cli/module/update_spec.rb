@@ -96,7 +96,7 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Update do
     end
   end
 
-  it 'refuses a Forge module, an unknown ref, and a dirty clone' do
+  it 'refuses a Forge module, an unknown ref, and a dirty clone, unless forced' do
     Dir.mktmpdir do |dir|
       control_repo(dir)
       silence_logger
@@ -106,6 +106,21 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Update do
       expect(run(['--no-config', '-d', dir, 'stdlib', 'v2']).first).to eq(3)
       expect(head(dir).tag_at_head).to eq('v1')
       expect(run(['--no-config', '-d', dir, 'stdlib']).first).to eq(2)
+
+      status, out = run(['--no-config', '-d', dir, 'stdlib', 'v2', '--force'])
+      expect([status, out]).to match([0, %r{\Amodules/stdlib: v1 -> v2}])
+      expect(head(dir).tag_at_head).to eq('v2')
+      expect(head(dir).dirty?).to be(false)
+    end
+  end
+
+  it 'takes a rev expression as written' do
+    Dir.mktmpdir do |dir|
+      control_repo(dir)
+      silence_logger
+      status, out = run(['--no-config', '-d', dir, 'stdlib', 'main~1'])
+      expect([status, out]).to match([0, %r{\Amodules/stdlib: v1 -> main~1}])
+      expect(head(dir).tag_at_head).to eq('v2')
     end
   end
 end

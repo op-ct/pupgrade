@@ -22,11 +22,11 @@ module Pupgrade
           selector, ref = argv
           repo = control_repo!('module update')
           entry, clone = git_module!('module update', repo, selector)
-          fatal!("module update: #{entry.path} has uncommitted changes; not touching it", 3) if clone.dirty?
+          fatal!("module update: #{entry.path} has uncommitted changes; not touching it (--force overrides)", 3) if clone.dirty? && !@options[:force]
 
           fatal!("module update: fetch from #{clone.remote || 'origin'} failed", 3) unless clone.fetch
-          candidate = ["origin/#{ref}", ref].find { |r| clone.resolve(r) }
-          fatal!("module update: #{ref.inspect} is not a ref #{clone.remote || 'origin'} has", 3) unless candidate
+          candidate = ref_candidate(clone, ref)
+          fatal!("module update: #{ref.inspect} is not a ref the clone resolves after fetching #{clone.remote || 'origin'}", 3) unless candidate
           target = clone.resolve(candidate)
 
           from = clone.tag_at_head || clone.branch_at_head || clone.sha.to_s[0, 12]
@@ -35,7 +35,7 @@ module Pupgrade
           elsif @options[:dry_run]
             puts "#{entry.path}: would move #{from} -> #{ref} (#{target[0, 12]})"
           else
-            fatal!("module update: checkout of #{target[0, 12]} failed in #{entry.path}", 3) unless clone.checkout(target)
+            fatal!("module update: checkout of #{target[0, 12]} failed in #{entry.path}", 3) unless clone.checkout(target, force: @options[:force])
             puts "#{entry.path}: #{from} -> #{ref} (#{target[0, 12]})"
           end
           declared = entry.declared&.ref
@@ -50,10 +50,12 @@ module Pupgrade
         def configure_parser(o)
           declare_repo_option(o)
           o.on('--dry-run', 'Say what would change without checking anything out') { @options[:dry_run] = true }
+          o.on('--force', 'Check out over uncommitted changes in the clone, discarding them') { @options[:force] = true }
           o.separator ''
-          o.separator '<ref> is a branch, tag, or sha, tried as origin/<ref> first and then as given,'
-          o.separator 'after fetching origin. The checkout is detached, as r10k leaves it. A clone with'
-          o.separator 'uncommitted changes is not touched.'
+          o.separator '<ref> is a branch, tag, or sha, tried as origin/<ref> first and then as given, after'
+          o.separator 'fetching origin; a rev expression such as HEAD~3 goes to git as written. The'
+          o.separator 'checkout is detached, as r10k leaves it. A clone with uncommitted changes is not'
+          o.separator 'touched unless --force.'
         end
       end
     end

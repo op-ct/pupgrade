@@ -82,6 +82,22 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
     end
   end
 
+  it 'passes a rev expression to git as written, and logs a ref from its start on request' do
+    Dir.mktmpdir do |dir|
+      control_repo(dir)
+      status, out = run(['--no-config', '-d', dir, 'stdlib', 'main~0'])
+      expect(status).to eq(0)
+      expect(subjects(out)).to match([a_string_matching(/ two\z/)])
+      expect(run(['--no-config', '-d', dir, 'stdlib', 'main~9']).first).to eq(3)
+
+      status, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '--from-start'])
+      expect(status).to eq(0)
+      expect(subjects(out).map { |s| s.split.last }).to eq(%w[two one])
+      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main~1', '--from-start'])
+      expect(subjects(out).map { |s| s.split.last }).to eq(%w[one])
+    end
+  end
+
   it 'follows --branch, recording it when a branchfile is named on the command line' do
     Dir.mktmpdir do |dir|
       control_repo(dir)

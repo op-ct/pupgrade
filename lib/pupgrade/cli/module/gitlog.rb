@@ -64,6 +64,7 @@ module Pupgrade
                'with a branchfile (flag or config), record it there') { |v| @options[:branch] = v }
           o.on('-t', '--tags-only', 'Show only tagged commits (and the branch tip with --include-heads)') { @options[:tags_only] = true }
           o.on('--include-heads', 'With --tags-only, keep the tip of the ref as well') { @options[:include_heads] = true }
+          o.on('--from-start', 'Log <ref> from its first commit, not only what it has beyond HEAD') { @options[:from_start] = true }
           o.on('--branchfile=FILE',
                'Without <ref> or --branch, follow the branch FILE names for the module:',
                'YAML of module to branch, or a Puppetfile overlay of mod entries with',
@@ -73,8 +74,10 @@ module Pupgrade
           end
           o.separator ''
           o.separator '<ref> is a branch, tag, or sha, tried as origin/<ref> first (a deployed clone\'s own'
-          o.separator 'branches are stale) and then as given; the log then covers HEAD..<ref>, what the'
-          o.separator 'ref has that the clone does not. Without one, the log is the clone\'s history.'
+          o.separator 'branches are stale) and then as given; a rev expression such as HEAD~3 or'
+          o.separator 'main@{2.weeks.ago} goes to git as written. The log then covers HEAD..<ref>, what'
+          o.separator 'the ref has that the clone does not, or all of <ref> with --from-start. Without'
+          o.separator 'a ref, the log is the clone\'s history.'
           o.separator 'Lines are coloured when --[no-]color, output.color, or a terminal says so.'
         end
 
@@ -142,9 +145,9 @@ module Pupgrade
         def range_for(clone, ref)
           return 'HEAD' if ref.nil?
 
-          candidate = ["origin/#{ref}", ref].find { |r| clone.resolve(r) }
-          fatal!("module gitlog: #{ref.inspect} is not a ref the clone knows (try --fetch)", 3) unless candidate
-          "HEAD..#{candidate}"
+          candidate = ref_candidate(clone, ref)
+          fatal!("module gitlog: #{ref.inspect} is not a ref the clone resolves (try --fetch)", 3) unless candidate
+          @options[:from_start] ? candidate : "HEAD..#{candidate}"
         end
       end
     end

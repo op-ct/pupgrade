@@ -45,6 +45,20 @@ module Pupgrade
           fatal!("#{command}: #{entry.path} is not a git clone", 3) unless clone.own?
           [entry, clone]
         end
+
+        # Git's own rev syntax: a suffix, a reflog or range operator.
+        REV_EXPRESSION = /[\^~:]|@\{|\.\./.freeze
+
+        # The ref as git should see it: a rev expression (`HEAD~2`,
+        # `main@{2.weeks.ago}`) as given, since prefixing it would change its
+        # meaning; a plain name as `origin/<name>` when the clone has that,
+        # since a deployed clone's own branches are stale, else as given.
+        #
+        # @return [String, nil] nil when the clone resolves neither
+        def ref_candidate(clone, ref)
+          names = ref.match?(REV_EXPRESSION) ? [ref] : ["origin/#{ref}", ref]
+          names.find { |r| clone.resolve(r) }
+        end
       end
     end
   end
