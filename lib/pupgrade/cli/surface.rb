@@ -21,7 +21,7 @@ module Pupgrade
 
       register_command name: 'surface', subcommand_of: Root
       positional '[<module>[:<ref>] ...]'
-      desc 'Read modules\' API surfaces (classes, functions, types, providers, facts) into the cache for `module diff`'
+      desc 'Read modules\' API surfaces (classes, functions, types, providers, facts) into the cache `module diff` and `impact` use'
       runs_without_subcommand
 
       config_key 'surface.cache_dir', type: :string, default: 'pupgrade/cache/api_surfaces',

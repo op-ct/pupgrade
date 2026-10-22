@@ -8,7 +8,7 @@ module Pupgrade
     # would shadow inside this namespace.
     class ModuleCommand < Base
       register_command name: 'module', subcommand_of: Root
-      desc 'Act on one deployed module: its git log, or moving it to a ref (see subcommands)'
+      desc 'One deployed module: list them, show one, compare two versions, read its git log, or move it'
 
       # What the commands acting on one module share: finding the repo and
       # the module named on the command line.

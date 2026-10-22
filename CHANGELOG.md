@@ -73,8 +73,6 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   - `--surfaces`, `--names`, `--changes` filters, `--summary`
   - exits `1` when the two differ
 
-- `pupgrade params compare FROM TO`: what changed between two schemas that
-  driftless's `params record` wrote
 - Config subsystem `modules` in `pupgrade.yaml`:
   - `operatingsystems`, `requirements`, `exclude_modules`,
     `exclude_dependencies`, `exclude_requirements`,

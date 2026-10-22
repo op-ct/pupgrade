@@ -30,7 +30,7 @@ bundle exec pupgrade --help
 ## Usage
 
 * `pupgrade help` lists the commands.
-  * Today, they are `check`, `compile`, `compile diff`, `config new`, `config print`, `impact`, `solve`, `surface`, `module list`, `module info`, `module diff`, `module gitlog`, `module update`, and `params compare`.
+  * Today, they are `check`, `compile`, `compile diff`, `config new`, `config print`, `impact`, `solve`, `surface`, `module list`, `module info`, `module diff`, `module gitlog`, and `module update`.
   * `pupgrade config new` writes a `pupgrade.yaml` with every key commented out
   * `pupgrade config print [KEY]` shows the config as this run resolves it (`-d` adds unset defaults)
   * `pupgrade module list` and `pupgrade module info MODULE` show what is deployed and what it could move to

@@ -6,7 +6,7 @@ module Pupgrade
     # `pupgrade config`: the parent of the commands on pupgrade.yaml.
     class Config < Base
       register_command name: 'config', subcommand_of: Root
-      desc 'Generate pupgrade.yaml (see subcommands)'
+      desc 'Write a pupgrade.yaml, or show the configuration in effect'
     end
   end
 end

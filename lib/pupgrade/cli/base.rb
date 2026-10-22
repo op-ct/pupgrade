@@ -208,7 +208,7 @@ module Pupgrade
 
       def build_parser
         OptionParser.new do |o|
-          o.banner = usage_line
+          o.banner = self.class.desc ? "#{usage_line}\n\n#{self.class.desc}" : usage_line
           add_subcommand_section(o)
           o.separator ''
           o.separator 'Options:'
@@ -298,7 +298,7 @@ module Pupgrade
       end
 
       def add_subcommand_section(o)
-        subs = self.class.subcommands
+        subs = self.class.subcommands.sort_by(&:canonical_name)
         return if subs.empty?
         o.separator ''
         o.separator 'Subcommands:'

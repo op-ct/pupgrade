@@ -7,7 +7,7 @@ module Pupgrade
   module CLI
     class Root < Base
       register_command name: 'pupgrade'
-      desc 'Puppet/OpenVox control-repo upgrade helper'
+      desc 'Puppet/OpenVox control-repo upgrade helper: what would moving a module break?'
 
       protected
 
