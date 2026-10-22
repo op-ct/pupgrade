@@ -28,8 +28,9 @@ module Pupgrade
 
       config_key 'compile.factsets', type: :array, default: [], example: ['spec/factsets'],
                  about: 'Factset files or directories (onceover layout or a plain facts hash), relative to the control repo'
-      config_key 'compile.output_dir', type: :string, default: 'pupgrade/cache/catalogs',
-                 about: 'Where `compile` writes OUT/<certname>/{catalog,probes}.json, relative to the control repo'
+      config_key 'compile.catalogs_dir', type: :string, default: 'pupgrade/cache/catalogs',
+                 about: 'Where `compile` writes <certname>/{catalog,probes}.json, relative to the control repo; what ' \
+                        '`solve` and `impact` read as evidence of use'
 
       COLUMNS = %w[certname resources classes warnings leaks status].freeze
 
@@ -42,7 +43,7 @@ module Pupgrade
 
         factsets = load_factsets(repo)
         session  = build_session(repo)
-        out      = File.expand_path(@options[:output_dir], repo.dir)
+        out      = File.expand_path(@options[:catalogs_dir], repo.dir)
         rows     = []
         failed   = 0
         begin
@@ -60,7 +61,7 @@ module Pupgrade
         print_table(COLUMNS, rows)
         stale = Array(@options[:certnames]).empty? && !@options[:keep_stale] ? remove_stale(out, factsets) : []
         ::Pupgrade.logger.notice("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}" \
-                               "#{stale.empty? ? '' : "; removed #{stale.size} node(s) no factset names: #{stale.join(', ')}"}")
+                               "#{"; removed #{stale.size} node(s) no factset names: #{stale.join(', ')}" unless stale.empty?}")
         exit(failed.zero? ? 0 : 1)
       end
 
@@ -71,9 +72,9 @@ module Pupgrade
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('--factsets=PATH', Array, 'Factset files or directories, comma-separated, repeatable',
              '(config: compile.factsets)') { |v| accumulate(:factsets, v) }
-        o.on('-o', '--output-dir=DIR', 'Where to write OUT/<certname>/ (config: compile.output_dir)') { |v| @options[:output_dir] = v }
+        o.on('-o', '--catalogs-dir=DIR', 'Where to write <certname>/ directories (config: compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
         o.on('--certname=GLOBS', Array, 'Only factsets whose certname matches (case-insensitive)') { |v| accumulate(:certnames, v) }
-        o.on('--keep-stale', 'Keep OUT/<certname>/ directories of nodes the factsets no longer name') { @options[:keep_stale] = true }
+        o.on('--keep-stale', 'Keep <certname>/ directories of nodes the factsets no longer name') { @options[:keep_stale] = true }
 
         o.separator ''
         o.separator 'What to compile:'
@@ -194,7 +195,7 @@ module Pupgrade
         cfg = ::Pupgrade.config
         {
           factsets:     cfg.dig('compile', 'factsets'),
-          output_dir:   cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
+          catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
           environment:  cfg.dig('compile', 'environment') || 'production',
           manifest:     cfg.dig('compile', 'manifest'),
           prepend_file: cfg.dig('compile', 'prepend_file'),

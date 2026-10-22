@@ -43,7 +43,7 @@ bundle exec pupgrade --help
 pupgrade compile --factsets pupgrade/factsets/ \
   --mocks pupgrade/mocks.yaml -o pupgrade/cache/catalogs/
 
-pupgrade solve --evidence pupgrade/cache/catalogs/ --prune-unused \
+pupgrade solve --prune-unused \
   --exclusions exclusions.yaml -o Puppetfile.solved
 
 pupgrade check --propose Puppetfile.solved --by-change

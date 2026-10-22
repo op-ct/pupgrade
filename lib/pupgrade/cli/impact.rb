@@ -32,9 +32,10 @@ module Pupgrade
       register_command name: 'impact', subcommand_of: Root
       desc 'What a proposed Puppetfile would change for the site: surface changes mapped to their uses'
 
-      config_key 'impact.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
-                 about: 'A `compile` output directory to read instead of compile.output_dir, relative to the control ' \
-                        'repo: evidence of what each node uses. Unset, the last compile is read'
+      config_key 'impact.catalogs_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` output directory (catalogs and probe records) to read instead of ' \
+                        'compile.catalogs_dir, relative to the control repo: evidence of what each node uses. Unset, ' \
+                        'the last compile is read'
 
       COLUMNS         = %w[module impact subject where detail].freeze
       SUMMARY_COLUMNS = %w[module from to commits findings used].freeze
@@ -76,7 +77,7 @@ module Pupgrade
           print_history(modules) if @options[:changelog] || @options[:gitlog]
         end
         ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
-                               "#{shown.count { |f| !f.used? }} without#{' (no evidence; uses unknown)' unless evidence}")
+                               "#{shown.count { |f| !f.used? }} without#{' (no catalogs; uses unknown)' unless evidence}")
         exit(shown.any?(&:used?) ? 1 : 0)
       rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::Surface::Error, ::Pupgrade::Impact::Evidence::Error => e
         fatal!("impact: #{e.message}", 3)
@@ -88,8 +89,8 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('--propose=PUPPETFILE', 'The proposed Puppetfile (what `solve -o` wrote, or an overlay of your own)') { |v| @options[:propose] = v }
-        o.on('--evidence=DIR', 'A `compile` output directory (config: impact.evidence_dir, else compile.output_dir)') { |v| @options[:evidence] = v }
-        o.on('--no-evidence', 'Map nothing to nodes; every change is a finding with its use unknown') { @options[:no_evidence] = true }
+        o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: impact.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
+        o.on('--no-catalogs', 'Read no catalogs: every change is a finding with its use unknown') { @options[:no_catalogs] = true }
 
         o.separator ''
         o.separator 'Row filters (comma-separated, repeatable; globs are case-insensitive):'
@@ -111,10 +112,12 @@ module Pupgrade
       private
 
       def load_evidence(repo)
-        return nil if @options[:no_evidence]
+        return nil if @options[:no_catalogs]
 
-        dir = @options[:evidence]
-        dir ||= @options[:output_dir] if @options[:output_dir] && File.directory?(File.expand_path(@options[:output_dir], repo.dir))
+        dir = @options[:catalogs_dir]
+        if dir.nil? && File.directory?(File.expand_path(@options[:compile_catalogs_dir], repo.dir))
+          dir = @options[:compile_catalogs_dir]
+        end
         return nil unless dir
 
         ::Pupgrade::Impact::Evidence.new(File.expand_path(dir, repo.dir))
@@ -229,8 +232,8 @@ module Pupgrade
       def config_defaults
         cfg = ::Pupgrade.config
         {
-          evidence:   cfg.dig('impact', 'evidence_dir'),
-          output_dir: cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
+          catalogs_dir:         cfg.dig('impact', 'catalogs_dir'),
+          compile_catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
         }.compact
       end
     end

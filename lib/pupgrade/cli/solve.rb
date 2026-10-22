@@ -33,9 +33,10 @@ module Pupgrade
                         'version forward to the first that fits, driven by --bump'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Whether the tip of a tag-pinned module\'s tracking branch (modules.branchfile) is a candidate'
-      config_key 'solve.evidence_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
-                 about: 'A `compile` output directory to read instead of compile.output_dir, relative to the control ' \
-                        'repo: evidence of what the site uses, for --prune-unused. Unset, the last compile is read'
+      config_key 'solve.catalogs_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` output directory (catalogs and probe records) to read instead of ' \
+                        'compile.catalogs_dir, relative to the control repo: evidence of what the site uses, for ' \
+                        '--prune-unused. Unset, the last compile is read'
 
       COLUMNS         = %w[module current chosen candidates note].freeze
       EXPLAIN_COLUMNS = %w[module candidate verdict violations].freeze
@@ -49,10 +50,10 @@ module Pupgrade
         repo = @options[:repo_dir] ? ::Driftless::ControlRepo.new(@options[:repo_dir]) : ::Driftless::ControlRepo.detect(Dir.pwd)
         fatal!('solve requires --repo-dir (auto-detection did not supply it)', help: true) unless repo
         fatal!("repo-dir not readable: #{repo.dir}", 3) unless repo.readable?
-        dir = evidence_dir(repo)
+        dir = catalogs_dir(repo)
         if @options[:prune_unused] && dir.nil?
-          fatal!('solve: --prune-unused needs a `compile` output directory: --evidence DIR, solve.evidence_dir, or ' \
-                 "compile.output_dir (#{@options[:output_dir]}) once `compile` has written it", help: true)
+          fatal!('solve: --prune-unused needs a `compile` output directory: --catalogs-dir DIR, solve.catalogs_dir, or ' \
+                 "compile.catalogs_dir (#{@options[:compile_catalogs_dir]}) once `compile` has written it", help: true)
         end
 
         inventory  = ::Driftless::ModuleInventory.new(repo.dir)
@@ -103,8 +104,8 @@ module Pupgrade
 
         o.separator ''
         o.separator 'Pruning by what the site uses:'
-        o.on('--evidence=DIR', 'A `compile` output directory (config: solve.evidence_dir, else compile.output_dir)') { |v| @options[:evidence] = v }
-        o.on('--prune-unused', 'Ignore dependency edges to modules the evidence shows unused') { @options[:prune_unused] = true }
+        o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: solve.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
+        o.on('--prune-unused', 'Ignore dependency edges to modules the catalogs show unused') { @options[:prune_unused] = true }
         o.on('--exclusions=FILE', 'Write the pruned edges the result violates as modules.exclude_dependencies YAML') { |v| @options[:exclusions] = v }
 
         o.separator ''
@@ -208,13 +209,13 @@ module Pupgrade
         text
       end
 
-      # --evidence or the configured directory, else compile's output
-      # directory when it is there and the solve will read it.
-      def evidence_dir(repo)
-        return File.expand_path(@options[:evidence], repo.dir) if @options[:evidence]
+      # --catalogs-dir or the configured directory, else compile's when it
+      # is there and the solve will read it.
+      def catalogs_dir(repo)
+        return File.expand_path(@options[:catalogs_dir], repo.dir) if @options[:catalogs_dir]
         return nil unless @options[:prune_unused]
 
-        default = File.expand_path(@options[:output_dir], repo.dir)
+        default = File.expand_path(@options[:compile_catalogs_dir], repo.dir)
         File.directory?(default) ? default : nil
       end
 
@@ -245,8 +246,8 @@ module Pupgrade
           branchfile:       cfg.dig('modules', 'branchfile'),
           order:            cfg.dig('solve', 'order') || 'newest',
           include_heads:    cfg.dig('solve', 'include_heads') || false,
-          evidence:         cfg.dig('solve', 'evidence_dir'),
-          output_dir:       cfg.dig('compile', 'output_dir') || 'pupgrade/cache/catalogs',
+          catalogs_dir:         cfg.dig('solve', 'catalogs_dir'),
+          compile_catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
           exclude:          {
             'modules'          => cfg.dig('modules', 'exclude_modules'),
             'dependencies'     => cfg.dig('modules', 'exclude_dependencies'),

@@ -143,7 +143,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     exclusions = File.join(@tmp, 'exclusions.yaml')
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log do
-      _, out = run(['--hold', 'puppetlabs-apt', '--evidence', evidence, '--prune-unused', '--exclusions', exclusions])
+      _, out = run(['--hold', 'puppetlabs-apt', '--catalogs-dir', evidence, '--prune-unused', '--exclusions', exclusions])
     end
     expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'newest'])
     expect(YAML.safe_load(File.read(exclusions))).to eq('modules' => { 'exclude_dependencies' => ['puppetlabs-postgresql:puppetlabs/apt', 'puppet-redis:puppetlabs/apt'] })
@@ -154,7 +154,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(rows(out)).not_to have_key('puppetlabs-apt')
     expect(rows(out)['puppet-redis'].last).to start_with('unresolved: needs puppetlabs/apt >= 9.0.0 < 10.0.0, but apt is not on the modulepath')
     expect(run(['--prune-unused']).first).to eq(2)
-    expect(run(['--evidence', File.join(@tmp, 'nope')]).first).to eq(3)
+    expect(run(['--catalogs-dir', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)
   end
 end
