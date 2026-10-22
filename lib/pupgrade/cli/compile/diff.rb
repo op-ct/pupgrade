@@ -51,7 +51,7 @@ module Pupgrade
 
           nodes = changes.map(&:certname).uniq.size
           count = (shown.size == changes.size) ? "#{changes.size} change(s)" : "#{shown.size} of #{changes.size} change(s) shown"
-          ::Pupgrade.logger.info("compile diff: #{count} across #{nodes} node(s)")
+          ::Pupgrade.logger.notice("compile diff: #{count} across #{nodes} node(s)")
           exit(shown.empty? ? 0 : 1)
         rescue ::Pupgrade::Compile::CatalogDiff::Error => e
           fatal!("compile diff: #{e.message}", 3)

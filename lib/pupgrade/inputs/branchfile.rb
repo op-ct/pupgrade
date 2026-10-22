@@ -1,5 +1,7 @@
 require 'yaml'
 
+require 'pupgrade/logging'
+
 require 'pupgrade/config_keys'
 require 'driftless/inputs/puppetfile'
 
@@ -51,9 +53,14 @@ module Pupgrade
       # @param path [String]
       # @return [Result]
       def self.load(path)
-        return Result.new(exists: false, branches: {}, warnings: [], error: nil) unless File.file?(path)
+        unless File.file?(path)
+          Pupgrade.logger.debug("branchfile: #{path}: no such file")
+          return Result.new(exists: false, branches: {}, warnings: [], error: nil)
+        end
 
-        YAML_EXTENSIONS.include?(File.extname(path).downcase) ? from_yaml(path) : from_puppetfile(path)
+        result = YAML_EXTENSIONS.include?(File.extname(path).downcase) ? from_yaml(path) : from_puppetfile(path)
+        Pupgrade.logger.debug("branchfile: #{path}: #{result.error ? result.error : "#{result.branches.size} module(s)"}")
+        result
       end
 
       # Records a module's branch, replacing an entry for the module in

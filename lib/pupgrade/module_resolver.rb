@@ -4,6 +4,7 @@ require 'pupgrade/config_keys'
 require 'driftless/inputs/module_metadata'
 require 'driftless/module_inventory'
 require 'pupgrade/exclusions'
+require 'pupgrade/logging'
 require 'pupgrade/module_name'
 
 module Pupgrade
@@ -108,7 +109,9 @@ module Pupgrade
       warnings = []
       puppet_conflicts, puppet_range, suppressed = puppet(mods, warnings)
       conflicts = dependencies(mods, warnings) + puppet_conflicts + operatingsystems(mods)
+      conflicts.each { |c| Pupgrade.logger.debug("resolve: #{c.kind}: #{c.module}: #{c.detail}") }
       kept, dropped = conflicts.partition { |c| !excluded?(c, warnings) }
+      Pupgrade.logger.info("resolve: #{mods.size} module(s), #{kept.size} conflict(s), #{dropped.size + suppressed} excluded")
       Result.new(conflicts: kept.sort_by { |c| [KINDS.index(c.kind), c.module, c.subject] },
                  excluded: dropped.size + suppressed, puppet_range: puppet_range, warnings: warnings)
     end

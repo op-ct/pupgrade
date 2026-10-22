@@ -3,6 +3,8 @@ require 'fileutils'
 require 'open3'
 require 'tmpdir'
 
+require 'pupgrade/logging'
+
 module Pupgrade
   # Reads one file from a git remote at a ref without keeping a clone: a
   # depth-1 fetch into a scratch repository, then `cat-file`. A read at a
@@ -33,8 +35,12 @@ module Pupgrade
     #   there at that ref
     def read_file(ref, path, immutable: false)
       cache = cache_path(ref, path) if immutable && @cache_dir
-      return File.read(cache) if cache && File.file?(cache)
+      if cache && File.file?(cache)
+        Pupgrade.logger.debug("git remote: #{@url}@#{ref}:#{path} from cache #{cache}")
+        return File.read(cache)
+      end
 
+      Pupgrade.logger.debug("git remote: fetching #{@url} at #{ref} for #{path}")
       contents = Dir.mktmpdir('pupgrade-git-remote') do |tmp|
         run(tmp, 'init', '-q')
         run(tmp, 'fetch', '-q', '--depth', '1', @url, ref)
@@ -55,6 +61,7 @@ module Pupgrade
 
     def run(dir, *args)
       out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
       return out if status.success?
 
       line = err.lines.find { |l| l.start_with?('fatal:') } || err.lines.last

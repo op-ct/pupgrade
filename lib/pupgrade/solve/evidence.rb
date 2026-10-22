@@ -1,6 +1,7 @@
 require 'json'
 
 require 'pupgrade/compile/probe_record'
+require 'pupgrade/logging'
 
 module Pupgrade
   module Solve
@@ -30,7 +31,11 @@ module Pupgrade
         paths = Dir.glob(File.join(File.expand_path(dir), '*', 'probes.json')).sort
         raise Error, "#{dir}: no <certname>/probes.json under it" if paths.empty?
 
-        paths.each { |p| read(::Pupgrade::Compile::ProbeRecord.read(p)) }
+        paths.each do |p|
+          Pupgrade.logger.debug("evidence: reading #{p}")
+          read(::Pupgrade::Compile::ProbeRecord.read(p))
+        end
+        Pupgrade.logger.info("evidence: #{@nodes} node(s) from #{File.expand_path(dir)}; #{@used.size} module(s) used")
       rescue ::Pupgrade::Compile::ProbeRecord::Error => e
         raise Error, e.message
       end

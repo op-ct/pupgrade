@@ -74,8 +74,7 @@ module Pupgrade
           else
             puts path
           end
-          doc['errors'].each { |e| ::Pupgrade.logger.warn("surface: #{target.spec}: #{e}") }
-          ::Pupgrade.logger.info(summary(target, doc, cached))
+          ::Pupgrade.logger.notice(summary(target, doc, cached))
         end
         exit 0
       rescue ::Pupgrade::Surface::Targets::Error, ::Pupgrade::Surface::Error => e

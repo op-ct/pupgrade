@@ -29,14 +29,14 @@ module Pupgrade
             unless found
               declared = ::Pupgrade::ConfigKeys[key]
               fatal!("config print: nothing at #{key.inspect}", 3) unless declared && !declared.withheld?
-              ::Pupgrade.logger.info("config print: #{key} is unset; this is its default")
+              ::Pupgrade.logger.notice("config print: #{key} is unset; this is its default")
               value = declared.default
             end
             puts((value.is_a?(Hash) || value.is_a?(Array)) ? YAML.dump(value) : value.to_s)
           else
             puts YAML.dump(data)
           end
-          ::Pupgrade.logger.info(sources.empty? ? 'config print: no config file loaded' : "config print: from #{sources.join(', ')}")
+          ::Pupgrade.logger.notice(sources.empty? ? 'config print: no config file loaded' : "config print: from #{sources.join(', ')}")
           exit 0
         end
 

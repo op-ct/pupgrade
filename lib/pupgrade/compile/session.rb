@@ -7,6 +7,7 @@ require 'pupgrade/config_keys'
 require 'pupgrade/compile/catalog_document'
 require 'pupgrade/compile/factset'
 require 'pupgrade/compile/module_index'
+require 'pupgrade/logging'
 require 'pupgrade/compile/probes'
 require 'pupgrade/compile/mocks'
 
@@ -117,6 +118,8 @@ module Pupgrade
         @version = catalog_version
         Probes.install!
         Probes.attach_log
+        Pupgrade.logger.info("compile: environment #{@environment} at #{@repo_dir}; manifest #{@manifest || conf.manifest}; " \
+                             "modulepath #{@modulepath.join(':')}; #{@mocks.commands.size} mock(s); on leak: #{@on_leak}")
         self
       end
 

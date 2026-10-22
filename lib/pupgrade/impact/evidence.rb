@@ -2,6 +2,7 @@ require 'json'
 require 'set'
 
 require 'pupgrade/compile/probe_record'
+require 'pupgrade/logging'
 
 module Pupgrade
   module Impact
@@ -47,7 +48,11 @@ module Pupgrade
         paths = Dir.glob(File.join(dir, '*', 'probes.json')).sort
         raise Error, "#{dir}: no <certname>/probes.json under it" if paths.empty?
 
-        @nodes = paths.map { |p| node(File.dirname(p)) }
+        @nodes = paths.map do |p|
+          Pupgrade.logger.debug("evidence: reading #{File.dirname(p)}")
+          node(File.dirname(p))
+        end
+        Pupgrade.logger.info("evidence: #{@nodes.size} node(s) from #{dir}")
       rescue ::Pupgrade::Compile::ProbeRecord::Error => e
         raise Error, e.message
       rescue JSON::ParserError => e

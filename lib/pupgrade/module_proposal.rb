@@ -2,6 +2,7 @@ require 'pupgrade/git_remote'
 require 'driftless/inputs/module_metadata'
 require 'driftless/inputs/puppetfile'
 require 'driftless/module_inventory'
+require 'pupgrade/logging'
 require 'pupgrade/module_name'
 
 module Pupgrade
@@ -57,7 +58,9 @@ module Pupgrade
           y = after[path]
           next if x && y && x.declared == y.declared
 
-          Change.new(path: path, name: name_of(y || x), from: x && describe(x.declared), to: y && describe(y.declared))
+          Change.new(path: path, name: name_of(y || x), from: x && describe(x.declared), to: y && describe(y.declared)).tap do |c|
+            Pupgrade.logger.info("proposal: #{c.name}: #{c.from || 'added'} -> #{c.to || 'dropped'}")
+          end
         end
       end
     end
@@ -131,7 +134,8 @@ module Pupgrade
         return ::Driftless::Inputs::ModuleMetadata.absent.with(name: declared.name, version: declared.version)
       end
 
-      ref  = fetch_ref(declared)
+      ref = fetch_ref(declared)
+      Pupgrade.logger.debug("proposal: #{declared.path}: reading metadata.json at #{ref} from #{declared.git}")
       text = @remote.call(declared.git).read_file(ref, ::Driftless::Inputs::ModuleMetadata::FILENAME,
                                                   immutable: %w[tag commit].include?(declared.ref_type))
       ::Driftless::Inputs::ModuleMetadata.parse(text, path: "#{declared.git}@#{ref}:#{::Driftless::Inputs::ModuleMetadata::FILENAME}")

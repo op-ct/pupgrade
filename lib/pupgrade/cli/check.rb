@@ -85,7 +85,7 @@ module Pupgrade
           shown = shown_rows(result)
           rows  = change_rows(shown_rows(current), shown)
           print_proposal(rows.reject { |r| hidden_mark?(r.mark) }, proposal.changes)
-          ::Pupgrade.logger.info(proposal_summary(result, shown, rows))
+          ::Pupgrade.logger.notice(proposal_summary(result, shown, rows))
         else
           result = current
           shown  = shown_rows(result)
@@ -94,7 +94,7 @@ module Pupgrade
           else
             print_table(@order + ['detail'], shown.map { |c| row(c) })
           end
-          ::Pupgrade.logger.info(summary(result, shown))
+          ::Pupgrade.logger.notice(summary(result, shown))
         end
 
         exit(shown.empty? ? 0 : 1)

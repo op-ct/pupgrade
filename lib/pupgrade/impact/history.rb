@@ -1,6 +1,8 @@
 require 'open3'
 require 'semantic_puppet'
 
+require 'pupgrade/logging'
+
 module Pupgrade
   module Impact
     # What a module's repository says about the move: the commits between
@@ -26,9 +28,11 @@ module Pupgrade
       # @param to_version [String, nil] the proposed metadata version
       # @return [Record]
       def self.between(clone_dir, from_ref, to_ref, from_version: nil, to_version: nil)
+        Pupgrade.logger.info("history: #{clone_dir}: #{from_ref}..#{to_ref}")
         log = git(clone_dir, 'log', '--oneline', '--no-decorate', "#{from_ref}..#{to_ref}")
         commits = log&.lines&.map(&:strip)&.reject(&:empty?)
         changelog = CHANGELOG_NAMES.filter_map { |n| git(clone_dir, 'show', "#{to_ref}:#{n}") }.first
+        Pupgrade.logger.debug("history: #{clone_dir}: #{commits ? "#{commits.size} commit(s)" : 'log unavailable'}, changelog #{changelog ? 'found' : 'absent'}")
         Record.new(commits: commits, changelog: changelog && sections(changelog, from_version, to_version))
       end
 

@@ -4,6 +4,7 @@ require 'rbconfig'
 require 'tmpdir'
 require 'fileutils'
 
+require 'pupgrade/logging'
 require 'pupgrade/surface/extract'
 
 module Pupgrade
@@ -27,9 +28,14 @@ module Pupgrade
       dir = File.expand_path(dir)
       raise Error, "#{dir}: no such directory" unless File.directory?(dir)
 
+      Pupgrade.logger.info("surface: extracting #{dir}")
+      Pupgrade.logger.debug("surface: modulepath #{modulepath.empty? ? '(none)' : modulepath.map { |m| File.expand_path(m) }.join(':')}")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       out, err, status = Open3.capture3(RbConfig.ruby, '-I', LIB, '-r', 'pupgrade/surface/extract',
                                         '-e', 'print Pupgrade::Surface::Extract.json(ARGV[0], ARGV[1..])', '--', dir,
                                         *modulepath.map { |m| File.expand_path(m) })
+      Pupgrade.logger.debug("surface: extracted #{dir} in #{'%.1f' % (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)}s, exit #{status.exitstatus}")
+      err.lines.reject { |l| l.strip.empty? }.each { |l| Pupgrade.logger.trace("surface: #{File.basename(dir)}: #{l.rstrip}") }
       raise Error, "extracting #{dir}: #{err.lines.reject { |l| l.strip.empty? }.last.to_s.strip}" unless status.success?
 
       JSON.parse(out)
@@ -70,6 +76,7 @@ module Pupgrade
     # @yieldparam dir [String]
     # @raise [Error] when the fetch fails
     def checkout(url, ref)
+      Pupgrade.logger.debug("surface: checking out #{url} at #{ref}")
       Dir.mktmpdir('pupgrade-surface') do |tmp|
         work = File.join(tmp, 'checkout')
         FileUtils.mkdir_p(work)
@@ -93,6 +100,7 @@ module Pupgrade
 
     def git(dir, *args)
       out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
       return out if status.success?
 
       line = err.lines.find { |l| l.start_with?('fatal:') } || err.lines.last

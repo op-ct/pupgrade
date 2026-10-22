@@ -75,7 +75,7 @@ module Pupgrade
           print_table(COLUMNS, shown.map { |f| [f.module, f.kind, f.subject, f.where, f.detail] })
           print_history(modules) if @options[:changelog] || @options[:gitlog]
         end
-        ::Pupgrade.logger.info("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
+        ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
                                "#{shown.count { |f| !f.used? }} without#{' (no evidence; uses unknown)' unless evidence}")
         exit(shown.any?(&:used?) ? 1 : 0)
       rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::Surface::Error, ::Pupgrade::Impact::Evidence::Error => e

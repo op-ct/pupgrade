@@ -44,7 +44,7 @@ module Pupgrade
 
           out = tagged_lines(out, ref) if @options[:tags_only]
           puts out unless out.empty?
-          ::Pupgrade.logger.info("module gitlog: #{entry.path} at #{clone.tag_at_head || clone.branch_at_head || clone.sha&.slice(0, 12)}")
+          ::Pupgrade.logger.notice("module gitlog: #{entry.path} at #{clone.tag_at_head || clone.branch_at_head || clone.sha&.slice(0, 12)}")
           exit 0
         end
 
@@ -129,7 +129,7 @@ module Pupgrade
           path = File.expand_path(@options[:branchfile], repo.dir)
           name = entry.declared&.name || entry.metadata.name || File.basename(entry.path)
           ::Pupgrade::Inputs::Branchfile.record(path, name, branch)
-          ::Pupgrade.logger.info("module gitlog: recorded #{name}: #{branch} in #{path}")
+          ::Pupgrade.logger.notice("module gitlog: recorded #{name}: #{branch} in #{path}")
         rescue ::Pupgrade::Inputs::Branchfile::Error => e
           fatal!("module gitlog: branchfile #{e.message}", 3)
         end

@@ -3,6 +3,7 @@ require 'semantic_puppet'
 
 require 'driftless/inputs/module_metadata'
 require 'pupgrade/inputs/branchfile'
+require 'pupgrade/logging'
 
 module Pupgrade
   module Solve
@@ -75,7 +76,10 @@ module Pupgrade
 
         tags = tags_past(dir, current.version, branch, entry)
         tips = (@include_heads && branch) ? [tip_of(dir, branch, entry)].compact : []
-        [current] + tags + tips
+        list = [current] + tags + tips
+        Pupgrade.logger.info("candidates: #{entry.path}: #{list.size - 1} past #{current.ref}" \
+                             "#{" on #{branch}" if branch}#{": #{list.drop(1).map(&:ref).join(', ')}" if list.size > 1}")
+        list
       end
 
       private
@@ -101,7 +105,10 @@ module Pupgrade
 
         out.split("\n").filter_map { |tag|
           version = parse(tag.sub(/\Av/, ''))
-          next if version.nil? || (current_version && version <= current_version)
+          if version.nil? || (current_version && version <= current_version)
+            Pupgrade.logger.debug("candidates: #{entry.path}: tag #{tag} skipped: #{version.nil? ? 'not a version' : "not past #{current_version}"}")
+            next
+          end
 
           metadata = metadata_at(dir, tag, entry)
           next unless metadata
@@ -146,6 +153,7 @@ module Pupgrade
       end
 
       def fetch(dir, entry)
+        Pupgrade.logger.info("candidates: #{entry.path}: fetching origin")
         @warnings << "#{entry.path}: fetch failed" if git(dir, 'fetch', '--quiet', '--tags', 'origin').nil?
       end
 
@@ -156,7 +164,8 @@ module Pupgrade
       end
 
       def git(dir, *args)
-        out, _err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+        out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+        Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
         status.success? ? out.strip : nil
       rescue Errno::ENOENT
         nil

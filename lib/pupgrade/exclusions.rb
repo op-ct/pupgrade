@@ -1,3 +1,4 @@
+require 'pupgrade/logging'
 require 'pupgrade/module_name'
 
 module Pupgrade
@@ -14,7 +15,7 @@ module Pupgrade
     # @param globs [Array<String>] `exclude_modules`
     # @param names [Array<String, nil>] the module's spellings
     def module?(globs, *names)
-      ModuleName.any?(globs, *names)
+      matched(globs, 'exclude_modules', names.compact.first) { |g| ModuleName.match?(g, *names) }
     end
 
     # One dependency edge against `exclude_dependencies`.
@@ -27,7 +28,8 @@ module Pupgrade
     #   the stale exclusions met on the way
     def dependency?(globs, depender, dependency, requirement)
       stale = []
-      hit = Array(globs).any? do |glob|
+      edge  = "#{depender.compact.first} -> #{dependency.compact.first}"
+      hit = matched(globs, 'exclude_dependencies', edge) do |glob|
         left, right = glob.split(':', 2)
         if right.nil?
           ModuleName.any?([glob], *depender) || ModuleName.any?([glob], *dependency)
@@ -46,7 +48,7 @@ module Pupgrade
 
     # A module against `exclude_requirements`.
     def requirement?(globs, *names)
-      ModuleName.any?(globs, *names)
+      matched(globs, 'exclude_requirements', names.compact.first) { |g| ModuleName.match?(g, *names) }
     end
 
     # An operating-system row against `exclude_operatingsystems`: a module
@@ -55,7 +57,7 @@ module Pupgrade
     # @param names [Array<String, nil>] the module's spellings
     # @param subject [String] "RedHat 9"
     def operatingsystem?(globs, names, subject)
-      Array(globs).any? do |glob|
+      matched(globs, 'exclude_operatingsystems', "#{names.compact.first} #{subject}") do |glob|
         left, right = glob.split(':', 2)
         if right.nil?
           ModuleName.any?([glob], *names) || File.fnmatch?(glob, subject, File::FNM_CASEFOLD)
@@ -67,6 +69,14 @@ module Pupgrade
 
     def squash(text)
       text.to_s.delete(' ')
+    end
+
+    # The first glob the block accepts, logged so a lever that fired can be
+    # seen; false when none does.
+    def matched(globs, list, what)
+      glob = Array(globs).find { |g| yield(g) }
+      Pupgrade.logger.debug("exclusions: #{list} #{glob.inspect} excludes #{what}") if glob
+      !glob.nil?
     end
   end
 end

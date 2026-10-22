@@ -64,7 +64,7 @@ module Pupgrade
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
         write_puppetfile(plan) if @options[:output]
         write_exclusions(plan) if @options[:exclusions]
-        ::Pupgrade.logger.info(summary(plan, evidence))
+        ::Pupgrade.logger.notice(summary(plan, evidence))
         exit(plan.choices.any?(&:held?) ? 1 : 0)
       rescue ::Pupgrade::Solve::Evidence::Error, ::Pupgrade::ModuleResolver::Error, ArgumentError => e
         fatal!("solve: #{e.message}", 3)
@@ -136,13 +136,13 @@ module Pupgrade
           lines << "  #{c.chosen.ref_type}: '#{c.chosen.ref}'"
         end
         File.write(File.expand_path(@options[:output]), lines.join("\n") + "\n")
-        ::Pupgrade.logger.info("solve: wrote #{File.expand_path(@options[:output])}")
+        ::Pupgrade.logger.notice("solve: wrote #{File.expand_path(@options[:output])}")
       end
 
       def write_exclusions(plan)
         data = { 'modules' => { 'exclude_dependencies' => plan.pruned } }
         File.write(File.expand_path(@options[:exclusions]), YAML.dump(data))
-        ::Pupgrade.logger.info("solve: wrote #{plan.pruned.size} exclusion(s) to #{File.expand_path(@options[:exclusions])}")
+        ::Pupgrade.logger.notice("solve: wrote #{plan.pruned.size} exclusion(s) to #{File.expand_path(@options[:exclusions])}")
       end
 
       def summary(plan, evidence)

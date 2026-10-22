@@ -31,7 +31,7 @@ module Pupgrade
           globs = argv.first.to_s.split(',').reject(&:empty?)
           rows  = inventory.entries.select { |e| globs.empty? || ::Pupgrade::ModuleName.any?(globs, e.metadata.name, e.declared&.name, File.basename(e.path)) }
           print_table(COLUMNS, rows.map { |e| row(e) })
-          ::Pupgrade.logger.info("module list: #{rows.size} module(s)")
+          ::Pupgrade.logger.notice("module list: #{rows.size} module(s)")
           exit 0
         end
 

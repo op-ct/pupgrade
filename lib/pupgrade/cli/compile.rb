@@ -51,14 +51,15 @@ module Pupgrade
             write(out, result)
             failed += 1 unless result.ok?
             rows << row(result)
-            ::Pupgrade.logger.debug("compile: #{result.certname} in #{'%.1f' % result.seconds}s#{": #{result.error}" unless result.ok?}")
+            ::Pupgrade.logger.info("compile: #{result.certname} in #{'%.1f' % result.seconds}s#{": #{result.error}" unless result.ok?}")
+            ::Pupgrade.logger.debug("compile: #{result.certname}: #{probe_counts(result.probes)}")
           end
         ensure
           session.close
         end
         print_table(COLUMNS, rows)
         stale = Array(@options[:certnames]).empty? && !@options[:keep_stale] ? remove_stale(out, factsets) : []
-        ::Pupgrade.logger.info("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}" \
+        ::Pupgrade.logger.notice("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}" \
                                "#{stale.empty? ? '' : "; removed #{stale.size} node(s) no factset names: #{stale.join(', ')}"}")
         exit(failed.zero? ? 0 : 1)
       end
@@ -150,6 +151,10 @@ module Pupgrade
         Dir.children(out).select { |n| File.directory?(File.join(out, n)) && File.file?(File.join(out, n, 'probes.json')) && !current.include?(n) }.sort.each do |name|
           FileUtils.rm_rf(File.join(out, name))
         end
+      end
+
+      def probe_counts(probes)
+        %w[classes defined_types functions facts lookups warnings leaks].filter_map { |k| "#{probes[k].size} #{k.tr('_', ' ')}" if probes[k].respond_to?(:size) }.join(', ')
       end
 
       def probes_document(result)

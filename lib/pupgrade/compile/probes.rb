@@ -2,6 +2,7 @@ require 'puppet'
 require 'facter'
 
 require 'pupgrade/compile/mocks'
+require 'pupgrade/logging'
 
 module Pupgrade
   module Compile
@@ -164,6 +165,7 @@ module Pupgrade
       end
 
       def log(msg)
+        Pupgrade.logger.trace("puppet #{msg.level}: #{msg.message}#{" (#{msg.file}:#{msg.line})" if msg.file}")
         return unless LOGGED_LEVELS.include?(msg.level)
 
         @warnings << { 'level' => msg.level.to_s, 'message' => msg.message.to_s,

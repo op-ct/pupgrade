@@ -25,10 +25,10 @@ end
 
 # Capture what pupgrade (and the driftless code it calls) logs while the
 # block runs, and return it as a string.
-def capture_log(level: Logger::DEBUG)
+def capture_log(level: :trace)
   captured = StringIO.new
   original = Driftless.instance_variable_get(:@logger)
-  logger   = Logger.new(captured, level: level)
+  logger   = Driftless::Logging::Logger.new(captured, level: level)
   logger.formatter = Driftless::Logging.formatter
   Pupgrade.logger  = logger
   yield
@@ -40,7 +40,8 @@ end
 # Warnings from driftless's inventory and parsers are noise in the middle of
 # RSpec results.
 def silence_logger
-  fake_logger = instance_double(Logger, debug: true, info: true, warn: true, error: true, fatal: true)
+  fake_logger = instance_double(Driftless::Logging::Logger, trace: true, debug: true, info: true, notice: true,
+                                                            warning: true, warn: true, error: true, fatal: true)
   allow(fake_logger).to receive(:level=)
   allow(Driftless).to receive(:logger).and_return(fake_logger)
 end

@@ -111,15 +111,16 @@ module Pupgrade
 
         path = cache_path(target)
         if path && File.file?(path) && !@refresh
-          @logger.debug("surface: #{target.spec}: cached at #{path}")
+          @logger.info("surface: #{target.spec}: cached at #{path}")
           return [Surface.load(path), path, true]
         end
 
         doc  = extract(target)
+        Array(doc['errors']).each { |e| @logger.warn("surface: #{target.spec}: #{e}") }
         path ||= cache_path_for(doc, target)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, JSON.pretty_generate(doc) + "\n")
-        @logger.debug("surface: #{target.spec}: wrote #{path}")
+        @logger.info("surface: #{target.spec}: wrote #{path}")
         [doc, path, false]
       rescue Surface::Error => e
         raise Error, e.message
@@ -140,15 +141,15 @@ module Pupgrade
       # written into the document's source.
       def extract(target)
         if target.git
-          @logger.debug("surface: fetching #{target.git} at #{target.ref}")
+          @logger.info("surface: fetching #{target.git} at #{target.ref}")
           return at_ref(target.git, target.ref)
         end
         if target.ref
           fetch!(target.dir) if @fetch
-          @logger.debug("surface: reading #{target.dir} at #{target.ref}")
+          @logger.info("surface: reading #{target.dir} at #{target.ref}")
           return at_ref(target.dir, target.ref)
         end
-        @logger.debug("surface: reading #{target.dir}")
+        @logger.info("surface: reading #{target.dir}")
         Surface.extract(target.dir, modulepath: modulepath)
       end
 
@@ -159,6 +160,7 @@ module Pupgrade
       end
 
       def fetch!(dir)
+        @logger.info("surface: #{dir}: fetching origin")
         _out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, 'fetch', '--quiet', '--tags', 'origin')
         raise Error, "#{dir}: fetch failed: #{err.lines.last.to_s.strip}" unless status.success?
       end
