@@ -37,9 +37,11 @@ module Pupgrade
       def document(dir, modulepath: [])
         dir = File.expand_path(dir)
         boot!
+        hook_definitions!
         errors = []
         within_environment(dir, modulepath) do |loaders|
           classes, defines = manifests(dir, errors)
+          loaded = load_plugins(dir, errors)
           {
             'document'       => 'surface',
             'schema_version' => SCHEMA_VERSION,
@@ -51,8 +53,8 @@ module Pupgrade
           'defined_types'  => defines,
             'functions'      => puppet_functions(dir, errors).merge(ruby_functions(dir, errors, loaders), legacy_functions(dir, errors)).sort.to_h,
             'type_aliases'   => type_aliases(dir, errors),
-            'types'          => types(dir, errors),
-            'providers'      => providers(dir, errors),
+            'types'          => types(loaded),
+            'providers'      => providers(dir),
             'facts'          => facts(dir, errors),
             'errors'         => errors,
           }
@@ -279,29 +281,135 @@ module Pupgrade
         found
       end
 
-      def types(dir, errors)
+      # ---- resource types and providers -------------------------------------
+
+      # What `provide` and `newtype` were called for, by the file calling
+      # them: `[type, provider] => file` and `type => file`. Filled by the
+      # hooks for everything loaded in this process, this module's or not.
+      PROVIDERS = {} # rubocop:disable Style/MutableConstant
+      TYPES     = {} # rubocop:disable Style/MutableConstant
+
+      # Records every type and provider definition as it happens. Puppet
+      # loads a type's providers itself when the type loads, from every
+      # module on the modulepath, so reading them means watching, not
+      # loading: a file loaded twice redefines features and runtime types.
+      def hook_definitions!
+        return if @hooked
+
+        @hooked = true
+        providers = PROVIDERS
+        types     = TYPES
+        Puppet::Type.singleton_class.prepend(Module.new do
+          define_method(:provide) do |provider_name, options = {}, &block|
+            providers[[name.to_s.downcase.to_sym, provider_name.to_s.downcase.to_sym]] = Extract.defining_file(block)
+            super(provider_name, options, &block)
+          end
+          define_method(:newtype) do |type_name, options = {}, &block|
+            types[type_name.to_s.downcase.to_sym] = Extract.defining_file(block)
+            super(type_name, options, &block)
+          end
+        end)
+      end
+
+      # The file a definition came from: the block's, else the nearest
+      # plugin file on the stack.
+      def defining_file(block)
+        file = block&.source_location&.first
+        file ||= caller_locations.map(&:path).find { |path| path.include?('/lib/puppet/') }
+        file && File.expand_path(file)
+      end
+
+      # Loads the module's types, and the types of other modules it ships
+      # providers for, through Puppet's autoloader, which loads a type's
+      # providers as it goes. Each file loads once.
+      #
+      # @return [Hash{Symbol => Class}] this module's type classes by name
+      def load_plugins(dir, errors)
+        env   = Puppet.lookup(:current_environment)
         found = {}
         Dir.glob(File.join(dir, 'lib/puppet/type/*.rb')).sort.each do |path|
-          rel  = relative(path, dir)
-          name = File.basename(path, '.rb')
-          begin
-            load path
-            klass = Puppet::Type.type(name)
-            raise "did not define type #{name}" unless klass
+          name  = File.basename(path, '.rb').to_sym
+          klass = load_type(name, errors, dir)
+          next if klass.nil?
 
-            attributes = (klass.parameters + klass.validproperties).map(&:to_s).uniq.sort
-            found[name] = {
-              'file'      => rel,
-              'ensurable' => klass.validattr?(:ensure),
-              'namevars'  => klass.key_attributes.map(&:to_s),
-              'features'  => klass.features.map(&:to_s).sort,
-              'params'    => attributes.to_h { |a| [a, attribute(klass.attrclass(a.to_sym))] },
-            }
-          rescue StandardError, ScriptError => e
-            errors << "#{rel}: #{e.class}: #{e.message.lines.first.to_s.strip}"
+          defined_in = TYPES[name]
+          if defined_in && !same_file?(defined_in, path)
+            errors << "#{relative(path, dir)}: not read; #{name} is defined by #{defined_in}"
+            next
           end
+          load_providers(klass, errors, dir, env)
+          found[name] = klass
+        end
+        provider_dirs = Dir.glob(File.join(dir, 'lib/puppet/provider/*/*.rb')).map { |f| File.basename(File.dirname(f)).to_sym }.uniq.sort
+        provider_dirs.each do |name|
+          next if found.key?(name)
+
+          klass = load_type(name, errors, dir, provider_dir: true)
+          load_providers(klass, errors, dir, env) if klass
         end
         found
+      end
+
+      # @return [Class, nil] the type, loaded by Puppet; on a failure inside
+      #   the load, the class `newtype` registered before it, if any
+      def load_type(name, errors, dir, provider_dir: false)
+        rel   = provider_dir ? "lib/puppet/provider/#{name}" : "lib/puppet/type/#{name}.rb"
+        klass = Puppet::Type.type(name)
+        errors << "#{rel}: #{provider_dir ? "type #{name} is not loadable here" : "did not define type #{name}"}" if klass.nil?
+        klass
+      rescue StandardError, ScriptError => e
+        errors << "#{failed_file(dir) || rel}: #{e.class}: #{e.message.lines.first.to_s.strip}"
+        registered_type(name)
+      end
+
+      # The type `newtype` stored, without asking Puppet to load anything.
+      def registered_type(name)
+        Puppet::Type.enum_for(:eachtype).find { |t| t&.name == name }
+      end
+
+      # The file the autoloader marked last: it marks a file just before
+      # loading it, so after an exception that is the file that raised, or
+      # one it loaded in turn.
+      def failed_file(dir)
+        file = Puppet::Util::Autoload.loaded.values.last&.first
+        return nil unless file
+
+        file.start_with?("#{dir}/") ? relative(file, dir) : file
+      end
+
+      # Loads what the type's own loading did not reach: Puppet stops at the
+      # first provider file that raises; this records each failure and goes
+      # on. Nothing to do when every file loaded.
+      def load_providers(klass, errors, dir, env)
+        loader = klass.providerloader
+        return unless loader
+
+        loader.files_to_load(env).each do |rel|
+          name = File.basename(rel, '.rb')
+          next if loader.loaded?(name)
+
+          loader.load(name, env)
+        rescue StandardError, ScriptError => e
+          errors << "#{failed_file(dir) || rel}: #{e.class}: #{e.message.lines.first.to_s.strip}"
+        end
+        klass.providify unless klass.providers.empty?
+      end
+
+      def same_file?(a, b)
+        File.expand_path(a) == File.expand_path(b) || (File.exist?(a) && File.exist?(b) && File.realpath(a) == File.realpath(b))
+      end
+
+      def types(loaded)
+        loaded.sort.to_h do |name, klass|
+          attributes = (klass.parameters + klass.validproperties).map(&:to_s).uniq.sort
+          [name.to_s, {
+            'file'      => "lib/puppet/type/#{name}.rb",
+            'ensurable' => klass.validattr?(:ensure),
+            'namevars'  => klass.key_attributes.map(&:to_s),
+            'features'  => klass.features.map(&:to_s).sort,
+            'params'    => attributes.to_h { |a| [a, attribute(klass.attrclass(a.to_sym))] },
+          }]
+        end
       end
 
       def attribute(klass)
@@ -313,39 +421,34 @@ module Pupgrade
         }.compact
       end
 
-      def providers(dir, errors)
+      # The providers this module's files defined, from what the hook saw;
+      # a file that defined none is a helper, noted on stderr.
+      def providers(dir)
         found = {}
         Dir.glob(File.join(dir, 'lib/puppet/provider/*/*.rb')).sort.each do |path|
-          rel       = relative(path, dir)
-          type_name = File.basename(File.dirname(path))
-          name      = File.basename(path, '.rb')
-          begin
+          rel     = relative(path, dir)
+          entries = PROVIDERS.select { |_, file| same_file?(file, path) }.keys
+          if entries.empty?
+            warn "surface: #{rel}: defines no provider; taken as a helper"
+            next
+          end
+          entries.each do |type_name, provider|
             type = Puppet::Type.type(type_name)
-            raise "type #{type_name} is not loadable here" unless type
+            next unless type&.providers&.include?(provider)
 
-            before = type.providers
-            load path
-            defined = type.providers - before
-            defined = [name.to_sym] if defined.empty? && type.provider(name)
-            raise "did not define a provider for #{type_name}" if defined.empty?
-
-            defined.each do |provider|
-              klass = type.provider(provider)
-              found["#{type_name}/#{provider}"] = {
-                'type'     => type_name,
-                'name'     => provider.to_s,
-                'file'     => rel,
-                'confines' => confines(klass),
-                'commands' => (klass.instance_variable_get(:@commands) || {}).keys.map(&:to_s).sort,
-                'defaults' => Array(klass.instance_variable_get(:@defaults)).map { |h| h.to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] } },
-                'features' => Array(klass.instance_variable_get(:@declared_features)).map(&:to_s).sort,
-              }
-            end
-          rescue StandardError, ScriptError => e
-            errors << "#{rel}: #{e.class}: #{e.message.lines.first.to_s.strip}"
+            klass = type.provider(provider)
+            found["#{type_name}/#{provider}"] = {
+              'type'     => type_name.to_s,
+              'name'     => provider.to_s,
+              'file'     => rel,
+              'confines' => confines(klass),
+              'commands' => (klass.instance_variable_get(:@commands) || {}).keys.map(&:to_s).sort,
+              'defaults' => Array(klass.instance_variable_get(:@defaults)).map { |h| h.to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] } },
+              'features' => Array(klass.instance_variable_get(:@declared_features)).map(&:to_s).sort,
+            }
           end
         end
-        found
+        found.sort.to_h
       end
 
       # Each confine as "kind: values", e.g. "exists: /usr/bin/x" or

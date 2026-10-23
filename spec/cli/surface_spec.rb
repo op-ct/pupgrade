@@ -71,9 +71,9 @@ RSpec.describe Pupgrade::CLI::Surface do
 
     path = File.join(@tmp, 'firewall.json')
     expect(run(described_class, ['firewall', '-o', path])).to eq([0, "#{path}\n"])
-    expect(JSON.parse(File.read(path))['types'].keys).to eq(['firewall'])
+    expect(JSON.parse(File.read(path))['types'].keys).to eq(%w[conntrack firewall])
     _, out = run(described_class, ['firewall', '-o', '-'])
-    expect(JSON.parse(out)['providers'].keys).to eq(['firewall/iptables'])
+    expect(JSON.parse(out)['providers'].keys).to eq(%w[conntrack/iptables firewall/iptables firewall/ipv6])
 
     status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])
     expect(status).to eq(0)

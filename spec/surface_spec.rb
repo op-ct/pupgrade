@@ -51,6 +51,12 @@ RSpec.describe Pupgrade::Surface do
       'type' => 'firewall', 'name' => 'iptables', 'file' => 'lib/puppet/provider/firewall/iptables.rb',
       'confines' => [], 'commands' => ['iptables'], 'defaults' => [], 'features' => [],
     )
+    # Puppet loads a type's providers itself; the hook sees a provider named
+    # unlike its file, a helper file defines none, and a provider built on a
+    # sibling type's provider class finds it
+    expect(doc['types'].keys).to eq(%w[conntrack firewall])
+    expect(doc['providers'].keys).to eq(%w[conntrack/iptables firewall/iptables firewall/ipv6])
+    expect(doc['providers']['firewall/ipv6']).to include('file' => 'lib/puppet/provider/firewall/ip6tables.rb', 'commands' => ['ip6tables'])
     expect(doc['errors']).to eq([])
   end
 
@@ -86,9 +92,18 @@ RSpec.describe Pupgrade::Surface do
     File.write(File.join(dir, 'lib/puppet/functions/bad.rb'), "raise 'boom'\n")
     File.write(File.join(dir, 'manifests/init.pp'), "class broken { }\n")
     File.write(File.join(dir, 'manifests/bad.pp'), "class broken::bad {\n")
+    FileUtils.mkdir_p(File.join(dir, 'lib/puppet/type'))
+    FileUtils.mkdir_p(File.join(dir, 'lib/puppet/provider/gadget'))
+    File.write(File.join(dir, 'lib/puppet/type/gadget.rb'), "Puppet::Type.newtype(:gadget) do\n  newparam(:name, namevar: true)\nend\n")
+    File.write(File.join(dir, 'lib/puppet/provider/gadget/bad.rb'), "raise 'no provider today'\n")
+    File.write(File.join(dir, 'lib/puppet/provider/gadget/fine.rb'), "Puppet::Type.type(:gadget).provide(:fine) do\nend\n")
     doc = described_class.extract(dir)
     expect(doc['classes'].keys).to eq(['broken'])
-    expect(doc['errors']).to contain_exactly(a_string_matching(%r{\Alib/puppet/functions/bad.rb: RuntimeError: boom}), a_string_matching(%r{\Amanifests/bad.pp: parse error}))
+    expect(doc['types'].keys).to eq(['gadget'])
+    expect(doc['providers'].keys).to eq(['gadget/fine'])
+    expect(doc['errors']).to contain_exactly(a_string_matching(%r{\Alib/puppet/functions/bad.rb: RuntimeError: boom}),
+                                            a_string_matching(%r{\Amanifests/bad.pp: parse error}),
+                                            a_string_matching(%r{\Alib/puppet/provider/gadget/bad.rb: .*no provider today}))
   end
 
   it 'reads a module at a ref of its remote, and loads a document it wrote' do

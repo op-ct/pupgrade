@@ -322,6 +322,22 @@ module Pupgrade
             end
           end
         RUBY
+        # a provider named unlike its file, built on a sibling
+        'lib/puppet/provider/firewall/ip6tables.rb' => <<~RUBY,
+          Puppet::Type.type(:firewall).provide(:ipv6, parent: :iptables, source: :iptables) do
+            commands ip6tables: 'ip6tables'
+          end
+        RUBY
+        # a helper in the provider directory, not a provider
+        'lib/puppet/provider/firewall/rule_parser.rb' => "module PuppetX; module Firewall; module RuleParser; def self.parse(line) = line.split; end; end; end\n",
+        # a second type whose provider leans on the first's provider class
+        'lib/puppet/type/conntrack.rb' => "Puppet::Type.newtype(:conntrack) do\n  newparam(:name, namevar: true)\nend\n",
+        'lib/puppet/provider/conntrack/iptables.rb' => <<~RUBY,
+          Puppet::Type.type(:firewall)
+          Puppet::Type.type(:conntrack).provide(:iptables, parent: Puppet::Type::Firewall::ProviderIptables) do
+            commands conntrack: 'conntrack'
+          end
+        RUBY
       },
       'puppetlabs-concat' => {
         'manifests/fragment.pp' => "define concat::fragment (String $content) {\n  notify { \"fragment ${title}\": message => $content }\n}\n",
