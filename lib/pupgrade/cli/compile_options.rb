@@ -95,7 +95,10 @@ module Pupgrade
         mocks.blocks = enc.ruby.mocks
         prepend = @options[:prepend]
         prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
-        prepend = File.read(File.expand_path(prepend.delete_prefix('@'), repo.dir)) if prepend&.start_with?('@')
+        if prepend&.start_with?('@')
+          path    = File.expand_path(prepend.delete_prefix('@'), repo.dir)
+          prepend = File.file?(path) ? File.read(path) : missing(command, 'prepend file', path)
+        end
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
           prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {},
@@ -106,14 +109,25 @@ module Pupgrade
       end
 
       # The file an option names, relative to the repo, else the default
-      # when it is there.
+      # when it is there. A named file that is not there is warned about
+      # and done without: a config may name every file before the site has
+      # written them.
       #
       # @return [String, nil] absolute
       def file_option(repo, key, default)
-        return File.expand_path(@options[key], repo.dir) if @options[key]
+        return (File.file?(path = File.expand_path(@options[key], repo.dir)) ? path : missing(command_name, key, path)) if @options[key]
 
         path = File.join(repo.dir, default)
         File.file?(path) ? path : nil
+      end
+
+      def missing(command, what, path)
+        ::Pupgrade.logger.warning("#{command}: #{what} #{path} is not there; going on without it")
+        nil
+      end
+
+      def command_name
+        self.class.canonical_name
       end
 
       def accumulate(key, values)

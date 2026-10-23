@@ -434,6 +434,10 @@ module Pupgrade
 
     CONFIG = <<~YAML.freeze
       ---
+      compile:
+        factsets: [factsets]
+      lookup:
+        columns: [os.name, os.release.major, networking.fqdn]
       modules:
         operatingsystems:
           RedHat: ['8', '9']

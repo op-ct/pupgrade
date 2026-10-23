@@ -180,7 +180,13 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(catalog['resources'].find { |r| r['type'] == 'Notify' && r['title'] != 'green' }['parameters']['message']).to include('ruby.example.com')
     expect(catalog['classes']).to include('stdlib')
     expect(read('web01.example.com', 'probes.json')['enc']['classes']).to eq(['stdlib'])
-    expect(run(['--enc', File.join(@tmp, 'nope.yaml')]).first).to eq(3)
+    # a named file that is not there is warned about, not required
+    allow(Driftless).to receive(:logger).and_call_original
+    status = nil
+    log = capture_log(level: :warning) { status, = run(['--enc', File.join(@tmp, 'nope.yaml'), '--ruby', File.join(@tmp, 'nope.rb'), '--certname', 'web*']) }
+    expect(status).to eq(0)
+    expect(log).to include("warning: compile: enc #{File.join(@tmp, 'nope.yaml')} is not there; going on without it")
+    expect(log).to include("warning: compile: ruby #{File.join(@tmp, 'nope.rb')} is not there; going on without it")
   end
 
   it 'compiles code in place of the manifest, with top-scope variables and a certname filter' do
@@ -224,7 +230,7 @@ RSpec.describe Pupgrade::CLI::Compile do
 
   it 'refuses missing factsets, a bad mock file, and an unknown leak policy' do
     expect(run(['--factsets', 'nope']).first).to eq(3)
-    expect(run(['--mocks', 'nope.yaml']).first).to eq(3)
+    expect(run(['--mocks', 'nope.yaml']).first).to eq(1)
     expect(run(['--on-leak', 'ignore']).first).to eq(2)
     expect(run(['--certname', 'nothing']).first).to eq(3)
   end
