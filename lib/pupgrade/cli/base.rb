@@ -214,8 +214,7 @@ module Pupgrade
           o.separator 'Options:'
           configure_parser(o)
           add_config_flags(o)
-          o.on('-v', '--verbose', 'More output: -v each item (info), -vv each decision and file (debug),',
-               'and -vvv command output (trace); applied as soon as it is parsed') do
+          o.on('-v', '--verbose', 'Increase vebosity: -v (info), -vv (debug), -vvv (tracc)') do
             @options[:verbosity] = @options.fetch(:verbosity, 0) + 1
             apply_log_level
           end
@@ -224,7 +223,7 @@ module Pupgrade
             apply_log_level
           end
           o.on('--[no-]color',    'Colorize terminal output (default: auto — on when stdout is a TTY)') { |v| @options[:color] = v }
-          o.on('--width=N', Integer, 'Wrap tables to N columns (default: the terminal\'s width; 0 for no limit)') { |v| @options[:width] = v }
+          o.on('--width=N', Integer, %q[Wrap tables to N columns (default: the terminal's width; 0 for no limit)]) { |v| @options[:width] = v }
           o.on('-h', '--help',    'Show this help') do
             puts o
             exit 0
@@ -232,17 +231,9 @@ module Pupgrade
         end
       end
 
-      # Left undeclared, OptionParser completes a bare -c to --color and
-      # silently discards the path.
       def add_config_flags(o)
-        o.on('-c', '--config=PATH',
-             'Use only PATH as the config file (replaces the search chain)') do |v|
-          @options[:config_path] = v
-        end
-        o.on('--no-config',
-             'Skip all config files (ignore system, user, and project pupgrade.yaml)') do
-          @options[:no_config] = true
-        end
+        o.on('-c', '--config=FILE', 'Override config with FILE') { |v| @options[:config_path] = v }
+        o.on('--no-config', 'Skip all config files') { @options[:no_config] = true }
       end
 
       def load_config!

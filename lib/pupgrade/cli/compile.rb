@@ -25,20 +25,27 @@ module Pupgrade
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'compile', subcommand_of: Root
-      desc 'Compile catalogs from factsets and record what each compile used (`diff` compares two runs)'
+      desc <<~'DESC'
+      Compile factsets into catalogs + analyze the build (cached)
+
+      Each factset generates two files (both cached under <certname>/):
+        * catalog.json - the full catalog for the factset
+        * probes.json  - analysis of the compile (what code ran, leaks, etc)
+
+      The compiler can mock an ENC, server-side executions, and pre-run Puppet code
+      DESC
+
       runs_without_subcommand
 
       config_key 'compile.factsets', type: :array, default: [], example: ['spec/factsets'],
                  about: 'Factset files or directories (onceover layout or a plain facts hash), relative to the control repo'
       config_key 'compile.catalogs_dir', type: :string, default: 'pupgrade/cache/catalogs',
-                 about: 'Where `compile` writes <certname>/{catalog,probes}.json, relative to the control repo; what ' \
-                        '`solve` and `impact` read as evidence of use'
+                 about: 'Cache location for <certname>/{catalog,probes}.json files'
 
       COLUMNS = %w[certname resources classes warnings mocks leaks status].freeze
 
       config_key 'compile.enc', type: :string, default: nil, example: DEFAULT_ENC_FILE,
-                 about: 'Rules deciding each node\'s top-scope variables and classes from its certname and facts, ' \
-                        "relative to the control repo; #{DEFAULT_ENC_FILE} when it exists"
+                 about: 'Rules deciding each node\'s top-scope variables and classes'
       config_key 'compile.ruby', type: :string, default: nil, example: DEFAULT_RUBY_FILE,
                  about: 'Ruby blocks deciding variables, classes, and mock answers per node, loaded after the rules, ' \
                         "relative to the control repo; #{DEFAULT_RUBY_FILE} when it exists"
@@ -92,8 +99,8 @@ module Pupgrade
 
       def configure_parser(o)
         declare_repo_and_factsets(o)
-        o.on('-o', '--catalogs-dir=DIR', 'Where to write <certname>/ directories (config: compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
-        o.on('--certname=GLOBS', Array, 'Only factsets whose certname matches (case-insensitive)') { |v| accumulate(:certnames, v) }
+        o.on('-o', '--catalogs-dir=DIR', 'Cache location for <certname>/{catalog,probes}.json files') { |v| @options[:catalogs_dir] = v }
+        o.on('--certname=GLOB[,…]', Array, 'Compile factsets with matching certnames') { |v| accumulate(:certnames, v) }
         o.on('-f', '--[no-]fail-fast', 'Stop at the first compile that fails') { |v| @options[:fail_fast] = v }
         o.on('--[no-]progress', 'Print a green P or red F per compile as it goes (default: when stdout is a terminal)') { |v| @options[:progress] = v }
         o.on('--keep-stale', 'Keep <certname>/ directories of nodes the factsets no longer name') { @options[:keep_stale] = true }
@@ -101,13 +108,6 @@ module Pupgrade
         declare_what_to_compile(o)
         declare_guard(o)
 
-        o.separator ''
-        o.separator 'Writes <certname>/catalog.json (Puppet\'s catalog data, sorted) and probes.json (functions,'
-        o.separator 'facts, lookups, providers, warnings, deprecations, leaks) under the catalogs directory.'
-        o.separator 'The table counts the commands and facts the mocks answered (mocks) apart from those'
-        o.separator 'nothing answered (leaks: raised, allowed to run, or a fact missing). A command nothing'
-        o.separator 'answers is logged at warning. Exits 1 when a compile fails; its error is listed under'
-        o.separator 'the table and kept in <certname>/error.txt.'
       end
 
       private

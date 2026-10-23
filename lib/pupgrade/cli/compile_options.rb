@@ -16,39 +16,33 @@ module Pupgrade
       DEFAULT_RUBY_FILE  = 'pupgrade/compiler.rb'.freeze
 
       def declare_repo_and_factsets(o)
-        o.on('-d', '--repo-dir=DIR', 'Path to the deployed control repo environment',
-             "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
-        o.on('--factsets=PATH', Array, 'Factset files or directories, comma-separated, repeatable',
-             '(config: compile.factsets)') { |v| accumulate(:factsets, v) }
+        o.on('-d', '--repo-dir=DIR', 'Path of deployed control repostory (Default: `.`)') { |v| @options[:repo_dir] = v }
+        o.on('--factsets=PATH[,…]', Array, 'Factset files or directories (config: compile.factsets)') { |v| accumulate(:factsets, v) }
       end
 
-      def declare_what_to_compile(o)
+      def declare_what_to_compile(o, label=nil)
         o.separator ''
-        o.separator 'What to compile:'
+        o.separator "#{label||'Compiler options'}:"
         o.on('--environment=NAME', 'Environment name (config: compile.environment)') { |v| @options[:environment] = v }
-        o.on('--manifest=PATH', 'A manifest file or directory in place of environment.conf\'s (config: compile.manifest)') { |v| @options[:manifest] = v }
-        o.on('--code=CODE', 'Puppet code compiled in place of the manifest') { |v| @options[:code] = v }
-        o.on('--prepend=CODE', 'Puppet code evaluated before the manifest; @FILE reads it from a file',
-             '(config: compile.prepend_file names the file)') { |v| @options[:prepend] = v }
-        o.on('--var=NAME=VALUE', 'A top-scope variable for every node, repeatable (config: compile.vars)') { |v| pair(:vars, v) }
-        o.on('--enc=FILE', "Rules deciding variables and classes per node (config: compile.enc; default: #{DEFAULT_ENC_FILE}",
-             'when it exists)') { |v| @options[:enc] = v }
-        o.on('--ruby=FILE', "Ruby blocks deciding variables, classes, and mock answers (config: compile.ruby; default: #{DEFAULT_RUBY_FILE}",
-             'when it exists)') { |v| @options[:ruby] = v }
-        o.on('--server-fact=NAME=VALUE', 'An entry of $server_facts, repeatable (config: compile.server_facts)') { |v| pair(:server_facts, v) }
+        o.on('--manifest=PATH', 'Override Puppet manifest (config: compile.manifest)') { |v| @options[:manifest] = v }
+        o.on('--code=CODE', 'Puppet code to compile (replaces manifest)') { |v| @options[:code] = v }
+        o.on('--prepend=[@]CODE', 'Puppet code evaluated before manifest; @:file (config: compile.prepend_file)') { |v| @options[:prepend] = v }
+        o.on('--var=NAME=VALUE[,…]', 'Set top-scope variable (for every node) (config: compile.vars)') { |v| pair(:vars, v) }
+        o.on('--enc=FILE', "Rules for per-node variables and classes (config: compile.enc; default: #{DEFAULT_ENC_FILE}") { |v| @options[:enc] = v }
+        o.on('--ruby=FILE', "Rules for per-node ENC variables + classes, exec guard mocks (config: compile.ruby; default: #{DEFAULT_RUBY_FILE}") { |v| @options[:ruby] = v }
+        o.on('--server-fact=NAME=VALUE[,…]', 'Set $server_facts (config: compile.server_facts)') { |v| pair(:server_facts, v) }
       end
 
       def declare_guard(o)
         o.separator ''
-        o.separator 'The execution guard:'
-        o.on('--mocks=FILE', "YAML answering commands and facts module code asks for (config: compile.mocks; default: #{DEFAULT_MOCKS_FILE}",
-             'when it exists)') { |v| @options[:mocks] = v }
+        o.separator 'Mocking options (compiler execution guard):'
+        o.on('--mocks=FILE', "Rules for mocking command and fact executions (config: compile.mocks; default: #{DEFAULT_MOCKS_FILE}") { |v| @options[:mocks] = v }
         o.on('--show-default-mocks', 'Print the mocks pupgrade applies after the file, and exit') { @options[:show_default_mocks] = true }
         o.on('--on-mock=LEVEL', ::Pupgrade::Compile::Recorder::ON_MOCK,
-             "Log each mocked answer at LEVEL (#{::Pupgrade::Compile::Recorder::ON_MOCK.join(', ')}; default: debug)") { |v| @options[:on_mock] = v }
-        o.on('--[no-]default-mocks', 'Apply pupgrade\'s own mocks for package-provider probes after the file (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
+             "Log each mocked exec at LEVEL (#{::Pupgrade::Compile::Recorder::ON_MOCK.join(', ')}; default: debug)") { |v| @options[:on_mock] = v }
+        o.on('--[no-]default-mocks', 'Apply pupgrade\'s built-in mocks for known exec leaks (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
         o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK,
-             'For a command the mocks do not answer: raise (default) or allow (config: compile.on_leak)') { |v| @options[:on_leak] = v }
+             %q[Response to unmocked commands: 'raise' (default) or 'allow' (config: compile.on_leak)]) { |v| @options[:on_leak] = v }
       end
 
       # @return [Driftless::ControlRepo]

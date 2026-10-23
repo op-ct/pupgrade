@@ -12,16 +12,20 @@ module Pupgrade
   module CLI
     # `pupgrade surface`
     #
-    # Modules' API surfaces as JSON documents in the cache directory: a
-    # module directory or a module of the control repo by name, at the
-    # deployed version or at a ref of its clone, several at once, or every
-    # module on the modulepath. `module diff` compares two.
+    # Analyze and cache Modules' API surfaces as JSON documents
     class Surface < Base
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'surface', subcommand_of: Root
       positional '[<module>[:<ref>] ...]'
-      desc 'Read modules\' API surfaces (classes, functions, types, providers, facts) into the cache `module diff` and `impact` use'
+      desc <<~'DESC'
+      Analyze (deployed) modules' API surfaces (cached)
+
+      A module's "API Surface" includes any code that provides an interface
+      (ex: classes, functions, types, providers, facts) and their parameters' details.
+      Other commands use this info: `module diff`, `impact`, `solve --prune-unused`
+      DESC
+
       runs_without_subcommand
 
       config_key 'surface.cache_dir', type: :string, default: 'pupgrade/cache/api_surfaces',
@@ -89,16 +93,6 @@ module Pupgrade
         o.on('--git=URL', 'Read the module at --ref of this git remote instead') { |v| @options[:git] = v }
         repo_option(o)
         o.separator ''
-        o.separator 'A module is a directory, or a name resolved on the control repo\'s modulepath like'
-        o.separator '`module gitlog` does; `stdlib:v9.6.0` reads a ref of the deployed clone. Documents land'
-        o.separator 'in the cache as <module>-<version>--<tag>__<sha>.json, keyed on the commit read (the'
-        o.separator 'tag is for the eye; a module that is no git checkout is keyed on its version alone), and'
-        o.separator 'are reused until --refresh, or until pupgrade\'s document schema moves on, when they are'
-        o.separator 'extracted again as read.'
-        o.separator 'Loading a module\'s Ruby is how its functions, types, providers, and facts are read, so'
-        o.separator 'extraction runs in a process of its own, with the repo\'s modulepath in reach. Files that'
-        o.separator 'fail to load are listed under "errors" in the document and warned about. The'
-        o.separator 'document also carries what metadata.json declares; `module diff` compares two.'
       end
 
       private

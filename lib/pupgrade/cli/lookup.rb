@@ -24,11 +24,15 @@ module Pupgrade
 
       register_command name: 'lookup', subcommand_of: Root
       positional '<key>...'
-      desc 'Look a Hiera key up as a node would see it, or list the nodes with the facts and variables that place them'
+      desc <<~DESC
+Hiera lookup using control repo hierarchy + pupgrade mocks
+
+Mimics `puppet lookup`, but can set top-scope variables *without* compiling
+using pupgrades ENC rules or --vars (use --list to preview ENC vars)
+      DESC
 
       config_key 'lookup.columns', type: :array, default: %w[os.name os.release.major],
-                 about: 'What `lookup --list` shows per node beside the certname: fact paths, and `$name` for a top-scope ' \
-                        'variable; every variable the ENC stand-in sets is added'
+        about: "Defines the columns displayed by `lookup --list` after the certname:\nColumns can be fact.paths and $vars (every mock ENC-set variable is added)"
 
       MERGES = %w[first unique hash deep].freeze
       FORMATS = %w[yaml json s].freeze
@@ -82,16 +86,11 @@ module Pupgrade
         o.separator ''
         o.separator 'Listing nodes:'
         o.on('--list', 'List the nodes the factsets describe, with the columns, instead of looking up') { @options[:list] = true }
-        o.on('--columns=COLUMNS', Array, 'Fact paths and $variables to show (config: lookup.columns); comma-separated, repeatable') { |v| accumulate(:columns, v) }
-        o.on('--certname=GLOBS', Array, 'Only factsets whose certname matches (case-insensitive)') { |v| accumulate(:certnames, v) }
-        declare_what_to_compile(o)
+        o.on('--columns=COLUMNS[,…]', Array, 'Facts and ENC $vars to show (config: lookup.columns)') { |v| accumulate(:columns, v) }
+        o.on('--certname=GLOB[,…]', Array, 'Lookup factsets with matching certnames') { |v| accumulate(:certnames, v) }
+        declare_what_to_compile(o,'Puppet/Compiler options')
         declare_guard(o)
         o.separator ''
-        o.separator 'The node is built as `compile` builds it: facts and trusted facts from the factset,'
-        o.separator '$server_facts, and the variables and classes the ENC stand-in decides. Without'
-        o.separator '--compile no manifest is evaluated, as `puppet lookup` does; with it the catalog is'
-        o.separator 'compiled first, mocks and guard in force, and the lookup runs in its top scope.'
-        o.separator 'Exits 1 when the key is not found.'
       end
 
       private

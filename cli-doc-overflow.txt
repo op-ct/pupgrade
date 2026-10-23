@@ -1,0 +1,37 @@
+== pupgrade compile
+
+Writes under the catalogs directory:
+- <certname>/catalog.json (Puppet's catalog data, sorted) and
+- probes.json (functions, facts, lookups, providers, warnings, deprecations, leaks) 
+
+The table counts the how many mocked command and fact executions ran, 
+and how many unmocked command and fact executions "leaked".
+leaks can by handled as: raised, allowed to run, or a fact missing
+
+- Unanswered commands are logged as warnings.
+Exits 1 when a compile fails; its error is listed under the table and kept in <certname>/error.txt.
+
+
+== pupgrade lookup
+
+The node is built as `compile` builds it: facts and trusted facts from the factset,
+$server_facts, and the variables and classes the ENC stand-in decides. Without
+--compile no manifest is evaluated, as `puppet lookup` does; with it the catalog is
+compiled first, mocks and guard in force, and the lookup runs in its top scope.
+Exits 1 when the key is not found.
+
+== pupgrade surface
+
+A module is a directory, or a name resolved on the control repo's modulepath like
+`module gitlog` does; `stdlib:v9.6.0` reads a ref of the deployed clone. 
+
+Documents land in the cache as <module>-<version>--<tag>__<sha>.json, keyed on the commit read
+(the tag is for the eye; a module that is no git checkout is keyed on its version alone),
+and are reused until --refresh, or until pupgrade's document schema moves on, when they are
+extracted again as read.
+
+Loading a module's Ruby is how its functions, types, providers, and facts are read, so
+extraction runs in a process of its own, with the repo's modulepath in reach. 
+
+Files that fail to load are listed under "errors" in the document and warned about. The
+document also carries what metadata.json declares; `module diff` compares two.
