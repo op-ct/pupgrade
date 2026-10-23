@@ -7,9 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-It's a new gem to help upgrade the module base of large Puppet/OpenVox  control repos without breaking everyone's stuff (or at least having a pretty good idea about what to what out for).
-
-The first `pupgrade` commands were split from unreleased features in the `driftless` gem.
+It's a new gem to help upgrade the module base of large Puppet/OpenVox  control repos without breaking everyone's stuff (or at least having a pretty good idea about what to what out for).  A toolkit to deliver massively multi-tenant brownfield control repos with lots of modules, profiles, and hiera from stdlib-stasis and dependency hell!
 
 ### Added
 
