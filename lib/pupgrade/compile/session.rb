@@ -156,6 +156,30 @@ module Pupgrade
                    seconds: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       end
 
+      # The top scope of a compile of the node, for a lookup: no manifest
+      # unless asked, as `puppet lookup` does it, the mocks and guard in
+      # force either way.
+      #
+      # @param factset [Factset]
+      # @param compile [Boolean] whether to evaluate the manifests first
+      # @yieldparam scope [Puppet::Parser::Scope]
+      # @yieldparam node [Enc::Node] what the ENC stand-in decided
+      def scope(factset, compile: false)
+        resolved = @enc.resolve(factset)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock, node: resolved)
+        Probes.current = recorder
+        Puppet.override(environments: @loader, current_environment: @env) do
+          Puppet[:code] = compile ? code_for(@env) : 'undef'
+          compiler = Puppet::Parser::Compiler.new(node_for(factset, resolved))
+          compiler.compile do |catalog|
+            yield compiler.topscope, resolved
+            catalog
+          end
+        end
+      ensure
+        Probes.current = nil
+      end
+
       def close
         FileUtils.rm_rf(@scratch) if @scratch
       end

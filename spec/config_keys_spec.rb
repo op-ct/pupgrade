@@ -6,6 +6,7 @@ require 'pupgrade/cli/compile'
 require 'pupgrade/cli/solve'
 require 'pupgrade/cli/impact'
 require 'pupgrade/cli/surface'
+require 'pupgrade/cli/lookup'
 
 RSpec.describe Pupgrade::ConfigKeys do
   it 'knows every key by path, with the class that owns it' do
@@ -23,6 +24,7 @@ RSpec.describe Pupgrade::ConfigKeys do
       'modules.check_order'              => Pupgrade::CLI::Check,
       'modules.check_sort'               => Pupgrade::CLI::Check,
       'compile.factsets'                 => Pupgrade::CLI::Compile,
+      'lookup.columns'                   => Pupgrade::CLI::Lookup,
       'compile.catalogs_dir'             => Pupgrade::CLI::Compile,
       'compile.environment'              => Pupgrade::Compile::Session,
       'compile.manifest'                 => Pupgrade::Compile::Session,
@@ -38,7 +40,7 @@ RSpec.describe Pupgrade::ConfigKeys do
       'impact.catalogs_dir'              => Pupgrade::CLI::Impact,
       'surface.cache_dir'                => Pupgrade::CLI::Surface,
     )
-    expect(described_class.subsystems.sort).to eq(%w[compile impact logging modules output solve surface])
+    expect(described_class.subsystems.sort).to eq(%w[compile impact logging lookup modules output solve surface])
   end
 
   it 'keeps its registry apart from driftless\'s' do

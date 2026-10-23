@@ -22,7 +22,7 @@ module Pupgrade
 
         # Section order of the generated file; a subsystem not listed here
         # follows alphabetically.
-        SUBSYSTEM_ORDER = %w[compile surface modules solve impact output logging].freeze
+        SUBSYSTEM_ORDER = %w[compile lookup surface modules solve impact output logging].freeze
 
         def execute(argv)
           @given = assignments(argv)
