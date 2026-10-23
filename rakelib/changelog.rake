@@ -8,11 +8,11 @@ namespace :changelog do
   desc "Promote Unreleased changes to a new SemVer release in CHANGELOG.md"
   task :release, [:version] do |t, args|
     new_version = args[:version]
-    
+
     if new_version.nil? || new_version.strip.empty?
       abort "ERROR: You must specify a version. Example: rake release"
     end
-    
+
     # Clean semantic version syntax (strips leading 'v' if provided)
     new_version = new_version.sub(/^v/, '')
     unless new_version =~ /^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/
@@ -29,10 +29,10 @@ namespace :changelog do
 
     # --- 1. Relaxed Footnote Reference Matching ---
     base_url = "https://github.com/#{REPO_SLUG}"
-    
+
     # Match 1: /compare diff tracking (e.g., .../compare/v1.1.2...HEAD)
     comparison_regex = /^\[unreleased\]:\s*#{Regexp.escape(base_url)}\/compare\/v([\d.]+)\.\.\.HEAD$/i
-    
+
     # Match 2: Initial versionless link (`[unreleased]: https://github.com`)
     initial_regex = /^\[unreleased\]:\s*#{Regexp.escape(base_url)}\/?$/i
 
@@ -53,7 +53,7 @@ namespace :changelog do
     # --- 2. Update Headers (Promote Unreleased section) ---
     old_header = "## [Unreleased]"
     new_header = "## [Unreleased]\n\n## [#{new_version}] - #{today}"
-    
+
     unless content.include?(old_header)
       abort "ERROR: Could not find '## [Unreleased]' section header in your file."
     end
@@ -61,7 +61,7 @@ namespace :changelog do
 
     # --- 3. Update Footnotes References ---
     new_unreleased_line = "[unreleased]: #{base_url}/compare/v#{new_version}...HEAD"
-    
+
     # Build historical reference link
     historical_comparison_line = if previous_version
       # Standard tag-to-tag comparison diff string
@@ -84,5 +84,5 @@ namespace :changelog do
       puts "   - Linked initial static release tag: v#{new_version}"
     end
   end
-  
+
 end
