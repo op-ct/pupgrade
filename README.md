@@ -43,7 +43,7 @@ bundle exec pupgrade --help
 ```sh
 # Compile catalogs from factsets, with mocks answering the commands module code runs
 pupgrade compile --factsets pupgrade/factsets/ \
-  --mocks pupgrade/mocks.yaml -o pupgrade/cache/catalogs/
+  --mocks pupgrade/compiler-mocks.yaml -o pupgrade/cache/catalogs/
 
 pupgrade solve --prune-unused \
   --exclusions exclusions.yaml -o Puppetfile.solved
@@ -58,7 +58,7 @@ To make the steps repeatable, put the inputs in `pupgrade/pupgrade.yaml`:
 ```yaml
 compile:
   factsets: [pupgrade/factsets]
-  mocks: pupgrade/mocks.yaml
+  mocks: pupgrade/compiler-mocks.yaml
 ```
 
 After which `pupgrade compile`, `pupgrade solve --prune-unused`, and `pupgrade

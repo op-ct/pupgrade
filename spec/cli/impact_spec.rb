@@ -20,7 +20,7 @@ RSpec.describe Pupgrade::CLI::Impact do
       short, tag = pair.split('=')
       "mod 'puppetlabs-#{short}',\n  git: '#{File.join(@fixture.remotes_dir, "puppetlabs-#{short}.git")}',\n  tag: '#{tag}'\n"
     }.join)
-    silently { Pupgrade::CLI::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--mocks', 'pupgrade/mocks.yaml']) }
+    silently { Pupgrade::CLI::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--mocks', 'pupgrade/compiler-mocks.yaml']) }
   end
 
   after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll

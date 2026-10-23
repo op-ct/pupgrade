@@ -78,8 +78,9 @@ module Pupgrade
       # @param mocks [Mocks]
       # @param on_leak [String] one of {ON_LEAK}
       def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {},
-                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise')
+                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise', on_mock: 'debug')
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
+        raise Error, "on_mock must be one of #{Recorder::ON_MOCK.join(', ')}, got #{on_mock.inspect}" unless Recorder::ON_MOCK.include?(on_mock.to_s)
         raise Error, 'give code or prepend, not both' if code && prepend
         raise Error, "environment name #{environment.inspect} must be lowercase letters, digits, and underscores" unless environment.match?(/\A[a-z0-9_]+\z/)
 
@@ -92,6 +93,7 @@ module Pupgrade
         @server_facts = DEFAULT_SERVER_FACTS.merge(server_facts.to_h { |k, v| [k.to_s, v] })
         @mocks        = mocks
         @on_leak      = on_leak
+        @on_mock      = on_mock.to_s
       end
 
       # @return [Array<String>] the environment's modulepath, absolute
@@ -127,7 +129,7 @@ module Pupgrade
       # @return [Result]
       def compile(factset)
         started  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock)
         catalog  = nil
         error    = nil
         Probes.current = recorder

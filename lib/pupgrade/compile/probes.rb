@@ -22,10 +22,14 @@ module Pupgrade
       # @param mocks [Mocks] what the guard answers commands with
       # @param on_leak [String] "raise" or "allow" for commands the mocks do not answer
       # @param repo_dir [String] call sites are reported relative to it
-      def initialize(factset:, mocks:, on_leak:, repo_dir:)
+      # The levels a mocked answer can be logged at; `silent` logs nothing.
+      ON_MOCK = %w[silent trace debug info notice warning].freeze
+
+      def initialize(factset:, mocks:, on_leak:, repo_dir:, on_mock: 'debug')
         @factset  = factset
         @mocks    = mocks
         @on_leak  = on_leak
+        @on_mock  = on_mock.to_s
         @repo_dir = File.expand_path(repo_dir)
         @prefixes = {}
         @modules  = {}
@@ -117,10 +121,12 @@ module Pupgrade
         found, value = @mocks.fact(name)
         if found
           leak('fact', name, 'mocked', nil)
+          log_mock("guard: #{@factset.certname}: fact #{name}: mocked")
           return [true, value]
         end
 
         leak('fact', name, 'missing', nil)
+        Pupgrade.logger.info("guard: #{@factset.certname}: fact #{name}: neither the factset nor the mocks have it")
         [false, nil]
       end
 
@@ -186,18 +192,27 @@ module Pupgrade
       # @raise [Leak] when nothing answers and the policy is to stop
       def guard(kind, command)
         entry = @mocks.for_command(command, @factset.values)
+        where = location
         if entry&.action == 'mock'
-          leak(kind, command, entry.exit.zero? ? 'mocked' : "mocked (exit #{entry.exit})", location)
+          action = entry.exit.zero? ? 'mocked' : "mocked (exit #{entry.exit})"
+          leak(kind, command, action, where)
+          log_mock("guard: #{@factset.certname}: #{kind}: #{command.inspect}: #{action}#{" at #{where}" if where}")
           return [:mock, entry]
         end
         if entry || @on_leak == 'allow'
-          leak(kind, command, 'allowed', location)
+          leak(kind, command, 'allowed', where)
+          Pupgrade.logger.info("guard: #{@factset.certname}: #{kind}: #{command.inspect}: allowed to run#{" at #{where}" if where}")
           return [:run, nil]
         end
 
-        where = location
         leak(kind, command, 'raised', where)
+        Pupgrade.logger.warning("guard: #{@factset.certname}: #{kind}: #{command.inspect} is not answered by the mocks#{" at #{where}" if where}")
         raise Leak, "#{kind}: #{command.inspect} is not answered by the mocks (#{where})"
+      end
+
+      # A mocked answer at the level asked for, or not at all.
+      def log_mock(message)
+        Pupgrade.logger.public_send(@on_mock, message) unless @on_mock == 'silent'
       end
 
       # @return [Hash] the probe record, JSON-ready

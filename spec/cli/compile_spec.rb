@@ -53,12 +53,12 @@ RSpec.describe Pupgrade::CLI::Compile do
   before(:each) { silence_logger }
 
   it 'compiles every factset with the mocks, in both layouts, and writes catalog and probes per node' do
-    status, text = run(['--mocks', 'pupgrade/mocks.yaml'])
+    status, text = run(['--mocks', 'pupgrade/compiler-mocks.yaml'])
     expect(status).to eq(0)
     expect(cells(text)).to eq([
-      %w[certname resources classes warnings leaks status],
-      %w[db01.example.com 12 7 2 1 ok],
-      %w[web01.example.com 12 7 2 1 ok],
+      %w[certname resources classes warnings mocks leaks status],
+      %w[db01.example.com 12 7 2 1 0 ok],
+      %w[web01.example.com 12 7 2 1 0 ok],
     ])
     expect(Dir.children(out).sort).to eq(%w[db01.example.com web01.example.com])
     expect(Dir.children(File.join(out, 'web01.example.com')).sort).to eq(%w[catalog.json probes.json])
@@ -112,28 +112,58 @@ RSpec.describe Pupgrade::CLI::Compile do
     FileUtils.mkdir_p(gone)
     File.write(File.join(gone, 'probes.json'), "{}\n")
     FileUtils.mkdir_p(File.join(out, 'notes'))
-    run(['--mocks', 'pupgrade/mocks.yaml', '--certname', 'web*'])
+    run(['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*'])
     expect(Dir.children(out).sort).to eq(%w[gone.example.com notes web01.example.com])
-    run(['--mocks', 'pupgrade/mocks.yaml', '--keep-stale'])
+    run(['--mocks', 'pupgrade/compiler-mocks.yaml', '--keep-stale'])
     expect(Dir.children(out).sort).to eq(%w[db01.example.com gone.example.com notes web01.example.com])
-    run(['--mocks', 'pupgrade/mocks.yaml'])
+    run(['--mocks', 'pupgrade/compiler-mocks.yaml'])
     expect(Dir.children(out).sort).to eq(%w[db01.example.com notes web01.example.com])
   end
 
-  it 'stops a compile at a command the mocks do not answer, records it, and exits 1' do
-    status, text = run([])
+  it 'stops a compile at a command the mocks do not answer, records and logs it, lists it, and exits 1' do
+    empty = File.join(@tmp, 'empty-mocks.yaml')
+    File.write(empty, "commands: []\n")
+    allow(Driftless).to receive(:logger).and_call_original
+    status = text = nil
+    log = capture_log(level: :warning) do
+      status, text = run(['--mocks', empty])
+    end
     expect(status).to eq(1)
-    expect(cells(text).drop(1).map(&:last)).to eq(%w[failed failed])
+    rows = cells(text)
+    expect(rows.drop(1).take(2).map { |r| r.values_at(4, 5, 6) }).to eq([%w[0 1 failed], %w[0 1 failed]])
+    expect(text).to include('web01.example.com: Evaluation Error')
+    expect(log.lines.grep(/\Awarning: guard:/).size).to eq(2)
+    expect(log).to include('warning: guard: web01.example.com: execute: "hostname -f" is not answered by the mocks at')
+    expect(log).to include('warning: compile: web01.example.com failed in')
     expect(Dir.children(File.join(out, 'web01.example.com')).sort).to eq(%w[error.txt probes.json])
     expect(File.read(File.join(out, 'web01.example.com/error.txt'))).to include('execute: "hostname -f" is not answered by the mocks')
     probes = read('web01.example.com', 'probes.json')
     expect(probes['status']).to eq('failed')
     expect(probes['leaks'].first).to include('action' => 'raised')
     expect(probes).not_to have_key('classes')
+
+    status, text = run(['--mocks', empty, '--fail-fast'])
+    expect(status).to eq(1)
+    expect(cells(text).drop(1).select { |r| r.size > 1 }.map(&:first)).to eq(%w[db01.example.com])
+  end
+
+  it 'shows progress on request, logs mocked answers at the level asked, and prints the default mocks' do
+    allow(Driftless).to receive(:logger).and_call_original
+    text = nil
+    log = capture_log(level: :debug) do
+      _, text = run(['-v', '--progress', '--on-mock', 'notice', '--certname', 'web*'])
+    end
+    expect(text).to start_with("P\n")
+    expect(log).to include('notice: guard: web01.example.com: execute: "hostname -f": mocked at')
+    expect(log).to include('info: compile: mocks from ')
+
+    status, text = run(['--show-default-mocks'])
+    expect(status).to eq(0)
+    expect(text).to include('rpm --version')
   end
 
   it 'compiles code in place of the manifest, with top-scope variables and a certname filter' do
-    status, text = run(['--mocks', 'pupgrade/mocks.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
+    status, text = run(['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
     expect(status).to eq(0)
     expect(cells(text).drop(1).map(&:first)).to eq(['web01.example.com'])
     catalog = read('web01.example.com', 'catalog.json')
@@ -150,7 +180,7 @@ RSpec.describe Pupgrade::CLI::Compile do
         factsets: [factsets]
         manifest: alt.pp
         prepend_file: before.pp
-        mocks: pupgrade/mocks.yaml
+        mocks: pupgrade/compiler-mocks.yaml
         catalogs_dir: #{out}
         vars:
           role: db

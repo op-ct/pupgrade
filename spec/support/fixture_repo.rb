@@ -82,7 +82,7 @@ module Pupgrade
     # @!attribute [r] factsets
     #   @return [String] the factsets directory
     # @!attribute [r] mocks
-    #   @return [String] pupgrade/mocks.yaml
+    #   @return [String] pupgrade/compiler-mocks.yaml
     Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :mocks)
 
     OS_EL_OLD = { 'RedHat' => %w[7 8], 'CentOS' => %w[7], 'Ubuntu' => %w[18.04 20.04], 'Debian' => %w[10 11] }.freeze
@@ -442,7 +442,7 @@ module Pupgrade
       FileUtils.mkdir_p(File.dirname(config_path))
       File.write(config_path, CONFIG)
       Result.new(dir: @dir, remotes_dir: @remotes, puppetfile: puppetfile_path, proposed: proposed_path, config: config_path,
-                 factsets: File.join(@dir, 'factsets'), mocks: File.join(@dir, 'pupgrade/mocks.yaml'))
+                 factsets: File.join(@dir, 'factsets'), mocks: File.join(@dir, 'pupgrade/compiler-mocks.yaml'))
     end
 
     private
@@ -519,7 +519,7 @@ module Pupgrade
       FileUtils.mkdir_p(File.join(@dir, 'factsets'))
       FACTSETS.each { |name, data| File.write(File.join(@dir, 'factsets', name), JSON.pretty_generate(data) + "\n") }
       FileUtils.mkdir_p(File.join(@dir, 'pupgrade'))
-      File.write(File.join(@dir, 'pupgrade/mocks.yaml'), MOCKS)
+      File.write(File.join(@dir, 'pupgrade/compiler-mocks.yaml'), MOCKS)
     end
 
     # One Puppetfile text: git modules at the given versions, Forge modules

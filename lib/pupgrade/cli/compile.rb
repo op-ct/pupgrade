@@ -32,10 +32,17 @@ module Pupgrade
                  about: 'Where `compile` writes <certname>/{catalog,probes}.json, relative to the control repo; what ' \
                         '`solve` and `impact` read as evidence of use'
 
-      COLUMNS = %w[certname resources classes warnings leaks status].freeze
+      COLUMNS = %w[certname resources classes warnings mocks leaks status].freeze
+
+      # The mock file read when compile.mocks names none and this exists.
+      DEFAULT_MOCKS_FILE = 'pupgrade/compiler-mocks.yaml'.freeze
 
       def execute(argv)
         reject_extra_args!(argv)
+        if @options[:show_default_mocks]
+          print File.read(::Pupgrade::Compile::Mocks::DEFAULTS_FILE)
+          exit 0
+        end
         repo = @options[:repo_dir] ? ::Driftless::ControlRepo.new(@options[:repo_dir]) : ::Driftless::ControlRepo.detect(Dir.pwd)
         fatal!('compile requires --repo-dir (auto-detection did not supply it)', help: true) unless repo
         fatal!("repo-dir not readable: #{repo.dir}", 3) unless repo.readable?
@@ -46,21 +53,34 @@ module Pupgrade
         session  = build_session(repo)
         out      = File.expand_path(@options[:catalogs_dir], repo.dir)
         rows     = []
-        failed   = 0
+        failures = []
+        progress = @options[:progress].nil? ? $stdout.tty? : @options[:progress]
         begin
           factsets.each do |factset|
             result = session.compile(factset)
             write(out, result)
-            failed += 1 unless result.ok?
             rows << row(result)
-            ::Pupgrade.logger.info("compile: #{result.certname} in #{'%.1f' % result.seconds}s#{": #{result.error}" unless result.ok?}")
+            $stdout.print(result.ok? ? paint('P', :green) : paint('F', :red)) if progress
+            if result.ok?
+              ::Pupgrade.logger.info("compile: #{result.certname} in #{'%.1f' % result.seconds}s")
+            else
+              failures << result
+              ::Pupgrade.logger.warning("compile: #{result.certname} failed in #{'%.1f' % result.seconds}s: #{result.error}")
+            end
             ::Pupgrade.logger.debug("compile: #{result.certname}: #{probe_counts(result.probes)}")
+            break if @options[:fail_fast] && !result.ok?
           end
         ensure
           session.close
         end
+        puts '' if progress
         print_table(COLUMNS, rows)
-        stale = Array(@options[:certnames]).empty? && !@options[:keep_stale] ? remove_stale(out, factsets) : []
+        failures.each { |r| puts "#{paint(r.certname, :red)}: #{r.error}" }
+        failed = failures.size
+        if @options[:fail_fast] && failed.positive? && rows.size < factsets.size
+          ::Pupgrade.logger.notice("compile: stopped at the first failure; #{factsets.size - rows.size} factset(s) not compiled")
+        end
+        stale = (Array(@options[:certnames]).empty? && !@options[:keep_stale]) ? remove_stale(out, factsets) : []
         ::Pupgrade.logger.notice("compile: #{rows.size - failed} compiled, #{failed} failed; written to #{out}" \
                                "#{"; removed #{stale.size} node(s) no factset names: #{stale.join(', ')}" unless stale.empty?}")
         exit(failed.zero? ? 0 : 1)
@@ -75,6 +95,8 @@ module Pupgrade
              '(config: compile.factsets)') { |v| accumulate(:factsets, v) }
         o.on('-o', '--catalogs-dir=DIR', 'Where to write <certname>/ directories (config: compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
         o.on('--certname=GLOBS', Array, 'Only factsets whose certname matches (case-insensitive)') { |v| accumulate(:certnames, v) }
+        o.on('-f', '--[no-]fail-fast', 'Stop at the first compile that fails') { |v| @options[:fail_fast] = v }
+        o.on('--[no-]progress', 'Print a green P or red F per compile as it goes (default: when stdout is a terminal)') { |v| @options[:progress] = v }
         o.on('--keep-stale', 'Keep <certname>/ directories of nodes the factsets no longer name') { @options[:keep_stale] = true }
 
         o.separator ''
@@ -89,15 +111,22 @@ module Pupgrade
 
         o.separator ''
         o.separator 'The execution guard:'
-        o.on('--mocks=FILE', 'YAML answering commands and facts module code asks for (config: compile.mocks)') { |v| @options[:mocks] = v }
+        o.on('--mocks=FILE', "YAML answering commands and facts module code asks for (config: compile.mocks; default: #{DEFAULT_MOCKS_FILE}",
+             'when it exists)') { |v| @options[:mocks] = v }
+        o.on('--show-default-mocks', 'Print the mocks pupgrade applies after the file, and exit') { @options[:show_default_mocks] = true }
+        o.on('--on-mock=LEVEL', ::Pupgrade::Compile::Recorder::ON_MOCK,
+             "Log each mocked answer at LEVEL (#{::Pupgrade::Compile::Recorder::ON_MOCK.join(', ')}; default: debug)") { |v| @options[:on_mock] = v }
         o.on('--[no-]default-mocks', 'Apply pupgrade\'s own mocks for package-provider probes after the file (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
         o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK,
              'For a command the mocks do not answer: raise (default) or allow (config: compile.on_leak)') { |v| @options[:on_leak] = v }
 
         o.separator ''
-        o.separator 'Writes OUT/<certname>/catalog.json (Puppet\'s catalog data, sorted) and probes.json'
-        o.separator '(functions, facts, lookups, providers, warnings, deprecations, leaks). Exits 1 when a'
-        o.separator 'compile fails; its error is in OUT/<certname>/error.txt.'
+        o.separator 'Writes <certname>/catalog.json (Puppet\'s catalog data, sorted) and probes.json (functions,'
+        o.separator 'facts, lookups, providers, warnings, deprecations, leaks) under the catalogs directory.'
+        o.separator 'The table counts the commands and facts the mocks answered (mocks) apart from those'
+        o.separator 'nothing answered (leaks: raised, allowed to run, or a fact missing). A command nothing'
+        o.separator 'answers is logged at warning. Exits 1 when a compile fails; its error is listed under'
+        o.separator 'the table and kept in <certname>/error.txt.'
       end
 
       private
@@ -115,14 +144,16 @@ module Pupgrade
 
       def build_session(repo)
         defaults = @options.fetch(:default_mocks, true)
-        mocks = @options[:mocks] ? ::Pupgrade::Compile::Mocks.load(File.expand_path(@options[:mocks], repo.dir), defaults: defaults) : ::Pupgrade::Compile::Mocks.empty(defaults: defaults)
+        path  = @options[:mocks] || (File.file?(File.join(repo.dir, DEFAULT_MOCKS_FILE)) ? DEFAULT_MOCKS_FILE : nil)
+        mocks = path ? ::Pupgrade::Compile::Mocks.load(File.expand_path(path, repo.dir), defaults: defaults) : ::Pupgrade::Compile::Mocks.empty(defaults: defaults)
+        ::Pupgrade.logger.info("compile: mocks from #{path ? File.expand_path(path, repo.dir) : 'nowhere'}#{' plus the defaults' if defaults}")
         prepend = @options[:prepend]
         prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
         prepend = File.read(File.expand_path(prepend.delete_prefix('@'), repo.dir)) if prepend&.start_with?('@')
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
           prepend: prepend, vars: @options[:vars] || {}, server_facts: @options[:server_facts] || {},
-          mocks: mocks, on_leak: @options[:on_leak],
+          mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || 'debug',
         ).start
       rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, Errno::ENOENT => e
         fatal!("compile: #{e.message}", 3)
@@ -172,14 +203,25 @@ module Pupgrade
         }.compact.merge(result.probes)
       end
 
+      # The mocks column counts what the mocks answered; leaks what nothing
+      # did, red when one stopped the compile, yellow when it ran or a fact
+      # was missing.
       def row(result)
         p = result.probes
+        actions = p['leaks'].map { |l| l['action'].to_s }
+        mocked  = actions.count { |a| a.start_with?('mocked') }
+        raised  = actions.count('raised')
+        leaked  = actions.size - mocked
+        leaks   = if raised.positive? then paint(leaked.to_s, :red)
+                  elsif leaked.positive? then paint(leaked.to_s, :yellow)
+                  else leaked.to_s
+                  end
         [result.certname,
          result.catalog ? result.catalog['resources'].size.to_s : '-',
          result.catalog ? result.catalog['classes'].size.to_s : '-',
          (p['warnings'].size + p['deprecations'].size).to_s,
-         p['leaks'].size.to_s,
-         result.ok? ? 'ok' : 'failed']
+         mocked.to_s, leaks,
+         result.ok? ? paint('ok', :green) : paint('failed', :red)]
       end
 
       def accumulate(key, values)
