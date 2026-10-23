@@ -198,7 +198,7 @@ module Pupgrade
         open  = plan.choices.count(&:unresolved?)
         prior = plan.choices.sum { |c| c.prior.size }
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{held} held, #{open} unresolved"
-        text += "; #{prior} constraint(s) already broken at the current versions left out (--all shows them)" if prior.positive?
+        text += "; #{prior} constraint(s) already broken at the current versions left out#{' (--all shows them)' unless @options[:all]}" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text
