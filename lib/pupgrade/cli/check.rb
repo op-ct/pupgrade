@@ -5,6 +5,7 @@ require 'pupgrade/config_keys'
 require 'driftless/control_repo'
 require 'driftless/module_inventory'
 require 'pupgrade/module_proposal'
+require 'pupgrade/exclusions'
 require 'pupgrade/module_resolver'
 require 'pupgrade/module_name'
 
@@ -102,7 +103,7 @@ module Pupgrade
         end
 
         exit(shown.empty? ? 0 : 1)
-      rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::ModuleResolver::Error => e
+      rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::ModuleResolver::Error, ::Pupgrade::Exclusions::Error => e
         fatal!("check: #{e.message}")
       end
 
@@ -143,6 +144,8 @@ module Pupgrade
              'Drop Puppet-version conflicts matching the module or a module it disagrees with') { |v| exclude('requirements', v) }
         o.on('--exclude-os=GLOBS', '--exclude-operatingsystems=GLOBS', Array,
              'Drop operating-system conflicts matching module, "OS release", or module:OS release') { |v| exclude('operatingsystems', v) }
+        o.on('--exclusion-file=FILE', 'Read exclusions from FILE too, in the config\'s shape (modules: exclude_*), as `solve',
+             '--write-exclusions-file` writes it; repeatable') { |v| accumulate(:exclusion_files, [v]) }
 
         o.separator ''
         o.separator "Layout (columns: #{COLUMNS.join(', ')}; those left out follow in that order):"
@@ -372,13 +375,13 @@ module Pupgrade
         ((@options[:exclude_flags] ||= {})[list] ||= []).concat(values)
       end
 
-      # The config's modules.exclude_* lists with the flags' globs added.
+      # The config's modules.exclude_* lists, then each --exclusion-file's,
+      # then the flags' globs.
       #
       # @return [Hash{String => Array<String>}]
       def exclusions
-        config = @options[:exclude] || {}
-        flags  = @options[:exclude_flags] || {}
-        (config.keys | flags.keys).to_h { |list| [list, Array(config[list]) + Array(flags[list])] }
+        files = Array(@options[:exclusion_files]).map { |f| ::Pupgrade::Exclusions.read(File.expand_path(f)) }
+        ::Pupgrade::Exclusions.merge(@options[:exclude] || {}, *files, @options[:exclude_flags] || {})
       end
 
       def log_warnings(warnings)

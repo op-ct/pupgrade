@@ -315,9 +315,22 @@ holding stdlib, and everything behind stdlib, back: fix its range, exclude
 the edge, or `--bump puppetlabs-stdlib` and read what breaks. A hold or a
 bump is a fact the solver cannot overrule, so a module no version of which
 fits the facts is `unresolved`, kept at the candidate breaking the least.
-Constraints already broken at the current versions are not the solve's to
-fix; they are left out and shown as `already broken`. Exits 1 when any
-module is unresolved.
+A constraint already broken at the current versions is not the solve's to
+fix: it is set aside, and if the result still breaks it the row says `broken
+before the solve` until an exclusion covers it. Exits 1 when any module is
+unresolved, or any such constraint is still broken and not excluded.
+
+Exclusions are decided in `pupgrade.yaml`, but trying a set first is a loop
+of two flags, with the config read as usual on both runs:
+
+```shell
+pupgrade solve --write-exclusions-file try.yaml   # what the result relies on
+$EDITOR try.yaml                                  # keep what you mean
+pupgrade solve --exclusion-file try.yaml          # exit 0 once the file covers it
+pupgrade check --propose Puppetfile.proposed --exclusion-file try.yaml
+```
+
+Then paste the lists into `pupgrade.yaml`, or `.include` the file.
 
 ### impact
 
@@ -467,10 +480,10 @@ Four ways out, from least to most hands-on:
 # 1. read the solver's derivation: what does each version of firewalld ask of augeas_core?
 pupgrade solve --explain firewalld
 
-# 2. let the catalogs decide: an edge to a module nothing uses is not a constraint,
-#    and the edges the result still violates are written as exclusions to adopt
-pupgrade solve --prune-unused --exclusions pupgrade/exclusions.yaml -o Puppetfile.proposed
-cat pupgrade/exclusions.yaml        # modules: exclude_dependencies: [voxpupuli-firewalld:puppetlabs/augeas_core]
+# 2. let the catalogs decide: an edge to or from a module nothing uses is not a
+#    constraint, and the edges the result still violates are written as exclusions to adopt
+pupgrade solve --prune-unused --write-exclusions-file try.yaml -o Puppetfile.proposed
+cat try.yaml        # modules: exclude_dependencies: ['voxpupuli-firewalld:puppetlabs/augeas_core >= 3.0.0']
 
 # 3. force it: a bump moves the module whatever it breaks, and shows what that is
 pupgrade solve --bump firewalld=v6.0.0

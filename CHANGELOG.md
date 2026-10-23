@@ -27,6 +27,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - `--by-change`: (under a proposal) one table per changed Puppetfile entry
   - `--ignore MODULES` resolves as if those modules were gone (a what-if;
     `modules.exclude_modules` is the standing exclusion)
+  - `--exclusion-file FILE` reads exclusions on top of the config's, in the
+    config's shape, as `solve --write-exclusions-file` writes them
   - `--summary` displays as a table of modules x conflict types
     - with `--propose`, shows introduced (`+`), resolved (`-`), unchanged (`=`)
   - row filters: `--modules`, `--subjects`, `--conflicts`, `--skip-conflicts`
@@ -198,15 +200,20 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     version of baseline depends on stdlib >= 4.13.1, < 9.0.0`
   * a module no version of which fits is `unresolved`: kept at the
     candidate breaking the least, its constraints set aside
-  * constraints already broken at the current versions are not the solve's
-    to fix: left out, and shown on the row as `already broken` (`--all`
-    shows the rows they alone would hide)
+  * a constraint already broken at the current versions is not the solve's
+    to fix: set aside, and if still broken in the result shown on the row
+    as `broken before the solve` until an exclusion covers it
   * `--explain MODULES` prints the solver's whole derivation for a solved or
     unresolved module
   * `--prune-unused` ignores dependency edges to, and from, modules no
-    compile used (needs `compile` output); `--exclusions FILE` records the
-    pruned edges the result violates as `modules.exclude_dependencies`
-  * exits `1` when any module is unresolved
+    compile used (needs `compile` output)
+  * `--write-exclusions-file FILE` records what the result relies on, as
+    the config's `modules.exclude_*` lists: the pruned edges it violates
+    and the constraints broken before the solve that are still broken;
+    `--exclusion-file FILE` reads such a file on top of the config, so a
+    set of exclusions can be tried before the config adopts it
+  * exits `1` when any module is unresolved, or a constraint broken before
+    the solve is still broken and not excluded
   * config subsystem `solve`: `order`, `include_heads`, `catalogs_dir`
 
 - **`pupgrade impact`**` [options] PUPPETFILE`

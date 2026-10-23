@@ -211,6 +211,13 @@ RSpec.describe Pupgrade::CLI::Check do
       File.write(cfg, "modules:\n  exclude_dependencies:\n    - '*:*/concat'\n")
       status, out = run(['-c', cfg, '-d', dir, '--exclude-dependencies', 'puppetlabs-apache:*/stdlib', '--exclude-modules', 'ORG-*'])
       expect([status, out]).to eq([0, "(nothing matches)\n"])
+
+      # a file of the config's shape, read on top of it
+      tried = File.join(dir, 'try.yaml')
+      File.write(tried, "modules:\n  exclude_dependencies:\n    - 'puppetlabs-apache:*/stdlib'\n  exclude_modules:\n    - ORG-*\n")
+      expect(run(['-c', cfg, '-d', dir, '--exclusion-file', tried])).to eq([0, "(nothing matches)\n"])
+      File.write(tried, "exclude_modules:\n  - ORG-*\n")
+      expect(run(['-c', cfg, '-d', dir, '--exclusion-file', tried]).first).to eq(2)
     end
   end
 

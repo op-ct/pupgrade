@@ -1,3 +1,5 @@
+require 'yaml'
+
 require 'pupgrade/logging'
 require 'pupgrade/module_name'
 
@@ -10,7 +12,33 @@ module Pupgrade
   # the edge only while `a` declares that constraint on `b`. An exclusion
   # with a constraint that no longer matches is stale, and says so.
   module Exclusions
+    class Error < StandardError; end
+
+    LISTS = %w[modules dependencies requirements operatingsystems].freeze
+
     module_function
+
+    # The lists in a YAML file of the config's shape, `modules:` holding
+    # `exclude_*` lists: what `solve --write-exclusions-file` writes and
+    # `--exclusion-file` reads back, before the config adopts it.
+    #
+    # @param path [String]
+    # @return [Hash{String => Array<String>}] by list name
+    # @raise [Error]
+    def read(path)
+      data  = YAML.safe_load(File.read(path)) || {}
+      lists = data.is_a?(Hash) ? data['modules'] : nil
+      raise Error, "#{path}: expected `modules:` holding exclude_* lists" unless lists.is_a?(Hash)
+
+      LISTS.to_h { |l| [l, Array(lists["exclude_#{l}"]).map(&:to_s)] }
+    rescue Errno::ENOENT, Psych::SyntaxError => e
+      raise Error, "#{path}: #{e.message}"
+    end
+
+    # Several lists joined: the config's, then each file's, then the flags'.
+    def merge(*sets)
+      sets.compact.each_with_object({}) { |set, out| set.each { |l, globs| out[l] = Array(out[l]) + Array(globs) } }
+    end
 
     # @param globs [Array<String>] `exclude_modules`
     # @param names [Array<String, nil>] the module's spellings

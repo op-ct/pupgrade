@@ -4,6 +4,7 @@ require 'pupgrade/cli/base'
 require 'pupgrade/cli/root'
 require 'pupgrade/cli/table'
 require 'pupgrade/config_keys'
+require 'pupgrade/exclusions'
 require 'driftless/control_repo'
 require 'driftless/module_inventory'
 require 'pupgrade/module_name'
@@ -19,8 +20,9 @@ module Pupgrade
     #
     # A version for every deployed git module, from the tags its clone
     # holds: one row per module that moves or stops short, a Puppetfile overlay
-    # for `check --propose`, and the exclusions a pruned solve relies on.
-    # Exit 1 when any module is unresolved.
+    # for `check --propose`, and the exclusions the result relies on. Exit 1
+    # when any module is unresolved, or a constraint broken before the
+    # solve is still broken and no exclusion covers it.
     class Solve < Base
       include Table
       extend ::Pupgrade::ConfigKeys::DSL
@@ -69,15 +71,16 @@ module Pupgrade
         plan    = solver.solve(entries, lists)
         log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
-        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.solved? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? }
+        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.solved? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? || !c.prior.empty? }
         print_table(COLUMNS, shown.map { |c| row(c) })
         print_explanations(plan) if @options[:explain]
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
         write_puppetfile(plan) if @options[:output]
-        write_exclusions(plan) if @options[:exclusions]
+        write_exclusions(plan) if @options[:write_exclusions]
         ::Pupgrade.logger.notice(summary(plan, evidence))
-        exit(plan.choices.any?(&:unresolved?) ? 1 : 0)
-      rescue ::Pupgrade::Solve::Evidence::Error, ::Pupgrade::Solve::Solver::Error, ::Pupgrade::ModuleResolver::Error, ArgumentError => e
+        exit((plan.choices.any? { |c| c.unresolved? || !c.prior.empty? }) ? 1 : 0)
+      rescue ::Pupgrade::Solve::Evidence::Error, ::Pupgrade::Solve::Solver::Error, ::Pupgrade::ModuleResolver::Error, ::Pupgrade::Exclusions::Error,
+             ArgumentError => e
         fatal!("solve: #{e.message}", 3)
       end
 
@@ -108,18 +111,25 @@ module Pupgrade
         o.separator ''
         o.separator 'Pruning by what the site uses:'
         o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: solve.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
-        o.on('--prune-unused', 'Ignore dependency edges to modules the catalogs show unused') { @options[:prune_unused] = true }
-        o.on('--exclusions=FILE', 'Write the pruned edges the result violates as modules.exclude_dependencies YAML') { |v| @options[:exclusions] = v }
+        o.on('--prune-unused', 'Ignore dependency edges to and from modules the catalogs show unused') { @options[:prune_unused] = true }
+
+        o.separator ''
+        o.separator 'Exclusions, beyond the config\'s modules.exclude_* lists:'
+        o.on('--exclusion-file=FILE', 'Read exclusions from FILE too, in the config\'s shape (modules: exclude_*); repeatable') { |v| accumulate(:exclusion_files, [v]) }
+        o.on('--write-exclusions-file=FILE', 'Write the exclusions the result relies on: the pruned edges it violates, and the',
+             'constraints broken before the solve that are still broken and not excluded') { |v| @options[:write_exclusions] = v }
 
         o.separator ''
         o.separator 'The solver (PubGrub) finds a set of versions in which every dependency range, the'
         o.separator 'Puppet requirement, and the operating systems of interest hold, each module as far'
-        o.separator 'along its candidates as the set allows. Constraints already broken at the current'
-        o.separator 'versions are not the solve\'s to fix and are left out, noted as "already broken". A hold'
-        o.separator 'or a bump is a fact the solver cannot overrule. A module no version of which fits is'
-        o.separator '"unresolved": kept at the candidate breaking the least, its constraints set aside. One'
-        o.separator 'short of its newest candidate is "solved", and the note says which of its constraints is'
-        o.separator 'in the way and what stands against it. Exits 1 when any module is unresolved.'
+        o.separator 'along its candidates as the set allows. A constraint already broken at the current'
+        o.separator 'versions is not the solve\'s to fix: it is set aside, and if still broken in the result'
+        o.separator 'the row says "broken before the solve" until an exclusion covers it. A hold or a bump'
+        o.separator 'is a fact the solver cannot overrule. A module no version of which fits is "unresolved":'
+        o.separator 'kept at the candidate breaking the least, its constraints set aside. One short of its'
+        o.separator 'newest candidate is "solved", and the note says which of its constraints is in the way'
+        o.separator 'and what stands against it. Exits 1 when any module is unresolved, or any constraint'
+        o.separator 'broken before the solve is still broken and not excluded.'
       end
 
       private
@@ -131,8 +141,7 @@ module Pupgrade
       end
 
       # The status word coloured by outcome; a solved row says what stands in
-      # its way; the part of each violation in the way is red; what was
-      # broken before the solve is grey.
+      # its way; the part of each violation in the way is red.
       def note(choice)
         style = if choice.solved? then :solved
                 elsif choice.unresolved? then :unresolved
@@ -141,7 +150,7 @@ module Pupgrade
         text = paint(choice.note, *NOTE_STYLE.fetch(style))
         text += ": #{choice.why}" if choice.why
         text += ": #{violations_text(choice.violations)}" unless choice.violations.empty?
-        text += "; #{paint("already broken: #{choice.prior.join('; ')}", :grey)}" unless choice.prior.empty?
+        text += "; #{paint('broken before the solve', :yellow)}: #{violations_text(choice.prior)}" unless choice.prior.empty?
         text
       end
 
@@ -186,10 +195,15 @@ module Pupgrade
         ::Pupgrade.logger.notice("solve: wrote #{File.expand_path(@options[:output])}")
       end
 
+      # The pruned edges the result violates, and the constraints broken
+      # before the solve that are still broken, as the config's lists.
       def write_exclusions(plan)
-        data = { 'modules' => { 'exclude_dependencies' => plan.pruned } }
-        File.write(File.expand_path(@options[:exclusions]), YAML.dump(data))
-        ::Pupgrade.logger.notice("solve: wrote #{plan.pruned.size} exclusion(s) to #{File.expand_path(@options[:exclusions])}")
+        lists = { 'dependencies' => plan.pruned.dup }
+        plan.choices.flat_map(&:prior).each { |v| (lists[v.list] ||= []) << v.exclusion }
+        data = { 'modules' => lists.sort.to_h { |l, globs| ["exclude_#{l}", globs.uniq] } }
+        path = File.expand_path(@options[:write_exclusions])
+        File.write(path, YAML.dump(data))
+        ::Pupgrade.logger.notice("solve: wrote #{data['modules'].sum { |_, g| g.size }} exclusion(s) to #{path}")
       end
 
       def summary(plan, evidence)
@@ -198,7 +212,7 @@ module Pupgrade
         open  = plan.choices.count(&:unresolved?)
         prior = plan.choices.sum { |c| c.prior.size }
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{short} solved short of newest, #{open} unresolved"
-        text += "; #{prior} constraint(s) already broken at the current versions left out#{' (--all shows them)' unless @options[:all]}" if prior.positive?
+        text += "; #{prior} constraint(s) broken before the solve still broken and not excluded (--write-exclusions-file writes them)" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text
@@ -224,9 +238,10 @@ module Pupgrade
         (@options[key] ||= []).concat(values)
       end
 
+      # The config's modules.exclude_* lists, then each --exclusion-file's.
       def exclusions
-        config = @options[:exclude] || {}
-        config.transform_values { |v| Array(v) }
+        files = Array(@options[:exclusion_files]).map { |f| ::Pupgrade::Exclusions.read(File.expand_path(f)) }
+        ::Pupgrade::Exclusions.merge(@options[:exclude] || {}, *files)
       end
 
       def log_warnings(warnings)

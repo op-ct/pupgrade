@@ -40,9 +40,21 @@ module Pupgrade
       # @!attribute [r] fault
       #   @return [String] "stdlib is 8.6.0", "stdlib moves to 10.0.0",
       #     "zookeeper is not on the modulepath", "missing RedHat 9"
-      Violation = Data.define(:key, :text, :fault) do
+      # @!attribute [r] exclusion
+      #   @return [String] the `modules.exclude_*` entry that would cover it:
+      #     "a:b >= 1.0.0" for a dependency, the module for its Puppet
+      #     requirement, "a:RedHat 9" for an operating system
+      Violation = Data.define(:key, :text, :fault, :exclusion) do
         def to_s
           "#{text}, but #{fault}"
+        end
+
+        # Which `modules.exclude_*` list the exclusion belongs in.
+        def list
+          if key == 'puppet' then 'requirements'
+          elsif key.start_with?('os ') then 'operatingsystems'
+          else 'dependencies'
+          end
         end
       end
 
@@ -60,7 +72,8 @@ module Pupgrade
       #     current versions
       # @!attribute [r] prior
       #   @return [Array<Violation>] what the choice breaks that was broken
-      #     already at the current versions
+      #     already at the current versions: set aside by the solve, and
+      #     not excluded, so still counting against the exit status
       # @!attribute [r] note
       #   @return [String] why this candidate: "newest", "first fit",
       #     "current", "bumped", "held at current"; "solved" when the set
@@ -344,13 +357,13 @@ module Pupgrade
         chosen  = candidate_at(short, decisions[short])
         broken  = violations(entry, chosen, decisions)
         prior, fresh = broken.partition { |v| ignored.include?([short, v.key]) }
-        note, why, derivation = note_for(short, chosen, decisions, pinned)
+        note, why, derivation = note_for(short, chosen, pinned)
         Choice.new(entry: entry, candidates: @lists[short], chosen: chosen, violations: fresh, prior: prior,
                    note: note, why: why, derivation: derivation)
       end
 
       # @return [Array(String, String|nil, String|nil)] note, why, derivation
-      def note_for(short, chosen, decisions, pinned)
+      def note_for(short, chosen, pinned)
         if @levers.key?(short)
           return [(@levers[short].first == :hold) ? 'held at current' : 'bumped', nil, pinned.dig(short, 1)]
         end
@@ -409,8 +422,9 @@ module Pupgrade
 
           target = @by_name[dep_short]
           text   = "needs #{dep} #{requirement || '(any version)'}"
+          glob   = "#{entry.metadata.name}:#{dep}#{" #{requirement}" if requirement}"
           if target.nil?
-            out << Violation.new(key: dep_short, text: text, fault: "#{dep_short} is not on the modulepath")
+            out << Violation.new(key: dep_short, text: text, fault: "#{dep_short} is not on the modulepath", exclusion: glob)
             next
           end
           range    = range_for(requirement)
@@ -419,7 +433,7 @@ module Pupgrade
           next if range.nil? || version.nil? || range.include?(version)
 
           fault = (version == deployed) ? "#{dep_short} is #{version}" : "#{dep_short} moves to #{version}"
-          out << Violation.new(key: dep_short, text: text, fault: fault)
+          out << Violation.new(key: dep_short, text: text, fault: fault, exclusion: glob)
         end
         out.concat(site_violations(entry, metadata))
       end
@@ -430,7 +444,7 @@ module Pupgrade
         out = []
         puppet = puppet_range(metadata)
         if puppet && @site && puppet.intersection(@site) == ModuleResolver::EMPTY && !Exclusions.requirement?(@exclude['requirements'], entry.metadata.name)
-          out << Violation.new(key: 'puppet', text: "requires puppet #{puppet}", fault: "the control repo requires #{@site}")
+          out << Violation.new(key: 'puppet', text: "requires puppet #{puppet}", fault: "the control repo requires #{@site}", exclusion: entry.metadata.name)
         end
         out.concat(os_violations(entry, metadata))
       end
@@ -446,9 +460,9 @@ module Pupgrade
             next if Exclusions.operatingsystem?(@exclude['operatingsystems'], [entry.metadata.name], subject)
 
             if declared.nil?
-              Violation.new(key: "os #{os}", text: "supports #{support.keys.join(', ')}", fault: "missing #{os}")
+              Violation.new(key: "os #{os}", text: "supports #{support.keys.join(', ')}", fault: "missing #{os}", exclusion: "#{entry.metadata.name}:#{os} *")
             elsif release && !declared.empty? && declared.none? { |d| d == release || release.start_with?("#{d}.") }
-              Violation.new(key: "os #{os}", text: "supports #{os} #{declared.join(', ')}", fault: "missing #{subject}")
+              Violation.new(key: "os #{os}", text: "supports #{os} #{declared.join(', ')}", fault: "missing #{subject}", exclusion: "#{entry.metadata.name}:#{subject}")
             end
           }.uniq
         end
