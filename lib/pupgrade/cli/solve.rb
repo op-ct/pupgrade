@@ -18,7 +18,7 @@ module Pupgrade
     # `pupgrade solve`
     #
     # A version for every deployed git module, from the tags its clone
-    # holds: one row per module that moves or is held, a Puppetfile overlay
+    # holds: one row per module that moves or stops short, a Puppetfile overlay
     # for `check --propose`, and the exclusions a pruned solve relies on.
     # Exit 1 when any module is unresolved.
     class Solve < Base
@@ -42,7 +42,7 @@ module Pupgrade
 
       # How a note's status word is coloured when stdout takes colour; the
       # part of each violation that stands in the way is red.
-      NOTE_STYLE = { held: [:red], unresolved: [:yellow], moved: [:green] }.freeze
+      NOTE_STYLE = { solved: [:red], unresolved: [:yellow], moved: [:green] }.freeze
 
       def execute(argv)
         reject_extra_args!(argv)
@@ -69,7 +69,7 @@ module Pupgrade
         plan    = solver.solve(entries, lists)
         log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
-        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? }
+        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.solved? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? }
         print_table(COLUMNS, shown.map { |c| row(c) })
         print_explanations(plan) if @options[:explain]
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
@@ -87,10 +87,10 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('-o', '--output=PUPPETFILE', 'Write the moved modules as a Puppetfile overlay for `check --propose`') { |v| @options[:output] = v }
-        o.on('--all', 'Show every module, not only those that move, are held, unresolved, or break a constraint',
+        o.on('--all', 'Show every module, not only those that move, stop short, are unresolved, or break a constraint',
              'that held at the current versions') { @options[:all] = true }
         o.on('--explain=MODULES', Array, 'After the table, the solver\'s whole reasoning for these modules (globs, or',
-             'all): why a held one stopped short, why an unresolved one fits nowhere') { |v| accumulate(:explain, v) }
+             'all): why a solved one stopped short, why an unresolved one fits nowhere') { |v| accumulate(:explain, v) }
         o.on('--ignore=MODULES', Array,
              'Solve as if these modules were removed from the Puppetfile (globs on any spelling of the name,',
              'or the deploy path; comma-separated, repeatable). Unlike modules.exclude_modules, which leaves a',
@@ -118,7 +118,7 @@ module Pupgrade
         o.separator 'versions are not the solve\'s to fix and are left out, noted as "already broken". A hold'
         o.separator 'or a bump is a fact the solver cannot overrule. A module no version of which fits is'
         o.separator '"unresolved": kept at the candidate breaking the least, its constraints set aside. One'
-        o.separator 'short of its newest candidate is "held", and the note says which of its constraints is'
+        o.separator 'short of its newest candidate is "solved", and the note says which of its constraints is'
         o.separator 'in the way and what stands against it. Exits 1 when any module is unresolved.'
       end
 
@@ -130,11 +130,11 @@ module Pupgrade
          (choice.candidates.size - 1).to_s, note(choice)]
       end
 
-      # The status word coloured by outcome; a held row says what stands in
+      # The status word coloured by outcome; a solved row says what stands in
       # its way; the part of each violation in the way is red; what was
       # broken before the solve is grey.
       def note(choice)
-        style = if choice.held? then :held
+        style = if choice.solved? then :solved
                 elsif choice.unresolved? then :unresolved
                 else :moved
                 end
@@ -150,7 +150,7 @@ module Pupgrade
       end
 
       # The solver's reasoning for the modules asked about, as it wrote
-      # it: why a held module stopped short, or why nothing fits an
+      # it: why a solved module stopped short, or why nothing fits an
       # unresolved one.
       def print_explanations(plan)
         globs  = @options[:explain]
@@ -194,10 +194,10 @@ module Pupgrade
 
       def summary(plan, evidence)
         moved = plan.choices.count(&:moved?)
-        held  = plan.choices.count(&:held?)
+        short = plan.choices.count(&:solved?)
         open  = plan.choices.count(&:unresolved?)
         prior = plan.choices.sum { |c| c.prior.size }
-        text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{held} held, #{open} unresolved"
+        text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{short} solved short of newest, #{open} unresolved"
         text += "; #{prior} constraint(s) already broken at the current versions left out#{' (--all shows them)' unless @options[:all]}" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence

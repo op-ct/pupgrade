@@ -307,8 +307,8 @@ pupgrade solve --prune-unused -o Puppetfile.proposed   # ignore edges to and fro
 pupgrade solve --explain stdlib,baseline       # the solver's reasoning in full
 ```
 
-A module short of its newest candidate is `held`, and its note says which of
-its constraints is in the way and what stands against it: `held: apache >=
+A module short of its newest candidate is `solved`, and its note says which
+of its constraints is in the way and what stands against it: `solved: apache >=
 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every version of baseline
 depends on stdlib >= 4.13.1, < 9.0.0`. That is the site module `baseline`
 holding stdlib, and everything behind stdlib, back: fix its range, exclude
@@ -403,7 +403,7 @@ pupgrade check --propose Puppetfile.stdlib --by-change
 #    else to the first release that accepts it
 pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 -o Puppetfile.proposed
 
-# 3. what the proposal leaves unresolved, and why each held module is held
+# 3. what the proposal leaves unresolved, and why each solved module stopped short
 pupgrade check --propose Puppetfile.proposed --summary
 pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 --explain apache
 
@@ -436,7 +436,7 @@ pupgrade check --conflicts puppet-version
 # one that declares '< 8' but is known to work: ignore its claim
 pupgrade check --conflicts puppet-version --exclude-requirements puppetlabs-translate
 
-# 2. move what has a release supporting 8; what is held has none
+# 2. move what has a release supporting 8; what stops short has none
 pupgrade solve -o Puppetfile.proposed
 
 # 3. compile every factset under OpenVox 8; the deprecations and warnings
@@ -455,16 +455,16 @@ facts that moved between Facter versions show up as missing fact reads in
 ### A stubborn dependency
 
 A module declares every dependency any of its code paths could need; a site
-uses a few. `solve` holds a module back whenever a declared range blocks it:
+uses a few. `solve` stops a module short whenever a declared range blocks it:
 
 ```text
-voxpupuli-firewalld | tag v5.1.0 | (current) | 1 | held: v6.0.0 needs puppetlabs/augeas_core >= 3.0.0, but augeas_core is 2.0.1
+voxpupuli-firewalld | tag v5.1.0 | (current) | 1 | solved: firewalld >= 6.0.0 depends on augeas_core >= 3.0.0, < 4.0.0; augeas_core is kept at 2.0.1 (no version fits)
 ```
 
 Four ways out, from least to most hands-on:
 
 ```shell
-# 1. see every candidate's verdict: is any version of firewalld fine with 2.0.1?
+# 1. read the solver's derivation: what does each version of firewalld ask of augeas_core?
 pupgrade solve --explain firewalld
 
 # 2. let the catalogs decide: an edge to a module nothing uses is not a constraint,

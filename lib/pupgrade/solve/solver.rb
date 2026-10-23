@@ -20,8 +20,8 @@ module Pupgrade
     # out (the solve is not what broke them); a hold or a bump is a fact
     # the solver cannot overrule; a module no version of which fits is
     # pinned at its least-broken version and the solve goes on without its
-    # constraints. A module short of its newest candidate is asked about
-    # again, and the solver's explanation becomes its note.
+    # constraints. A module short of its newest candidate ("solved") is
+    # asked about again, and the solver's explanation becomes its note.
     class Solver
       class Error < StandardError; end
 
@@ -63,13 +63,13 @@ module Pupgrade
       #     already at the current versions
       # @!attribute [r] note
       #   @return [String] why this candidate: "newest", "first fit",
-      #     "current", "bumped", "held at current"; "held" when the set
+      #     "current", "bumped", "held at current"; "solved" when the set
       #     allowed no newer candidate; "unresolved" when no candidate fits
       #     and this one breaks the least; a reason when there were no
       #     candidates to choose from ("Forge module")
       # @!attribute [r] why
-      #   @return [String, nil] for a held module, the constraint of its own
-      #     in the way and what stands against it
+      #   @return [String, nil] for a solved module, the constraint of its
+      #     own in the way and what stands against it
       # @!attribute [r] derivation
       #   @return [String, nil] the solver's whole explanation behind `why`,
       #     or behind an unresolved module's pinning
@@ -78,8 +78,9 @@ module Pupgrade
           !chosen.current
         end
 
-        def held?
-          note == 'held'
+        # Short of its newest candidate.
+        def solved?
+          note == 'solved'
         end
 
         # No candidate fits: what the exit status reports.
@@ -363,8 +364,8 @@ module Pupgrade
           return [(@order == 'newest') ? 'newest' : 'first fit', nil, nil]
         end
 
-        why, derivation = held_because(short, chosen, decisions, pinned)
-        ['held', why, derivation]
+        why, derivation = solved_because(short, chosen, pinned)
+        ['solved', why, derivation]
       end
 
       # Why a module stopped short: the solver is asked for a set with the
@@ -373,7 +374,7 @@ module Pupgrade
       # and what stands against it.
       #
       # @return [Array(String, String|nil)]
-      def held_because(short, chosen, _decisions, pinned)
+      def solved_because(short, chosen, pinned)
         ignored = @prior.flat_map { |s, broken| broken.map { |v| [s, v.key] } }.to_set
         asked   = "#{short} is asked past #{version_of(chosen)}"
         source  = build_source(ignored, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: asked))
@@ -388,7 +389,7 @@ module Pupgrade
         others  = texts.reject { |depender, _, text| depender == short || text == asked || text.start_with?("no versions satisfy #{short} ") }.map(&:last)
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
-        Pupgrade.logger.debug("solve: #{short}: held because:\n#{failure.explanation}")
+        Pupgrade.logger.debug("solve: #{short}: short of its newest because:\n#{failure.explanation}")
         [why.empty? ? failure.explanation.lines.first.to_s.strip : why, failure.explanation]
       end
 

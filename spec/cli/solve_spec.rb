@@ -50,12 +50,12 @@ RSpec.describe Pupgrade::CLI::Solve do
 
   before(:each) { silence_logger }
 
-  it 'finds the set every constraint holds in, says what holds a module back, and moves the rest under a bump' do
+  it 'finds the set every constraint holds in, says what stops a module short, and moves the rest under a bump' do
     status, out = run([])
     expect(status).to eq(0)
     table = rows(out)
-    expect(table['puppetlabs-stdlib']).to match(['tag v8.6.0', '(current)', '3', a_string_starting_with('held: every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')])
-    expect(table['puppetlabs-apache'].last).to start_with('held: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')
+    expect(table['puppetlabs-stdlib']).to match(['tag v8.6.0', '(current)', '3', a_string_starting_with('solved: every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')])
+    expect(table['puppetlabs-apache'].last).to start_with('solved: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')
     expect(table['saz-timezone']).to eq(['tag 6.1.0', '7.0.0', '1', 'newest'])
     # what was broken before the solve is not the solve's to fix
     expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', 'v7.1.0', '1', 'newest; already broken: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
@@ -65,7 +65,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(rows(out)['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('Forge module; already broken: requires puppet >= 4.10.0 < 8.0.0')])
 
     _, out = run(['--explain', 'stdlib'])
-    expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (current) (held)\n  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
+    expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (current) (solved)\n  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
 
     overlay = File.join(@tmp, 'Puppetfile.solved')
     status, out = run(['--bump', 'puppetlabs-stdlib', '-o', overlay])
@@ -146,7 +146,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     ))
     status, out = run(['--hold', 'puppetlabs-apt'])
     expect(status).to eq(0)
-    expect(rows(out)['puppet-redis']).to match(['tag v8.8.0', '(current)', '2', a_string_starting_with('held: redis >= 9.0.0 depends on apt >= 9.0.0, < 10.0.0; apt is held at 8.5.0 (--hold)')])
+    expect(rows(out)['puppet-redis']).to match(['tag v8.8.0', '(current)', '2', a_string_starting_with('solved: redis >= 9.0.0 depends on apt >= 9.0.0, < 10.0.0; apt is held at 8.5.0 (--hold)')])
     expect(rows(out)['puppetlabs-apt']).to match(['tag v8.5.0', '(current)', '2', a_string_starting_with('held at current')])
 
     exclusions = File.join(@tmp, 'exclusions.yaml')

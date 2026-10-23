@@ -192,16 +192,16 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     nearest to the current, driven by `--bump MODULE[=REF]`
   * `--hold MODULES` and `--bump` are facts the solver cannot overrule;
     `--ignore MODULES` drops modules for the run
-  * a module short of its newest candidate is `held`, and the note says
+  * a module short of its newest candidate is `solved`, and the note says
     which of its constraints is in the way and what stands against it:
-    `held: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every
+    `solved: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every
     version of baseline depends on stdlib >= 4.13.1, < 9.0.0`
   * a module no version of which fits is `unresolved`: kept at the
     candidate breaking the least, its constraints set aside
   * constraints already broken at the current versions are not the solve's
     to fix: left out, and shown on the row as `already broken` (`--all`
     shows the rows they alone would hide)
-  * `--explain MODULES` prints the solver's whole derivation for a held or
+  * `--explain MODULES` prints the solver's whole derivation for a solved or
     unresolved module
   * `--prune-unused` ignores dependency edges to, and from, modules no
     compile used (needs `compile` output); `--exclusions FILE` records the
