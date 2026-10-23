@@ -113,7 +113,7 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR',
              'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
-        o.on('--propose=PUPPETFILE',
+        o.on('-p', '--propose=PUPPETFILE',
              'Resolve as if PUPPETFILE replaced the current entries at the same paths;',
              'metadata for a changed module is read from its git remote.',
              'Rows are marked + (introduced), - (resolved), or blank (unchanged)') { |v| @options[:propose] = v }
@@ -140,12 +140,11 @@ module Pupgrade
         o.on('--exclude-modules=GLOBS', Array, 'Leave these modules out of every check') { |v| exclude('modules', v) }
         o.on('--exclude-deps=GLOBS', '--exclude-dependencies=GLOBS', Array,
              'Drop dependency conflicts matching module, dependency, or module:dependency') { |v| exclude('dependencies', v) }
-        o.on('--exclude-requirements=GLOBS', Array,
+        o.on('--exclude-requirements=GLOB[,…]', Array,
              'Drop Puppet-version conflicts matching the module or a module it disagrees with') { |v| exclude('requirements', v) }
         o.on('--exclude-os=GLOBS', '--exclude-operatingsystems=GLOBS', Array,
              'Drop operating-system conflicts matching module, "OS release", or module:OS release') { |v| exclude('operatingsystems', v) }
-        o.on('--exclusion-file=FILE', 'Read exclusions from FILE too, in the config\'s shape (modules: exclude_*), as `solve',
-             '--write-exclusions-file` writes it; repeatable') { |v| accumulate(:exclusion_files, [v]) }
+        o.on('-x','--exclusion-file=FILE', 'Read exclusions from FILE (`solve -w` format); repeatable') { |v| accumulate(:exclusion_files, [v]) }
 
         o.separator ''
         o.separator "Layout (columns: #{COLUMNS.join(', ')}; those left out follow in that order):"

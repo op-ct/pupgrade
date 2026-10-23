@@ -115,9 +115,8 @@ module Pupgrade
 
         o.separator ''
         o.separator 'Exclusions, beyond the config\'s modules.exclude_* lists:'
-        o.on('--exclusion-file=FILE', 'Read exclusions from FILE too, in the config\'s shape (modules: exclude_*); repeatable') { |v| accumulate(:exclusion_files, [v]) }
-        o.on('--write-exclusions-file=FILE', 'Write the exclusions the result relies on: the pruned edges it violates, and the',
-             'constraints broken before the solve that are still broken and not excluded') { |v| @options[:write_exclusions] = v }
+        o.on('-x', '--exclusion-file=FILE', 'Read exclusions from FILE; repeatable') { |v| accumulate(:exclusion_files, [v]) }
+        o.on('-w', '--write-exclusions-file=FILE', 'Write the exclusions the solution required') { |v| @options[:write_exclusions] = v }
 
         o.separator ''
         o.separator 'The solver (PubGrub) finds a set of versions in which every dependency range, the'
