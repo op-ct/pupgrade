@@ -303,7 +303,7 @@ module Pupgrade
         o.separator ''
         o.separator 'Subcommands:'
         width = subs.map { |c| c.canonical_name.length }.max
-        subs.each { |c| o.separator "    #{c.canonical_name.ljust(width)}   #{c.desc}" }
+        subs.each { |c| o.separator "    #{c.canonical_name.ljust(width)}   #{c.desc.lines.first}" }
       end
 
       # @param leaf [Boolean] whether this command runs itself: every
