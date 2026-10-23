@@ -22,8 +22,10 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   - `--propose` resolves with the info from `PUPPETFILE` overlaid on the
     current entries, fetching `metadata.json` from git for changed modules
     - `--propose` + `--ignore` show every row, marking conflicts introduced
-      (`+`, red) and resolved (`-`, green); `--changed-only` drops the
-      unchanged rows and `--hide-resolved` the resolved ones
+      (`+ NEW`, red) and resolved (`- FIXD`, green); `--changed-only` drops
+      the unchanged rows and `--hide-resolved` the resolved ones
+    - an introduced row is yellow, a resolved row grey, the kind coloured;
+      the part of a detail in the way is red; summary zeros are grey
     - `--by-change`: (under a proposal) one table per changed Puppetfile entry
   - `--ignore MODULES` resolves as if those modules were gone (a what-if;
     `modules.exclude_modules` is the standing exclusion)
@@ -70,6 +72,12 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   * API surfaces (classes, defines, params, facts, functions, etc)
   - `FROM` and `TO` can be a module name (`stdlib`), name:ref
     (`stdlib:v9.7.0`), module dir, or `surface` json API document.
+  - rows read `item | difference | detail`
+    - the kind of each item is cyan, its namespace grey
+    - a parameter reads `Boolean $x = $is_slave`; signatures as `(a, b)`
+    - only Variant, Enum, Pattern, Struct, Tuple, Hash, Array, Regexp fold
+      to `[…]`; two sides that still read alike get `[…¹] -> […²]`
+  - `--full` prints each change as a block with its values whole
   - `--surfaces`, `--names`, `--changes` filters, `--summary`
   - exits `1` when the two differ
 
@@ -82,6 +90,28 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
 
   compiles one catalog per factset, deployed environment directory using
   Puppet's compiler (like onceover, but much faster without rspec-puppet)
+
+  * prints a green P or red F per factset as it goes (disable with
+    `--no-progress`)
+  * `--fail-fast` stops at the first failure
+  * `--show-default-mocks` prints the shipped mocks
+  * in the post-compile summary table:
+    - `mocks` column counts answered commands
+    - `leaks` counts what got through unmocked (red = one failed the compile)
+    - failures are displayed under the table
+  * unanswered commands log at warning, mocked ones at `--on-mock LEVEL`
+  * `pupgrade/compiler-mocks.yaml` is read by default when present
+  * dynamic ENC and execution guard mocks: rules can return results based
+    on a node's certname + facts, using YAML rules and/or Ruby logic
+    - YAML rules in `enc.yaml` + `compiler-mocks.yaml` can reference the
+      node's `${certname}` and `${facts.a.b}`, and transform them with
+      regex + capture groups
+    - `pupgrade/compiler.rb` defines rule logic for both as Ruby blocks:
+      `variable` & `classes` for the ENC, `mock` for the exec guard
+    - ENC classes from `enc.yaml` and `compiler.rb` are merged; other
+      `compiler.rb` rules override their YAML counterparts
+    - config keys `compile.enc` + `compile.ruby`, flags `--enc` and `--ruby`
+    - `probes.json` records what each node was given under `enc`
 
   * records usage information per factset, used by `solve`:
     - full Puppet catalog
@@ -108,6 +138,18 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
     that don't match any of the compiled factset names
     - `--keep-stale` leaves them be
 
+- **`pupgrade lookup`**` [options] KEY... --node CERTNAME`
+
+  Locally simulate an operational puppet lookup, using pupgrade's config and
+  factsets, allowing you to model lookups `puppet lookup` can't handle, like
+  using the mock ENC to set top-scope variables (even without compiling), and
+  injecting puppet language preconditions.
+  * Mimics puppet lookup options `--explain` and `--explain-options`
+  * `--compile` evaluates manifests first, using pupguard's mocks and guards
+  * `--list` displays all factset nodes, alongside important facts and
+    variables (config: `lookup.columns`)
+  * exits `1` when the key is not found
+
 - **`pupgrade compile diff`**` FROM TO`
 
   Shows what changed between two `compile` runs, node by node: resources,
@@ -125,8 +167,14 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   * `MODULE` is a name on the modulepath or a directory; `stdlib:v9.7.0`
     reads the clone at a ref; `--all` reads every module
   * documents are reused until `--refresh`
-  * Ruby surfaces are read by loading the module in a process of its own,
-    with the control repo's modulepath in reach
+  * Ruby surfaces are read in a process of its own, with the control repo's
+    modulepath in reach
+  * types and providers are read as Puppet loads them: the extractor asks
+    Puppet for each type and records what `provide` is called with, so no
+    file loads twice; a file in `lib/puppet/provider/` that defines no
+    provider is skipped as a helper
+  * a cached surface using an older schema is refreshed automatically;
+    `--refresh[=schema]` refreshes only stale schemas
 
 - **`pupgrade solve`**` [options] [-o PUPPETFILE]`
 
@@ -160,6 +208,7 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   * `--summary` gives one row per module; `--gitlog` and `--changelog` add
     each module's commits and CHANGELOG sections for the versions crossed
   * `--modules`, `--impacts`, `--all` filters
+  * `use unknown` and `no catalogs` red, detail verbs coloured
   * exits `1` when any finding has a use
   * config subsystem `impact`: `catalogs_dir`
 
@@ -178,6 +227,10 @@ The first `pupgrade` commands were split from unreleased features in the `driftl
   (debug), and `-vvv` (trace) show progressively more of what a command is
   doing, wherever they sit on the command line.
 - Tables wrap to the terminal width (`--width N` overrides; `0` for none).
+- `--help` prints the command's desc; subcommands sort by name
+- commands log their stages at notice before slow work; every git trace
+  line names its purpose, e.g. `(resolving v9.6.0)`
+- removed the `params` command (moved `params compare` to driftless)
 - `rake fixture[DIR]` builds a fixture control repo to try pupgrade against:
   32 git modules with tagged releases, two Forge modules, factsets, mocks,
   and a `Puppetfile.proposed`.
