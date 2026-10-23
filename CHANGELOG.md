@@ -164,6 +164,9 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   `impact`.
   * `MODULE` is a name on the modulepath or a directory; `stdlib:v9.7.0`
     reads the clone at a ref; `--all` reads every module
+  * cached API surface files are named `<module>-<version>--<tag>__<sha>.json`
+    - pupgrade matches on the `<sha>`; the `<tag>` is a convenience for users
+      listing files
   * documents are reused until `--refresh`
   * Ruby surfaces are read in a process of its own, with the control repo's
     modulepath in reach

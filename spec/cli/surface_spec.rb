@@ -41,36 +41,51 @@ RSpec.describe Pupgrade::CLI::Surface do
   before(:each) { silence_logger }
 
   it 'reads modules by name or directory into the cache, by version and ref, and reuses what it holds' do
+    concat = fixture.surface_file('concat', '7.3.0')
     status, out = run(described_class, ['concat'])
     expect(status).to eq(0)
-    expect(out).to eq("#{cache}/concat-7.3.0.json\n")
-    expect(JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))['defined_types'].keys).to eq(['concat::fragment'])
+    expect(out).to eq("#{cache}/#{concat}\n")
+    expect(JSON.parse(File.read(File.join(cache, concat)))['defined_types'].keys).to eq(['concat::fragment'])
 
+    stdlib = fixture.surface_file('stdlib', '9.6.0', 'v9.6.0')
     status, out = run(described_class, ['stdlib:v9.6.0', File.join(fixture.dir, 'modules/concat')])
     expect(status).to eq(0)
-    expect(out).to eq("#{cache}/stdlib-9.6.0--v9.6.0.json\n\n#{cache}/concat-7.3.0.json\n")
-    doc = JSON.parse(File.read(File.join(cache, 'stdlib-9.6.0--v9.6.0.json')))
+    expect(out).to eq("#{cache}/#{stdlib}\n\n#{cache}/#{concat}\n")
+    doc = JSON.parse(File.read(File.join(cache, stdlib)))
     expect(doc['module']['version']).to eq('9.6.0')
-    expect(doc['source']).to include('ref' => 'v9.6.0')
-    expect(doc['source']['sha']).to match(/\A[0-9a-f]{40}\z/)
+    expect(doc['source']).to include('ref' => 'v9.6.0', 'sha' => fixture.sha('stdlib', 'v9.6.0'), 'tags' => ['v9.6.0'])
 
-    stamp = File.mtime(File.join(cache, 'concat-7.3.0.json'))
+    # the commit is what is matched, whatever the file is called
+    File.rename(File.join(cache, stdlib), File.join(cache, "stdlib-9.6.0--renamed__#{fixture.sha('stdlib', 'v9.6.0')[0, 10]}.json"))
     allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log { run(described_class, ['stdlib:v9.6.0']) }
+    expect(log).to include('(cached)')
+
+    # a dirty tree is written with its mark and never served
+    File.write(File.join(fixture.dir, 'modules/concat/manifests/extra.pp'), "class concat::extra {}\n")
+    _status, out = run(described_class, ['concat'])
+    expect(out).to eq("#{cache}/#{concat.sub('.json', '-dirty.json')}\n")
+    expect(JSON.parse(File.read(File.join(cache, concat.sub('.json', '-dirty.json'))))['source']).to include('dirty' => true)
+    log = capture_log { run(described_class, ['concat']) }
+    expect(log).not_to include('(cached)')
+    File.delete(File.join(fixture.dir, 'modules/concat/manifests/extra.pp'))
+
+    stamp = File.mtime(File.join(cache, concat))
     log = capture_log { run(described_class, ['concat']) }
     expect(log).to include('(cached)')
-    expect(File.mtime(File.join(cache, 'concat-7.3.0.json'))).to eq(stamp)
+    expect(File.mtime(File.join(cache, concat))).to eq(stamp)
     log = capture_log { run(described_class, ['concat', '--refresh']) }
     expect(log).not_to include('(cached)')
 
     # a document of an older schema is extracted again as it is read
-    stale = JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))
-    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale.merge('schema_version' => 1)))
+    stale = JSON.parse(File.read(File.join(cache, concat)))
+    File.write(File.join(cache, concat), JSON.generate(stale.merge('schema_version' => 1)))
     log = capture_log { run(described_class, ['-v', 'concat']) }
     expect(log).to include('extracting again; ')
-    expect(JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))['schema_version']).to eq(Pupgrade::Surface::Extract::SCHEMA_VERSION)
-    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale.merge('schema_version' => 99)))
+    expect(JSON.parse(File.read(File.join(cache, concat)))['schema_version']).to eq(Pupgrade::Surface::Extract::SCHEMA_VERSION)
+    File.write(File.join(cache, concat), JSON.generate(stale.merge('schema_version' => 99)))
     expect(run(described_class, ['concat']).first).to eq(3)
-    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale))
+    File.write(File.join(cache, concat), JSON.generate(stale))
     expect(run(described_class, ['concat', '--refresh=schema']).first).to eq(0)
     expect(run(described_class, ['concat', '--refresh=sideways']).first).to eq(2)
   end
@@ -79,7 +94,8 @@ RSpec.describe Pupgrade::CLI::Surface do
     status, out = run(described_class, ['--all'])
     expect(status).to eq(0)
     expect(out.lines.reject { |l| l.strip.empty? }.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size)
-    expect(Dir.children(cache)).to include('stdlib-8.6.0.json', 'translate-2.2.0.json')
+    # a clone is keyed on its commit; a Forge install on its version alone
+    expect(Dir.children(cache)).to include(fixture.surface_file('stdlib', '8.6.0'), 'translate-2.2.0.json')
 
     path = File.join(@tmp, 'firewall.json')
     expect(run(described_class, ['firewall', '-o', path])).to eq([0, "#{path}\n"])
@@ -89,7 +105,7 @@ RSpec.describe Pupgrade::CLI::Surface do
 
     status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])
     expect(status).to eq(0)
-    expect(out).to match(%r{\A#{Regexp.escape(cache)}/stdlib-remote-[0-9a-f]{8}--v9\.0\.0\.json\n\z})
+    expect(out).to eq("#{cache}/#{fixture.surface_file('stdlib', '9.0.0', 'v9.0.0')}\n")
     # read back from the cache the next time
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log { run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0']) }

@@ -349,7 +349,6 @@ owns them: `puppetlabs-stdlib`, `puppet/stdlib`, and `stdlib` are one module.
 
 Extracts a module's API into a JSON document under
 `pupgrade/cache/api_surfaces/`, which `module diff` and `impact` read.
-They extract what they need themselves, so you only run it to look:
 
 ```shell
 pupgrade surface stdlib -o -                   # the document, to stdout

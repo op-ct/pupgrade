@@ -99,8 +99,9 @@ RSpec.describe Pupgrade::CLI::Impact do
 
   it 'keeps the surfaces it reads in the cache, reuses them, and takes --propose as well as the positional' do
     cache = File.join(fixture.dir, 'pupgrade/cache/api_surfaces')
-    expect(Dir.children(cache)).to include('stdlib-8.6.0.json', 'stdlib-9.6.0--v9.6.0.json', 'apache-10.1.1.json')
-    stamp = File.mtime(File.join(cache, 'stdlib-9.6.0--v9.6.0.json'))
+    newer = fixture.surface_file('stdlib', '9.6.0', 'v9.6.0')
+    expect(Dir.children(cache)).to include(fixture.surface_file('stdlib', '8.6.0'), newer, fixture.surface_file('apache', '10.1.1'))
+    stamp = File.mtime(File.join(cache, newer))
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log do
       status = nil
@@ -113,7 +114,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     end
     expect(log).to include("info: surface: #{File.join(fixture.dir, 'modules/stdlib')}:v9.6.0: cached at")
     expect(log).to include('info: impact: puppetlabs-stdlib: surfaces at v8.6.0 and v9.6.0')
-    expect(File.mtime(File.join(cache, 'stdlib-9.6.0--v9.6.0.json'))).to eq(stamp)
+    expect(File.mtime(File.join(cache, newer))).to eq(stamp)
     expect(run(['extra', 'args']).first).to eq(2)
   end
 end

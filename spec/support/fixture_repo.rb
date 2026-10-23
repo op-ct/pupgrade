@@ -1,5 +1,6 @@
 require 'fileutils'
 require 'json'
+require 'open3'
 require 'time'
 
 module Pupgrade
@@ -83,7 +84,21 @@ module Pupgrade
     #   @return [String] the factsets directory
     # @!attribute [r] mocks
     #   @return [String] pupgrade/compiler-mocks.yaml
-    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :mocks)
+    Result = Data.define(:dir, :remotes_dir, :puppetfile, :proposed, :config, :factsets, :mocks) do
+      # @return [String] the full sha of a deployed module's clone at a ref
+      def sha(short, ref = 'HEAD')
+        out, status = Open3.capture2('git', '-C', File.join(dir, 'modules', short), 'rev-parse', '--verify', "#{ref}^{commit}")
+        raise ArgumentError, "#{short}: no #{ref}" unless status.success?
+
+        out.strip
+      end
+
+      # The cache file `surface` writes for a deployed module read at a ref
+      # (its own tag when none is given).
+      def surface_file(short, version, ref = nil)
+        "#{short}-#{version}--#{ref || "v#{version}"}__#{sha(short, ref || 'HEAD')[0, 10]}.json"
+      end
+    end
 
     OS_EL_OLD = { 'RedHat' => %w[7 8], 'CentOS' => %w[7], 'Ubuntu' => %w[18.04 20.04], 'Debian' => %w[10 11] }.freeze
     OS_EL     = { 'RedHat' => %w[8 9], 'Rocky' => %w[8 9], 'Ubuntu' => %w[20.04 22.04], 'Debian' => %w[11 12] }.freeze

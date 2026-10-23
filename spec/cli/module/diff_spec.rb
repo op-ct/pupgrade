@@ -57,7 +57,7 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Diff do
     ])
 
     stdlib = File.join(fixture.dir, 'modules/stdlib')
-    newer  = File.join(cache, 'stdlib-9.6.0--v9.6.0.json')
+    newer  = File.join(cache, fixture.surface_file('stdlib', '9.6.0', 'v9.6.0'))
     _, out = run(['--surfaces', 'functions', '--changes', 'removed', stdlib, newer])
     expect(cells(out).drop(1).map(&:first)).to eq(['function legacy_shout'])
     _, out = run(['--summary', stdlib, newer])
