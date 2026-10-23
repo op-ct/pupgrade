@@ -1,3 +1,4 @@
+require 'set'
 require 'semantic_puppet'
 
 require 'driftless/inputs/module_metadata'
@@ -7,28 +8,39 @@ require 'pupgrade/logging'
 require 'pupgrade/module_name'
 require 'pupgrade/module_resolver'
 require 'pupgrade/solve/candidates'
+require 'pupgrade/solve/pub_grub'
 
 module Pupgrade
   module Solve
-    # Picks a version for every module. Modules are decided in dependency
-    # order, dependencies before dependents, each at the first candidate in
-    # the chosen order that satisfies every constraint against what is
-    # already decided: its dependency ranges, the Puppet requirement, and
-    # the operating systems of interest. A module with no such candidate
-    # stays at the one with the fewest violations, which are reported along
-    # with what blocked the newest candidate.
+    # Picks a version for every module: a set in which every module's
+    # dependency ranges, the Puppet requirement, and the operating systems
+    # of interest hold, found by PubGrub, each module as far along its
+    # candidates as the set allows. What pupgrade decides around the
+    # solver: constraints already broken at the current versions are left
+    # out (the solve is not what broke them); a hold or a bump is a fact
+    # the solver cannot overrule; a module no version of which fits is
+    # pinned at its least-broken version and the solve goes on without its
+    # constraints. A module short of its newest candidate is asked about
+    # again, and the solver's explanation becomes its note.
     class Solver
+      class Error < StandardError; end
+
       ORDERS = %w[newest oldest].freeze
+
+      ZERO = SemanticPuppet::Version.parse('0.0.0')
 
       # One constraint a candidate breaks: what it asks, and what stands in
       # the way.
       #
+      # @!attribute [r] key
+      #   @return [String] the constraint: the dependency's short name,
+      #     "puppet", or "os RedHat"; what the solver is told to drop
       # @!attribute [r] text
       #   @return [String] "needs puppetlabs/stdlib >= 9.0.0 < 10.0.0"
       # @!attribute [r] fault
       #   @return [String] "stdlib is 8.6.0", "stdlib moves to 10.0.0",
       #     "zookeeper is not on the modulepath", "missing RedHat 9"
-      Violation = Data.define(:text, :fault) do
+      Violation = Data.define(:key, :text, :fault) do
         def to_s
           "#{text}, but #{fault}"
         end
@@ -41,31 +53,36 @@ module Pupgrade
       # @!attribute [r] candidates
       #   @return [Array<Candidates::Candidate>] oldest first, the current
       #     version first of all
-      # @!attribute [r] verdicts
-      #   @return [Array<Array(Candidates::Candidate, Array<Violation>)>] every
-      #     candidate with the constraints it breaks, in candidate order
       # @!attribute [r] chosen
       #   @return [Candidates::Candidate]
       # @!attribute [r] violations
-      #   @return [Array<Violation>] the constraints the choice breaks
-      # @!attribute [r] blocked
-      #   @return [Array(Candidates::Candidate, Array<Violation>), nil] the
-      #     newest candidate the choice could not move to, and why
+      #   @return [Array<Violation>] what the choice breaks that held at the
+      #     current versions
+      # @!attribute [r] prior
+      #   @return [Array<Violation>] what the choice breaks that was broken
+      #     already at the current versions
       # @!attribute [r] note
-      #   @return [String] why this candidate: "newest", "first fit", "current",
-      #     "bumped", "held at current"; "held" when a newer candidate was
-      #     blocked by its violations; "unresolved" when the choice is the
-      #     newest there is and still breaks something
-      Choice = Data.define(:entry, :candidates, :verdicts, :chosen, :violations, :blocked, :note) do
+      #   @return [String] why this candidate: "newest", "first fit",
+      #     "current", "bumped", "held at current"; "held" when the set
+      #     allowed no newer candidate; "unresolved" when no candidate fits
+      #     and this one breaks the least; a reason when there were no
+      #     candidates to choose from ("Forge module")
+      # @!attribute [r] why
+      #   @return [String, nil] for a held module, the constraint of its own
+      #     in the way and what stands against it
+      # @!attribute [r] derivation
+      #   @return [String, nil] the solver's whole explanation behind `why`,
+      #     or behind an unresolved module's pinning
+      Choice = Data.define(:entry, :candidates, :chosen, :violations, :prior, :note, :why, :derivation) do
         def moved?
           !chosen.current
         end
 
-        # A better candidate was blocked: what the exit status reports.
         def held?
           note == 'held'
         end
 
+        # No candidate fits: what the exit status reports.
         def unresolved?
           note.start_with?('unresolved')
         end
@@ -78,7 +95,7 @@ module Pupgrade
       # The result of a solve.
       #
       # @!attribute [r] choices
-      #   @return [Array<Choice>] in the order decided
+      #   @return [Array<Choice>] in dependency order
       # @!attribute [r] pruned
       #   @return [Array<String>] "module:dependency" edges the result
       #     violates among those pruned as unused; the exclusions to record
@@ -93,7 +110,8 @@ module Pupgrade
       # @param operatingsystems [Hash] `modules.operatingsystems`
       # @param requirements [Hash] `modules.requirements`
       # @param exclude [Hash] the `modules.exclude_*` globs
-      # @param order [String] one of {ORDERS}
+      # @param order [String] one of {ORDERS}: which candidate the solver
+      #   prefers, the newest or the nearest to the current
       # @param bumps [Hash{String => String, nil}] modules to move, by any
       #   spelling of the name, to a ref or to their newest candidate
       # @param holds [Array<String>] modules kept at their current version
@@ -119,24 +137,47 @@ module Pupgrade
       # @param entries [Array<Driftless::ModuleInventory::Entry>]
       # @param candidates [Hash{String => Array<Candidate>, Unsolvable}] by entry path
       # @return [Plan]
+      # @raise [Error] when no set can be found even with every misfit pinned
       def solve(entries, candidates)
         entries   = entries.select { |e| e.metadata.name && e.metadata.error.nil? && !excluded_module?(e.metadata.name) }
-        by_name   = index(entries)
-        decided   = {}
-        choices   = []
-        pruned    = []
+        @by_name  = index(entries)
         @warnings = []
         @matched  = { bump: [], hold: [] }
-        ordered(entries, by_name).each do |entry|
+        @lists    = {}
+        @reasons  = {}
+        @by_name.each do |short, entry|
           list = candidates.fetch(entry.path) { Candidates::Unsolvable.new(reason: 'no candidates') }
-          choice = decide(entry, list, by_name, decided)
-          decided[key(entry.metadata.name)] = choice.chosen.version
-          choices << choice
-          pruned.concat(pruned_edges(entry, choice.chosen, by_name, decided))
-          Pupgrade.logger.info("solve: #{choice.name}: #{choice.chosen} (#{choice.note})")
+          @reasons[short] = list.reason if list.is_a?(Candidates::Unsolvable)
+          @lists[short]   = list.is_a?(Array) ? list : [current_candidate(entry)]
         end
+        @versions = @lists.transform_values { |list| versions_of(list) }
+        @current  = @lists.transform_values { |list| list.find(&:current) || list.first }
+        @levers   = @by_name.filter_map { |short, entry| (lever = lever_for(entry, @lists[short])) && [short, lever] }.to_h
         unmatched_levers
-        Plan.new(choices: choices, pruned: pruned.uniq, implicit: implicit(entries, by_name), warnings: @warnings)
+
+        state   = @current.transform_values { |c| version_of(c) }
+        @prior  = @by_name.to_h { |short, entry| [short, violations(entry, @current[short], state)] }
+        ignored = @prior.flat_map { |short, broken| broken.map { |v| [short, v.key] } }.to_set
+        @prior.each { |short, broken| broken.each { |v| Pupgrade.logger.debug("solve: #{short}: already broken at #{@current[short]}: #{v}; not a constraint") } }
+
+        pinned = {}
+        decisions = nil
+        loop do
+          source = build_source(ignored, pinned)
+          decisions, failure = PubGrub.solve(source)
+          break if decisions
+
+          short = misfit(failure, source, pinned)
+          raise Error, "no set of versions fits, and nothing more can give:\n#{failure.explanation}" unless short
+
+          pinned[short] = [pin_for(short, state), failure.explanation]
+          Pupgrade.logger.info("solve: #{short}: no version fits the rest; kept at #{pinned[short].first}, its constraints set aside")
+        end
+
+        choices = ordered.map { |short| choice_for(short, decisions, ignored, pinned) }
+        choices.each { |c| Pupgrade.logger.info("solve: #{c.name}: #{c.chosen} (#{c.note})") }
+        pruned = @by_name.flat_map { |short, entry| pruned_edges(entry, @lists[short].find { |c| version_of(c) == decisions[short] }, decisions) }
+        Plan.new(choices: choices, pruned: pruned.uniq, implicit: implicit(entries), warnings: @warnings)
       end
 
       private
@@ -156,75 +197,56 @@ module Pupgrade
         end
       end
 
-      def decide(entry, list, by_name, decided)
-        if list.is_a?(Candidates::Unsolvable)
-          current = Candidates::Candidate.new(ref: entry.declared&.ref.to_s, ref_type: entry.declared&.ref_type || 'ref',
-                                              version: parse(entry.metadata.version), metadata: entry.metadata, current: true)
-          broken  = violations(entry, current, by_name, decided)
-          return Choice.new(entry: entry, candidates: [current], verdicts: [[current, broken]], chosen: current, violations: broken,
-                            blocked: nil, note: broken.empty? ? list.reason : "unresolved (#{list.reason})")
-        end
-
-        verdicts = list.map { |c| [c, violations(entry, c, by_name, decided)] }
-        verdicts.each { |c, v| Pupgrade.logger.debug("solve: #{entry.path}: #{c}: #{v.empty? ? 'fits' : v.join('; ')}") }
-        considered, bump = ordered_candidates(entry, list, verdicts)
-        scored = verdicts.select { |c, _| considered.include?(c) }.sort_by { |c, _| considered.index(c) }
-        fit = scored.find { |_, v| v.empty? }
-        if fit
-          note = note_for(entry, fit.first, bump, considered)
-          return Choice.new(entry: entry, candidates: list, verdicts: verdicts, chosen: fit.first, violations: [], blocked: nil, note: note)
-        end
-
-        # A hold or a bump decides the candidate whatever it breaks; the
-        # note says so and the violations are shown. Otherwise, among
-        # equally broken candidates staying put beats moving: the choice is
-        # held when a newer candidate exists that its own violations kept it
-        # from, and those are what is reported; unresolved when the choice
-        # is the newest there is.
-        best = scored.min_by.with_index { |(c, v), i| [v.size, c.current ? 0 : 1, i] }
-        if held_by_hand(entry.metadata.name) || bump
-          return Choice.new(entry: entry, candidates: list, verdicts: verdicts, chosen: best.first, violations: best.last,
-                            blocked: nil, note: bump ? 'bumped' : 'held at current')
-        end
-
-        newest = verdicts.reject { |c, _| c.equal?(best.first) }
-          .select { |c, _| c.version && best.first.version && c.version > best.first.version }
-          .max_by { |c, _| c.version }
-        Choice.new(entry: entry, candidates: list, verdicts: verdicts, chosen: best.first, violations: best.last,
-                   blocked: newest, note: newest ? 'held' : 'unresolved')
+      # The deployed version as the one candidate of a module with no
+      # others.
+      def current_candidate(entry)
+        Candidates::Candidate.new(ref: entry.declared&.ref.to_s, ref_type: entry.declared&.ref_type || 'ref',
+                                  version: parse(entry.metadata.version), metadata: entry.metadata, current: true)
       end
 
-      # The candidates in the order they are tried: newest first, or from the
-      # current version forward; a bump narrows them to its ref or the
-      # newest; a hold to the current one.
-      #
-      # @return [Array(Array<Candidate>, Array|nil)] the candidates and the
-      #   bump in force, if any
-      def ordered_candidates(entry, list, verdicts)
+      def version_of(candidate)
+        candidate.version || ZERO
+      end
+
+      # A module's versions in the order the solver prefers them: the
+      # newest first, or from the current version up. Two candidates of one
+      # version (a tag and a branch tip at it) are one version, the first
+      # by candidate order.
+      def versions_of(list)
+        versions = list.map { |c| version_of(c) }.uniq
+        (@order == 'newest') ? versions.sort.reverse : versions.sort
+      end
+
+      def candidate_at(short, version)
+        @lists[short].find { |c| version_of(c) == version }
+      end
+
+      # ---- levers --------------------------------------------------------------
+
+      # @return [Array(Symbol, Candidate), nil] :hold at the current
+      #   candidate, or :bump at the ref named or the newest
+      def lever_for(entry, list)
         name = entry.metadata.name
         if (hold = held_by_hand(name))
           @matched[:hold] << hold
-          return [list.select(&:current), nil]
+          return [:hold, list.find(&:current) || list.first]
         end
 
         bump = bump_for(name)
-        if bump
-          @matched[:bump] << bump.first
-          target = bump.last
-          if target.nil? || target.empty?
-            return [[list.max_by { |c| [c.version || SemanticPuppet::Version.parse('0.0.0'), c.current ? 0 : 1] }], bump]
-          end
+        return nil unless bump
 
-          wanted = list.find { |c| [target, "v#{target}"].include?(c.ref) || c.version.to_s == target.sub(/\Av/, '') }
-          return [[wanted], bump] if wanted
+        @matched[:bump] << bump.first
+        target = bump.last
+        return [:bump, list.max_by { |c| [version_of(c), c.current ? 0 : 1] }] if target.nil? || target.empty?
 
-          others = list.reject(&:current).map(&:ref).join(', ')
-          @warnings << "--bump #{bump.first}=#{target}: #{target} is not a candidate of #{entry.path} " \
-                       "(candidates: #{others.empty? ? 'none' : others}; try --fetch)"
-          Pupgrade.logger.debug("solve: #{entry.path}: bump #{target} not among #{verdicts.size} candidate(s); ordering as usual")
-          bump = nil
-        end
-        [(@order == 'newest') ? list.reverse : list, bump]
+        wanted = list.find { |c| [target, "v#{target}"].include?(c.ref) || c.version.to_s == target.sub(/\Av/, '') }
+        return [:bump, wanted] if wanted
+
+        others = list.reject(&:current).map(&:ref).join(', ')
+        @warnings << "--bump #{bump.first}=#{target}: #{target} is not a candidate of #{entry.path} " \
+                     "(candidates: #{others.empty? ? 'none' : others}; try --fetch)"
+        Pupgrade.logger.debug("solve: #{entry.path}: bump #{target} not among #{list.size} candidate(s); solving as usual")
+        nil
       end
 
       # @return [String, nil] the hold glob naming the module
@@ -237,14 +259,6 @@ module Pupgrade
         @bumps.find { |glob, _| ModuleName.match?(glob, name) }
       end
 
-      def note_for(entry, chosen, bump, considered)
-        return 'held at current' if held_by_hand(entry.metadata.name)
-        return 'bumped' if bump
-        return 'current' if chosen.current
-
-        (chosen.equal?(considered.first) && @order == 'newest') ? 'newest' : 'first fit'
-      end
-
       # A --bump or --hold that named no module is a typo or a module that is
       # not a git clone; either way the user should hear.
       def unmatched_levers
@@ -252,39 +266,172 @@ module Pupgrade
         (@holds - @matched[:hold]).each { |g| @warnings << "--hold #{g} matches no module" }
       end
 
-      # The constraints a candidate breaks against what is decided so far,
-      # or the current versions of what is not.
+      # ---- the solver's view -----------------------------------------------------
+
+      # @param ignored [Set<Array(String, String)>] [module, key] constraints
+      #   left out: broken before the solve
+      # @param pinned [Hash{String => Array(Candidate, String)}] modules kept
+      #   at a version whatever they need
+      # @param asked [Fact, nil] one more fact, for the second query
+      def build_source(ignored, pinned, asked = nil)
+        facts = @levers.map do |short, (kind, candidate)|
+          v = version_of(candidate)
+          PubGrub::Fact.new(package: short, range: PubGrub.except(v), text: "#{short} is #{(kind == :hold) ? 'held at' : 'bumped to'} #{v} (--#{kind})")
+        end
+        facts += pinned.map do |short, (candidate, _)|
+          PubGrub::Fact.new(package: short, range: PubGrub.except(version_of(candidate)), text: "#{short} is kept at #{version_of(candidate)} (no version fits)")
+        end
+        facts << asked if asked
+        dependencies = ->(short, version) do
+          next {} if pinned.key?(short)
+
+          candidate_at(short, version).metadata.dependencies.filter_map { |dep, requirement|
+            dep_short = key(dep)
+            next if constraint_dropped?(short, dep, dep_short, requirement) || ignored.include?([short, dep_short])
+
+            [dep_short, requirement.to_s.strip.empty? ? nil : range_for(requirement)]
+          }.to_h
+        end
+        reasons = ->(short, version) do
+          next [] if pinned.key?(short)
+
+          candidate = candidate_at(short, version)
+          site_violations(@by_name[short], candidate.metadata).reject { |v| ignored.include?([short, v.key]) }
+            .map { |v| [v.key, "#{short} #{version} #{v}"] }
+        end
+        PubGrub::Source.new(versions: @versions, dependencies: dependencies, reasons: reasons, facts: facts)
+      end
+
+      # An edge the config excludes, or one pruned as unused: to a module
+      # the evidence shows unused or nobody deployed, or from one, since
+      # what the site never runs needs nothing.
+      def constraint_dropped?(short, dep, dep_short, requirement)
+        return true if excluded_module?(dep) || Exclusions.dependency?(@exclude['dependencies'], [@by_name[short].metadata.name], [dep], requirement).first
+
+        target = @by_name[dep_short]
+        @prune && (target.nil? || !used?(target) || !used?(@by_name[short]))
+      end
+
+      # The module to pin when there is no solution: a module whose own
+      # constraint is in the derivation, the ones the user moved or held
+      # first (their version is settled), then the one with the fewest
+      # candidates, which has the least room to give.
       #
+      # @return [String, nil]
+      def misfit(failure, source, pinned)
+        dependers = PubGrub.leaves(failure.incompatibility).filter_map { |inc| source.keys[inc]&.first }.uniq - pinned.keys
+        dependers.min_by { |short| [@levers.key?(short) ? 0 : 1, @lists[short].size, short] }
+      end
+
+      # The version a misfit is kept at: the lever's, else the candidate
+      # breaking the least against the current versions, the current one
+      # among equals, then the one preferred by order.
+      def pin_for(short, state)
+        return @levers[short].last if @levers.key?(short)
+
+        entry = @by_name[short]
+        ordered_list = @versions[short].map { |v| candidate_at(short, v) }
+        scored = ordered_list.map { |c| [c, violations(entry, c, state)] }
+        scored.each { |c, v| Pupgrade.logger.debug("solve: #{short}: #{c}: #{v.empty? ? 'fits the current versions' : v.join('; ')}") }
+        scored.min_by.with_index { |(c, v), i| [v.size, c.current ? 0 : 1, i] }.first
+      end
+
+      # ---- the outcome ---------------------------------------------------------
+
+      def choice_for(short, decisions, ignored, pinned)
+        entry   = @by_name[short]
+        chosen  = candidate_at(short, decisions[short])
+        broken  = violations(entry, chosen, decisions)
+        prior, fresh = broken.partition { |v| ignored.include?([short, v.key]) }
+        note, why, derivation = note_for(short, chosen, decisions, pinned)
+        Choice.new(entry: entry, candidates: @lists[short], chosen: chosen, violations: fresh, prior: prior,
+                   note: note, why: why, derivation: derivation)
+      end
+
+      # @return [Array(String, String|nil, String|nil)] note, why, derivation
+      def note_for(short, chosen, decisions, pinned)
+        if @levers.key?(short)
+          return [(@levers[short].first == :hold) ? 'held at current' : 'bumped', nil, pinned.dig(short, 1)]
+        end
+        return ["unresolved#{" (#{@reasons[short]})" if @reasons[short]}", nil, pinned[short].last] if pinned.key?(short)
+        return [@reasons[short], nil, nil] if @reasons.key?(short)
+
+        newest = @lists[short].map { |c| version_of(c) }.max
+        if version_of(chosen) == newest || @order == 'oldest'
+          return ['current', nil, nil] if chosen.current
+
+          return [(@order == 'newest') ? 'newest' : 'first fit', nil, nil]
+        end
+
+        why, derivation = held_because(short, chosen, decisions, pinned)
+        ['held', why, derivation]
+      end
+
+      # Why a module stopped short: the solver is asked for a set with the
+      # module past its chosen version, under the same facts, and the
+      # leaves of its refusal are the module's own constraint in the way
+      # and what stands against it.
+      #
+      # @return [Array(String, String|nil)]
+      def held_because(short, chosen, _decisions, pinned)
+        ignored = @prior.flat_map { |s, broken| broken.map { |v| [s, v.key] } }.to_set
+        asked   = "#{short} is asked past #{version_of(chosen)}"
+        source  = build_source(ignored, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: asked))
+        _decisions, failure = PubGrub.solve(source)
+        unless failure
+          Pupgrade.logger.warn("solve: #{short}: a set with it past #{version_of(chosen)} exists; --bump #{short} would take it")
+          return ["a set with #{short} past #{version_of(chosen)} exists (--bump #{short})", nil]
+        end
+
+        texts   = PubGrub.leaves(failure.incompatibility).map { |inc| source.keys.fetch(inc) { [nil, nil, inc.to_s] } }.uniq
+        own     = texts.select { |depender, _, _| depender == short }.map(&:last)
+        others  = texts.reject { |depender, _, text| depender == short || text == asked || text.start_with?("no versions satisfy #{short} ") }.map(&:last)
+        lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
+        why     = [own.first, lever || others.first].compact.join('; ')
+        Pupgrade.logger.debug("solve: #{short}: held because:\n#{failure.explanation}")
+        [why.empty? ? failure.explanation.lines.first.to_s.strip : why, failure.explanation]
+      end
+
+      # ---- constraints -----------------------------------------------------------
+
+      # The constraints a candidate breaks against a state: the versions
+      # decided, or the current ones for what is not.
+      #
+      # @param state [Hash{String => SemanticPuppet::Version}] by short name
       # @return [Array<Violation>]
-      def violations(entry, candidate, by_name, decided)
+      def violations(entry, candidate, state)
         metadata = candidate.metadata
         out = []
         metadata.dependencies.each do |dep, requirement|
-          dep_name = key(dep)
-          target = by_name[dep_name]
-          next if excluded_module?(dep) || Exclusions.dependency?(@exclude['dependencies'], [entry.metadata.name], [dep], requirement).first
-          # a module nobody deployed is used by nobody
-          next if @prune && (target.nil? || !used?(target))
+          dep_short = key(dep)
+          next if constraint_dropped?(key(entry.metadata.name), dep, dep_short, requirement)
 
-          text = "needs #{dep} #{requirement || '(any version)'}"
+          target = @by_name[dep_short]
+          text   = "needs #{dep} #{requirement || '(any version)'}"
           if target.nil?
-            out << Violation.new(text: text, fault: "#{dep_name} is not on the modulepath")
+            out << Violation.new(key: dep_short, text: text, fault: "#{dep_short} is not on the modulepath")
             next
           end
           range    = range_for(requirement)
           deployed = parse(target.metadata.version)
-          version  = decided.fetch(dep_name) { deployed }
+          version  = state.fetch(dep_short) { deployed }
           next if range.nil? || version.nil? || range.include?(version)
 
-          fault = (version == deployed) ? "#{dep_name} is #{version}" : "#{dep_name} moves to #{version}"
-          out << Violation.new(text: text, fault: fault)
+          fault = (version == deployed) ? "#{dep_short} is #{version}" : "#{dep_short} moves to #{version}"
+          out << Violation.new(key: dep_short, text: text, fault: fault)
         end
+        out.concat(site_violations(entry, metadata))
+      end
+
+      # What the site asks of every module: its Puppet requirement and the
+      # operating systems of interest.
+      def site_violations(entry, metadata)
+        out = []
         puppet = puppet_range(metadata)
         if puppet && @site && puppet.intersection(@site) == ModuleResolver::EMPTY && !Exclusions.requirement?(@exclude['requirements'], entry.metadata.name)
-          out << Violation.new(text: "requires puppet #{puppet}", fault: "the control repo requires #{@site}")
+          out << Violation.new(key: 'puppet', text: "requires puppet #{puppet}", fault: "the control repo requires #{@site}")
         end
         out.concat(os_violations(entry, metadata))
-        out
       end
 
       def os_violations(entry, metadata)
@@ -298,9 +445,9 @@ module Pupgrade
             next if Exclusions.operatingsystem?(@exclude['operatingsystems'], [entry.metadata.name], subject)
 
             if declared.nil?
-              Violation.new(text: "supports #{support.keys.join(', ')}", fault: "missing #{os}")
+              Violation.new(key: "os #{os}", text: "supports #{support.keys.join(', ')}", fault: "missing #{os}")
             elsif release && !declared.empty? && declared.none? { |d| d == release || release.start_with?("#{d}.") }
-              Violation.new(text: "supports #{os} #{declared.join(', ')}", fault: "missing #{subject}")
+              Violation.new(key: "os #{os}", text: "supports #{os} #{declared.join(', ')}", fault: "missing #{subject}")
             end
           }.uniq
         end
@@ -308,12 +455,12 @@ module Pupgrade
 
       # The pruned dependency edges the chosen version violates: what to
       # record as exclusions so `check` agrees with the plan.
-      def pruned_edges(entry, chosen, by_name, decided)
+      def pruned_edges(entry, chosen, decided)
         return [] unless @prune
 
         chosen.metadata.dependencies.filter_map do |dep, requirement|
-          target = by_name[key(dep)]
-          next if target.nil? || used?(target)
+          target = @by_name[key(dep)]
+          next if target.nil? || (used?(target) && used?(entry))
 
           range   = range_for(requirement)
           version = decided.fetch(key(dep)) { parse(target.metadata.version) }
@@ -323,21 +470,26 @@ module Pupgrade
 
       # Modules in dependency order: a module after everything its current
       # metadata depends on; a cycle's members follow by name.
-      def ordered(_entries, by_name)
-        remaining = by_name.dup
+      #
+      # @return [Array<String>] short names
+      def ordered
+        remaining = @by_name.dup
         deps_of   = remaining.to_h { |n, e| [n, e.metadata.dependencies.keys.map { |d| key(d) }.select { |d| remaining.key?(d) && d != n }] }
         order = []
         until remaining.empty?
           ready = remaining.keys.select { |n| deps_of[n].none? { |d| remaining.key?(d) } }.sort
           ready = [remaining.keys.min] if ready.empty?
-          ready.each { |n| order << remaining.delete(n) }
+          ready.each do |n|
+            order << n
+            remaining.delete(n)
+          end
         end
         order
       end
 
       # Functions the evidence shows one module calling from another that
       # the caller's metadata does not depend on.
-      def implicit(entries, _by_name)
+      def implicit(entries)
         return [] unless @evidence
 
         by_base = entries.to_h { |e| [File.basename(e.path), e] }

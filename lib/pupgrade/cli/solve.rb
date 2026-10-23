@@ -20,7 +20,7 @@ module Pupgrade
     # A version for every deployed git module, from the tags its clone
     # holds: one row per module that moves or is held, a Puppetfile overlay
     # for `check --propose`, and the exclusions a pruned solve relies on.
-    # Exit 1 when any module is held.
+    # Exit 1 when any module is unresolved.
     class Solve < Base
       include Table
       extend ::Pupgrade::ConfigKeys::DSL
@@ -38,8 +38,7 @@ module Pupgrade
                         'compile.catalogs_dir, relative to the control repo: evidence of what the site uses, for ' \
                         '--prune-unused. Unset, the last compile is read'
 
-      COLUMNS         = %w[module current chosen candidates note].freeze
-      EXPLAIN_COLUMNS = %w[module candidate verdict violations].freeze
+      COLUMNS = %w[module current chosen candidates note].freeze
 
       # How a note's status word is coloured when stdout takes colour; the
       # part of each violation that stands in the way is red.
@@ -70,15 +69,15 @@ module Pupgrade
         plan    = solver.solve(entries, lists)
         log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
-        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? || !c.violations.empty? }
+        shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? }
         print_table(COLUMNS, shown.map { |c| row(c) })
         print_explanations(plan) if @options[:explain]
         plan.implicit.each { |i| ::Pupgrade.logger.warn("solve: #{i}: used, but not a declared dependency") }
         write_puppetfile(plan) if @options[:output]
         write_exclusions(plan) if @options[:exclusions]
         ::Pupgrade.logger.notice(summary(plan, evidence))
-        exit(plan.choices.any?(&:held?) ? 1 : 0)
-      rescue ::Pupgrade::Solve::Evidence::Error, ::Pupgrade::ModuleResolver::Error, ArgumentError => e
+        exit(plan.choices.any?(&:unresolved?) ? 1 : 0)
+      rescue ::Pupgrade::Solve::Evidence::Error, ::Pupgrade::Solve::Solver::Error, ::Pupgrade::ModuleResolver::Error, ArgumentError => e
         fatal!("solve: #{e.message}", 3)
       end
 
@@ -88,9 +87,10 @@ module Pupgrade
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('-o', '--output=PUPPETFILE', 'Write the moved modules as a Puppetfile overlay for `check --propose`') { |v| @options[:output] = v }
-        o.on('--all', 'Show every module, not only those that move, are held, unresolved, or break a constraint') { @options[:all] = true }
-        o.on('--explain=MODULES', Array, 'After the table, every candidate of these modules (globs, or all) with what',
-             'each breaks: why the solve went where it did') { |v| accumulate(:explain, v) }
+        o.on('--all', 'Show every module, not only those that move, are held, unresolved, or break a constraint',
+             'that held at the current versions') { @options[:all] = true }
+        o.on('--explain=MODULES', Array, 'After the table, the solver\'s whole reasoning for these modules (globs, or',
+             'all): why a held one stopped short, why an unresolved one fits nowhere') { |v| accumulate(:explain, v) }
         o.on('--ignore=MODULES', Array,
              'Solve as if these modules were removed from the Puppetfile (globs on any spelling of the name,',
              'or the deploy path; comma-separated, repeatable). Unlike modules.exclude_modules, which leaves a',
@@ -112,12 +112,14 @@ module Pupgrade
         o.on('--exclusions=FILE', 'Write the pruned edges the result violates as modules.exclude_dependencies YAML') { |v| @options[:exclusions] = v }
 
         o.separator ''
-        o.separator 'Modules are decided dependencies first, each at the first candidate in order that'
-        o.separator 'satisfies its dependency ranges, the Puppet requirement, and the operating systems'
-        o.separator 'of interest against what is already decided. One with no fit stops at the candidate'
-        o.separator 'breaking the fewest: "held" when a newer candidate was blocked, and the note says which'
-        o.separator 'and by what; "unresolved" when the choice is the newest there is and still breaks'
-        o.separator 'something. --explain shows every candidate\'s verdict. Exits 1 when any module is held.'
+        o.separator 'The solver (PubGrub) finds a set of versions in which every dependency range, the'
+        o.separator 'Puppet requirement, and the operating systems of interest hold, each module as far'
+        o.separator 'along its candidates as the set allows. Constraints already broken at the current'
+        o.separator 'versions are not the solve\'s to fix and are left out, noted as "already broken". A hold'
+        o.separator 'or a bump is a fact the solver cannot overrule. A module no version of which fits is'
+        o.separator '"unresolved": kept at the candidate breaking the least, its constraints set aside. One'
+        o.separator 'short of its newest candidate is "held", and the note says which of its constraints is'
+        o.separator 'in the way and what stands against it. Exits 1 when any module is unresolved.'
       end
 
       private
@@ -128,25 +130,18 @@ module Pupgrade
          (choice.candidates.size - 1).to_s, note(choice)]
       end
 
-      # The status word coloured by outcome; a held row names the blocked
-      # candidate and what blocked it, then what the choice itself breaks.
+      # The status word coloured by outcome; a held row says what stands in
+      # its way; the part of each violation in the way is red; what was
+      # broken before the solve is grey.
       def note(choice)
-        style  = if choice.held? then :held
-                 elsif choice.unresolved? then :unresolved
-                 else :moved
-                 end
-        status = paint(choice.note, *NOTE_STYLE.fetch(style))
-        return status if choice.blocked.nil? && choice.violations.empty?
-        return "#{status}: #{violations_text(choice.violations)}" if choice.blocked.nil?
-
-        candidate, broken = choice.blocked
-        text  = "#{status}: #{candidate.ref} #{violations_text(broken)}"
-        own   = choice.violations.reject { |v| broken.include?(v) }
-        if own.empty?
-          text += " (so does #{choice.chosen.ref})" unless choice.violations.empty?
-        else
-          text += "; at #{choice.chosen.ref} #{violations_text(own)}"
-        end
+        style = if choice.held? then :held
+                elsif choice.unresolved? then :unresolved
+                else :moved
+                end
+        text = paint(choice.note, *NOTE_STYLE.fetch(style))
+        text += ": #{choice.why}" if choice.why
+        text += ": #{violations_text(choice.violations)}" unless choice.violations.empty?
+        text += "; #{paint("already broken: #{choice.prior.join('; ')}", :grey)}" unless choice.prior.empty?
         text
       end
 
@@ -154,22 +149,17 @@ module Pupgrade
         violations.map { |v| "#{v.text}, but #{paint(v.fault, :red)}" }.join('; ')
       end
 
-      # One row per candidate of the modules asked about: what each would
-      # break, and which was chosen.
+      # The solver's reasoning for the modules asked about, as it wrote
+      # it: why a held module stopped short, or why nothing fits an
+      # unresolved one.
       def print_explanations(plan)
-        globs = @options[:explain]
+        globs  = @options[:explain]
         wanted = plan.choices.select { |c| globs.include?('all') || ::Pupgrade::ModuleName.any?(globs, c.name, c.entry.metadata.name, File.basename(c.entry.path)) }
-        puts ''
-        rows = wanted.flat_map do |choice|
-          choice.verdicts.map do |candidate, broken|
-            verdict = if candidate.equal?(choice.chosen) then "chosen (#{choice.note})"
-                      elsif broken.empty? then 'fits'
-                      else "breaks #{broken.size}"
-                      end
-            [choice.name, candidate.to_s, verdict, violations_text(broken)]
-          end
+        wanted.each do |choice|
+          puts ''
+          puts "#{choice.name}: #{choice.chosen} (#{choice.note})"
+          puts(choice.derivation ? choice.derivation.lines.map { |l| "  #{l}" }.join.chomp : '  nothing stood in the way')
         end
-        print_table(EXPLAIN_COLUMNS, rows)
       end
 
       def current_text(choice)
@@ -206,7 +196,9 @@ module Pupgrade
         moved = plan.choices.count(&:moved?)
         held  = plan.choices.count(&:held?)
         open  = plan.choices.count(&:unresolved?)
+        prior = plan.choices.sum { |c| c.prior.size }
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{held} held, #{open} unresolved"
+        text += "; #{prior} constraint(s) already broken at the current versions left out (--all shows them)" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text

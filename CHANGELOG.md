@@ -182,22 +182,31 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
 - **`pupgrade solve`**` [options] [-o PUPPETFILE]`
 
   Picks a version for every deployed git module from the tags its clone
-  holds, dependencies first, each at the first candidate that satisfies its
-  dependency ranges, the Puppet requirement (`modules.requirements`), and the
-  operating systems of interest (`modules.operatingsystems`).
+  holds: a set in which every dependency range, the Puppet requirement
+  (`modules.requirements`), and the operating systems of interest
+  (`modules.operatingsystems`) hold, found by the PubGrub solver Bundler
+  vendors, each module as far along its candidates as the set allows.
   * `-o` writes the moves as a Puppetfile overlay for `check --propose` and
     `impact`
-  * `--order newest` (default) moves as far as the constraints allow;
-    `oldest` moves the least, driven by `--bump MODULE[=REF]`
-  * `--hold MODULES` and `--ignore MODULES` pin or drop modules for the run
-  * a module that cannot move is `held`, and the note names the candidate
-    that was blocked and why:
-    `held: v6.0.0 needs puppetlabs/augeas_core >= 3.0.0, but augeas_core is 2.0.1`
-  * `--explain MODULES` shows every candidate's verdict
-  * `--prune-unused` ignores dependency edges to modules no compile used
-    (needs `compile` output); `--exclusions FILE` records the pruned edges
-    the result violates as `modules.exclude_dependencies`
-  * exits `1` when any module is held
+  * `--order newest` (default) prefers the newest candidate; `oldest` the
+    nearest to the current, driven by `--bump MODULE[=REF]`
+  * `--hold MODULES` and `--bump` are facts the solver cannot overrule;
+    `--ignore MODULES` drops modules for the run
+  * a module short of its newest candidate is `held`, and the note says
+    which of its constraints is in the way and what stands against it:
+    `held: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every
+    version of baseline depends on stdlib >= 4.13.1, < 9.0.0`
+  * a module no version of which fits is `unresolved`: kept at the
+    candidate breaking the least, its constraints set aside
+  * constraints already broken at the current versions are not the solve's
+    to fix: left out, and shown on the row as `already broken` (`--all`
+    shows the rows they alone would hide)
+  * `--explain MODULES` prints the solver's whole derivation for a held or
+    unresolved module
+  * `--prune-unused` ignores dependency edges to, and from, modules no
+    compile used (needs `compile` output); `--exclusions FILE` records the
+    pruned edges the result violates as `modules.exclude_dependencies`
+  * exits `1` when any module is unresolved
   * config subsystem `solve`: `order`, `include_heads`, `catalogs_dir`
 
 - **`pupgrade impact`**` [options] PUPPETFILE`

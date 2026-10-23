@@ -292,23 +292,32 @@ resources only production has.
 
 ### solve
 
-Picks a version for every deployed git module from the tags its clone holds,
-dependencies first, each at the first candidate that satisfies its dependency
-ranges, your Puppet requirement, and your operating systems against what is
-already decided.
+Picks a version for every deployed git module from the tags its clone holds:
+a set in which every dependency range, your Puppet requirement, and your
+operating systems hold, each module as far along its candidates as the set
+allows. The search is PubGrub's, the solver Bundler uses; what to feed it is
+pupgrade's.
 
 ```shell
-pupgrade solve                                 # newest that fits, every module
+pupgrade solve                                 # the newest set that fits
+pupgrade solve --bump puppetlabs-stdlib        # stdlib to its newest, whatever that breaks
 pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0   # move stdlib, drag the rest the least
 pupgrade solve --hold puppetlabs-apache        # keep one where it is
-pupgrade solve --prune-unused -o Puppetfile.proposed   # ignore edges to modules no catalog used
-pupgrade solve --explain stdlib,concat         # every candidate's verdict
+pupgrade solve --prune-unused -o Puppetfile.proposed   # ignore edges to and from modules no catalog used
+pupgrade solve --explain stdlib,baseline       # the solver's reasoning in full
 ```
 
-A module that cannot move is `held`, and its note says which candidate was
-blocked and by what: `held: v6.0.0 needs puppetlabs/augeas_core >= 3.0.0, but
-augeas_core is 2.0.1`. `--explain` shows every candidate's verdict when that
-is not enough. Exits 1 when any module is held.
+A module short of its newest candidate is `held`, and its note says which of
+its constraints is in the way and what stands against it: `held: apache >=
+11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every version of baseline
+depends on stdlib >= 4.13.1, < 9.0.0`. That is the site module `baseline`
+holding stdlib, and everything behind stdlib, back: fix its range, exclude
+the edge, or `--bump puppetlabs-stdlib` and read what breaks. A hold or a
+bump is a fact the solver cannot overrule, so a module no version of which
+fits the facts is `unresolved`, kept at the candidate breaking the least.
+Constraints already broken at the current versions are not the solve's to
+fix; they are left out and shown as `already broken`. Exits 1 when any
+module is unresolved.
 
 ### impact
 
@@ -570,7 +579,9 @@ what is already installed and touches no network. What else to bring:
   the Puppetfile already names; without them, `solve` reads the deployed
   clones' tags only.
 
-Bundler is not needed; pupgrade has no native extensions.
+Bundler is not run, but its library is: `solve` uses the PubGrub solver that
+Bundler 2.4 and later vendor, which every Ruby 3.2 and the Bolt AIO carry.
+pupgrade has no native extensions.
 
 ### With the openvox-agent AIO
 
