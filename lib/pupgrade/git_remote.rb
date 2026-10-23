@@ -42,9 +42,9 @@ module Pupgrade
 
       Pupgrade.logger.debug("git remote: fetching #{@url} at #{ref} for #{path}")
       contents = Dir.mktmpdir('pupgrade-git-remote') do |tmp|
-        run(tmp, 'init', '-q')
-        run(tmp, 'fetch', '-q', '--depth', '1', @url, ref)
-        run(tmp, 'cat-file', '-p', "FETCH_HEAD:#{path}")
+        run(tmp, 'init', '-q', why: 'scratch clone')
+        run(tmp, 'fetch', '-q', '--depth', '1', @url, ref, why: "fetching #{ref}")
+        run(tmp, 'cat-file', '-p', "FETCH_HEAD:#{path}", why: "reading #{path}")
       end
       if cache
         FileUtils.mkdir_p(File.dirname(cache))
@@ -59,9 +59,9 @@ module Pupgrade
       File.join(@cache_dir, Digest::SHA256.hexdigest([@url, ref, path].join("\n"))[0, 32] + File.extname(path))
     end
 
-    def run(dir, *args)
+    def run(dir, *args, why: nil)
       out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
-      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
+      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}#{" (#{why})" if why}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
       return out if status.success?
 
       line = err.lines.find { |l| l.start_with?('fatal:') } || err.lines.last

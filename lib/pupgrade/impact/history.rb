@@ -29,9 +29,9 @@ module Pupgrade
       # @return [Record]
       def self.between(clone_dir, from_ref, to_ref, from_version: nil, to_version: nil)
         Pupgrade.logger.info("history: #{clone_dir}: #{from_ref}..#{to_ref}")
-        log = git(clone_dir, 'log', '--oneline', '--no-decorate', "#{from_ref}..#{to_ref}")
+        log = git(clone_dir, 'log', '--oneline', '--no-decorate', "#{from_ref}..#{to_ref}", why: 'commits crossed')
         commits = log&.lines&.map(&:strip)&.reject(&:empty?)
-        changelog = CHANGELOG_NAMES.filter_map { |n| git(clone_dir, 'show', "#{to_ref}:#{n}") }.first
+        changelog = CHANGELOG_NAMES.filter_map { |n| git(clone_dir, 'show', "#{to_ref}:#{n}", why: "#{n} at #{to_ref}") }.first
         Pupgrade.logger.debug("history: #{clone_dir}: #{commits ? "#{commits.size} commit(s)" : 'log unavailable'}, changelog #{changelog ? 'found' : 'absent'}")
         Record.new(commits: commits, changelog: changelog && sections(changelog, from_version, to_version))
       end
@@ -61,8 +61,9 @@ module Pupgrade
         nil
       end
 
-      def self.git(dir, *args)
-        out, _err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+      def self.git(dir, *args, why: nil)
+        out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
+        Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}#{" (#{why})" if why}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
         status.success? ? out : nil
       rescue Errno::ENOENT
         nil

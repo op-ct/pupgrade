@@ -64,7 +64,10 @@ module Pupgrade
                                                    exclude: exclusions, order: @options[:order], bumps: @options[:bumps] || {},
                                                    holds: @options[:holds] || [], evidence: evidence, prune_unused: @options[:prune_unused])
         entries = ::Pupgrade::ModuleProposal.new(inventory, nil, ignore: @options[:ignore] || []).entries
-        plan    = solver.solve(entries, entries.to_h { |e| [e.path, candidates.for(e)] })
+        ::Pupgrade.logger.notice("solve: reading the candidates of #{entries.size} module(s) from their clones#{' after fetching' if @options[:fetch]}")
+        lists   = entries.to_h { |e| [e.path, candidates.for(e)] }
+        ::Pupgrade.logger.notice("solve: solving, #{@options[:order]} first#{'; pruning edges the catalogs show unused' if @options[:prune_unused]}")
+        plan    = solver.solve(entries, lists)
         log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
         shown = plan.choices.select { |c| @options[:all] || c.moved? || c.held? || c.unresolved? || !c.violations.empty? }

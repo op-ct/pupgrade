@@ -78,6 +78,7 @@ module Pupgrade
         log_warnings(inventory.warnings + current.warnings)
 
         if @options[:propose] || @options[:ignore]
+          ::Pupgrade.logger.notice("check: reading #{@options[:propose] ? File.expand_path(@options[:propose]) : 'the Puppetfile'} and the metadata of what it changes")
           proposal = ::Pupgrade::ModuleProposal.new(inventory, @options[:propose] && File.expand_path(@options[:propose]),
                                                     ignore: @options[:ignore] || [])
           result   = resolver.resolve(proposal.entries)

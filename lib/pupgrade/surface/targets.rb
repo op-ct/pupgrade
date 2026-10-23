@@ -162,6 +162,7 @@ module Pupgrade
       def fetch!(dir)
         @logger.info("surface: #{dir}: fetching origin")
         _out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, 'fetch', '--quiet', '--tags', 'origin')
+        @logger.trace("git -C #{dir} fetch --quiet --tags origin (fetching origin): exit #{status.exitstatus}")
         raise Error, "#{dir}: fetch failed: #{err.lines.last.to_s.strip}" unless status.success?
       end
 
@@ -175,6 +176,7 @@ module Pupgrade
         text =
           if target.ref
             out, _err, status = Open3.capture3('git', '-C', target.dir, 'show', "#{target.ref}:metadata.json")
+            @logger.trace("git -C #{target.dir} show #{target.ref}:metadata.json (naming the cache file): exit #{status.exitstatus}")
             status.success? ? out : nil
           elsif File.file?(File.join(target.dir, 'metadata.json'))
             File.read(File.join(target.dir, 'metadata.json'))

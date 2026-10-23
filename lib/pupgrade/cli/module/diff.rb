@@ -33,7 +33,9 @@ module Pupgrade
           fatal!('module diff takes two sides: documents, module directories, or modules at refs', help: true) unless argv.size == 2
           check_filters!
           reader = targets
+          ::Pupgrade.logger.notice("module diff: reading #{argv[0]}")
           from, = reader.document(reader.resolve(argv[0]))
+          ::Pupgrade.logger.notice("module diff: reading #{argv[1]}")
           to,   = reader.document(reader.resolve(argv[1]))
           changes = ::Pupgrade::Surface::Diff.documents(from, to)
           shown   = changes.select { |c| shown?(c) }

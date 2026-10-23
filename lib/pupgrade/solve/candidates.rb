@@ -100,7 +100,7 @@ module Pupgrade
       def tags_past(dir, current_version, branch, entry)
         args = ['tag', '--list']
         args.push('--merged', ref_in_clone(dir, branch)) if branch && ref_in_clone(dir, branch)
-        out = git(dir, *args)
+        out = git(dir, *args, why: 'listing tags')
         return [] unless out
 
         out.split("\n").filter_map { |tag|
@@ -130,16 +130,16 @@ module Pupgrade
       # Whether the clone's HEAD is the branch's tip already.
       def at_head?(dir, branch)
         ref = ref_in_clone(dir, branch)
-        ref && git(dir, 'rev-parse', ref) == git(dir, 'rev-parse', 'HEAD')
+        ref && git(dir, 'rev-parse', ref, why: "sha of #{ref}") == git(dir, 'rev-parse', 'HEAD', why: 'sha at HEAD')
       end
 
       # The branch as the clone knows it: its remote-tracking ref first.
       def ref_in_clone(dir, branch)
-        ["origin/#{branch}", branch].find { |r| git(dir, 'rev-parse', '--verify', '--quiet', "#{r}^{commit}") }
+        ["origin/#{branch}", branch].find { |r| git(dir, 'rev-parse', '--verify', '--quiet', "#{r}^{commit}", why: "resolving #{r}") }
       end
 
       def metadata_at(dir, ref, entry)
-        text = git(dir, 'show', "#{ref}:#{::Driftless::Inputs::ModuleMetadata::FILENAME}")
+        text = git(dir, 'show', "#{ref}:#{::Driftless::Inputs::ModuleMetadata::FILENAME}", why: "metadata.json at #{ref}")
         if text.nil?
           @warnings << "#{entry.path}: no metadata.json at #{ref}; skipped"
           return nil
@@ -154,7 +154,7 @@ module Pupgrade
 
       def fetch(dir, entry)
         Pupgrade.logger.info("candidates: #{entry.path}: fetching origin")
-        @warnings << "#{entry.path}: fetch failed" if git(dir, 'fetch', '--quiet', '--tags', 'origin').nil?
+        @warnings << "#{entry.path}: fetch failed" if git(dir, 'fetch', '--quiet', '--tags', 'origin', why: 'fetching origin').nil?
       end
 
       def parse(version)
@@ -163,9 +163,9 @@ module Pupgrade
         nil
       end
 
-      def git(dir, *args)
+      def git(dir, *args, why: nil)
         out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
-        Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
+        Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}#{" (#{why})" if why}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
         status.success? ? out.strip : nil
       rescue Errno::ENOENT
         nil

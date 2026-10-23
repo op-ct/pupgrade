@@ -55,10 +55,11 @@ module Pupgrade
         proposal  = ::Pupgrade::ModuleProposal.new(inventory, File.expand_path(puppetfile, repo.dir))
         changes   = proposal.changes.select { |c| c.to && c.from }
         log_warnings(inventory.warnings + proposal.warnings)
-        ::Pupgrade.logger.info("impact: #{puppetfile} moves #{changes.size} module(s)")
+        ::Pupgrade.logger.notice("impact: #{puppetfile} moves #{changes.size} module(s)")
         evidence  = load_evidence(repo)
+        ::Pupgrade.logger.notice("impact: reading the surfaces of #{changes.size} module(s) at both refs")
         surfaces  = surfaces_for(repo, inventory, proposal, changes)
-        ::Pupgrade.logger.info('impact: checking Hiera data against the proposed classes')
+        ::Pupgrade.logger.notice('impact: checking Hiera data against the proposed classes, then each module\'s history')
         hiera     = hiera_references(repo, inventory, surfaces)
         analysis  = ::Pupgrade::Impact::Analysis.new(evidence: evidence, hiera: hiera)
 
@@ -132,6 +133,7 @@ module Pupgrade
         end
         return nil unless dir
 
+        ::Pupgrade.logger.notice("impact: reading catalogs under #{File.expand_path(dir, repo.dir)}")
         ::Pupgrade::Impact::Evidence.new(File.expand_path(dir, repo.dir))
       end
 
@@ -156,7 +158,9 @@ module Pupgrade
       end
 
       def ref_in?(clone, ref)
-        system('git', '-C', clone, 'rev-parse', '--verify', '--quiet', "#{ref}^{commit}", out: File::NULL, err: File::NULL)
+        found = system('git', '-C', clone, 'rev-parse', '--verify', '--quiet', "#{ref}^{commit}", out: File::NULL, err: File::NULL)
+        ::Pupgrade.logger.trace("git -C #{clone} rev-parse --verify --quiet #{ref}^{commit} (does the clone have #{ref}): #{found ? 'yes' : 'no'}")
+        found
       end
 
       def proposed_ref(change)

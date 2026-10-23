@@ -80,9 +80,9 @@ module Pupgrade
       Dir.mktmpdir('pupgrade-surface') do |tmp|
         work = File.join(tmp, 'checkout')
         FileUtils.mkdir_p(work)
-        git(work, 'init', '-q')
-        git(work, 'fetch', '-q', '--depth', '1', url, ref)
-        git(work, 'checkout', '-q', 'FETCH_HEAD')
+        git(work, 'init', '-q', why: 'scratch checkout')
+        git(work, 'fetch', '-q', '--depth', '1', url, ref, why: "fetching #{ref}")
+        git(work, 'checkout', '-q', 'FETCH_HEAD', why: 'checking out')
         name = module_name_in(work) || File.basename(url.to_s, '.git').split(/[-\/]/).last
         dir  = File.join(tmp, name)
         FileUtils.mv(work, dir)
@@ -98,9 +98,9 @@ module Pupgrade
       nil
     end
 
-    def git(dir, *args)
+    def git(dir, *args, why: nil)
       out, err, status = Open3.capture3({ 'GIT_TERMINAL_PROMPT' => '0' }, 'git', '-C', dir, *args)
-      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
+      Pupgrade.logger.trace("git -C #{dir} #{args.join(' ')}#{" (#{why})" if why}: exit #{status.exitstatus}#{"; #{err.strip.lines.last.strip}" unless err.strip.empty?}")
       return out if status.success?
 
       line = err.lines.find { |l| l.start_with?('fatal:') } || err.lines.last

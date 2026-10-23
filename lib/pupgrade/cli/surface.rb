@@ -62,6 +62,7 @@ module Pupgrade
         reader = targets
         list   = target_list(reader, argv)
         fatal!('surface: -o takes one module', help: true) if @options[:output] && list.size > 1
+        ::Pupgrade.logger.notice("surface: reading #{list.size} module(s)#{@options[:refresh] ? ', ignoring the cache' : ''}") if list.size > 1
 
         list.each_with_index do |target, i|
           puts '' if i.positive?

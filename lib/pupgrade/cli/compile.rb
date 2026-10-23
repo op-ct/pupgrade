@@ -42,6 +42,7 @@ module Pupgrade
         fatal!('compile needs at least one --factsets PATH (config: compile.factsets)', help: true) if Array(@options[:factsets]).empty?
 
         factsets = load_factsets(repo)
+        ::Pupgrade.logger.notice("compile: #{factsets.size} factset(s) against #{repo.dir}")
         session  = build_session(repo)
         out      = File.expand_path(@options[:catalogs_dir], repo.dir)
         rows     = []
