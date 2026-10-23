@@ -25,8 +25,9 @@ module Pupgrade
       # The levels a mocked answer can be logged at; `silent` logs nothing.
       ON_MOCK = %w[silent trace debug info notice warning].freeze
 
-      def initialize(factset:, mocks:, on_leak:, repo_dir:, on_mock: 'debug')
+      def initialize(factset:, mocks:, on_leak:, repo_dir:, on_mock: 'debug', node: nil)
         @factset  = factset
+        @node     = node
         @mocks    = mocks
         @on_leak  = on_leak
         @on_mock  = on_mock.to_s
@@ -191,7 +192,7 @@ module Pupgrade
       # @return [Array(Symbol, Mocks::Command|nil)] [:mock, the entry] or [:run, nil]
       # @raise [Leak] when nothing answers and the policy is to stop
       def guard(kind, command)
-        entry = @mocks.for_command(command, @factset.values)
+        entry = @mocks.for_command(command, @node || @factset.values)
         where = location
         if entry&.action == 'mock'
           action = entry.exit.zero? ? 'mocked' : "mocked (exit #{entry.exit})"
@@ -228,6 +229,7 @@ module Pupgrade
           'warnings'     => @warnings,
           'deprecations' => @deprecations,
           'leaks'        => @leaks,
+          'enc'          => { 'variables' => @node ? @node.vars : {}, 'classes' => @node ? @node.classes : [] },
         }
       end
 

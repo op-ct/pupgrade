@@ -34,8 +34,17 @@ module Pupgrade
 
       COLUMNS = %w[certname resources classes warnings mocks leaks status].freeze
 
-      # The mock file read when compile.mocks names none and this exists.
+      # The files read when the config names none and they exist.
       DEFAULT_MOCKS_FILE = 'pupgrade/compiler-mocks.yaml'.freeze
+      DEFAULT_ENC_FILE   = 'pupgrade/enc.yaml'.freeze
+      DEFAULT_RUBY_FILE  = 'pupgrade/compiler.rb'.freeze
+
+      config_key 'compile.enc', type: :string, default: nil, example: DEFAULT_ENC_FILE,
+                 about: 'Rules deciding each node\'s top-scope variables and classes from its certname and facts, ' \
+                        "relative to the control repo; #{DEFAULT_ENC_FILE} when it exists"
+      config_key 'compile.ruby', type: :string, default: nil, example: DEFAULT_RUBY_FILE,
+                 about: 'Ruby blocks deciding variables, classes, and mock answers per node, loaded after the rules, ' \
+                        "relative to the control repo; #{DEFAULT_RUBY_FILE} when it exists"
 
       def execute(argv)
         reject_extra_args!(argv)
@@ -106,7 +115,11 @@ module Pupgrade
         o.on('--code=CODE', 'Puppet code compiled in place of the manifest') { |v| @options[:code] = v }
         o.on('--prepend=CODE', 'Puppet code evaluated before the manifest; @FILE reads it from a file',
              '(config: compile.prepend_file names the file)') { |v| @options[:prepend] = v }
-        o.on('--var=NAME=VALUE', 'A top-scope variable, repeatable (config: compile.vars)') { |v| pair(:vars, v) }
+        o.on('--var=NAME=VALUE', 'A top-scope variable for every node, repeatable (config: compile.vars)') { |v| pair(:vars, v) }
+        o.on('--enc=FILE', "Rules deciding variables and classes per node (config: compile.enc; default: #{DEFAULT_ENC_FILE}",
+             'when it exists)') { |v| @options[:enc] = v }
+        o.on('--ruby=FILE', "Ruby blocks deciding variables, classes, and mock answers (config: compile.ruby; default: #{DEFAULT_RUBY_FILE}",
+             'when it exists)') { |v| @options[:ruby] = v }
         o.on('--server-fact=NAME=VALUE', 'An entry of $server_facts, repeatable (config: compile.server_facts)') { |v| pair(:server_facts, v) }
 
         o.separator ''
@@ -144,19 +157,33 @@ module Pupgrade
 
       def build_session(repo)
         defaults = @options.fetch(:default_mocks, true)
-        path  = @options[:mocks] || (File.file?(File.join(repo.dir, DEFAULT_MOCKS_FILE)) ? DEFAULT_MOCKS_FILE : nil)
-        mocks = path ? ::Pupgrade::Compile::Mocks.load(File.expand_path(path, repo.dir), defaults: defaults) : ::Pupgrade::Compile::Mocks.empty(defaults: defaults)
-        ::Pupgrade.logger.info("compile: mocks from #{path ? File.expand_path(path, repo.dir) : 'nowhere'}#{' plus the defaults' if defaults}")
+        path  = file_option(repo, :mocks, DEFAULT_MOCKS_FILE)
+        mocks = path ? ::Pupgrade::Compile::Mocks.load(path, defaults: defaults) : ::Pupgrade::Compile::Mocks.empty(defaults: defaults)
+        ::Pupgrade.logger.info("compile: mocks from #{path || 'nowhere'}#{' plus the defaults' if defaults}")
+        enc = ::Pupgrade::Compile::Enc.load(file_option(repo, :enc, DEFAULT_ENC_FILE), file_option(repo, :ruby, DEFAULT_RUBY_FILE),
+                                            vars: @options[:vars] || {})
+        mocks.blocks = enc.ruby.mocks
         prepend = @options[:prepend]
         prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
         prepend = File.read(File.expand_path(prepend.delete_prefix('@'), repo.dir)) if prepend&.start_with?('@')
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
-          prepend: prepend, vars: @options[:vars] || {}, server_facts: @options[:server_facts] || {},
+          prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {},
           mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || 'debug',
         ).start
-      rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, Errno::ENOENT => e
+      rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, ::Pupgrade::Compile::Enc::Error, Errno::ENOENT => e
         fatal!("compile: #{e.message}", 3)
+      end
+
+      # The file an option names, relative to the repo, else the default
+      # when it is there.
+      #
+      # @return [String, nil] absolute
+      def file_option(repo, key, default)
+        return File.expand_path(@options[key], repo.dir) if @options[key]
+
+        path = File.join(repo.dir, default)
+        File.file?(path) ? path : nil
       end
 
       def write(out, result)
@@ -243,6 +270,8 @@ module Pupgrade
           manifest:     cfg.dig('compile', 'manifest'),
           prepend_file: cfg.dig('compile', 'prepend_file'),
           mocks:        cfg.dig('compile', 'mocks'),
+          enc:          cfg.dig('compile', 'enc'),
+          ruby:         cfg.dig('compile', 'ruby'),
           default_mocks: cfg.dig('compile', 'default_mocks'),
           on_leak:      cfg.dig('compile', 'on_leak') || 'raise',
           vars:         cfg.dig('compile', 'vars'),

@@ -162,6 +162,27 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(text).to include('rpm --version')
   end
 
+  it 'gives each node the variables and classes the ENC stand-in decides, from the files found beside the config' do
+    status, out_text = run(['--certname', 'web*', '--prepend', 'notify { "${site} ${tenant} ${pkg_manager}": }'])
+    expect(status).to eq(0)
+    expect(out_text).to include('web01.example.com')
+    catalog = read('web01.example.com', 'catalog.json')
+    expect(catalog['resources'].find { |r| r['type'] == 'Notify' }['title']).to eq('example blue dnf')
+    probes = read('web01.example.com', 'probes.json')
+    expect(probes['enc']).to eq('variables' => { 'site' => 'example', 'pkg_manager' => 'dnf', 'tenant' => 'blue' }, 'classes' => [])
+    # the Ruby mock declines, so the YAML mock answers hostname
+    expect(probes['leaks'].map { |l| l['action'] }).to eq(['mocked'])
+
+    File.write(File.join(@tmp, 'other.rb'), "variable(:tenant) { |_n| 'green' }\nclasses { |_n| ['stdlib'] }\nmock(/\\Ahostname/) { |_n, _m| \"ruby.example.com\\n\" }\n")
+    _, _ = run(['--certname', 'web*', '--ruby', File.join(@tmp, 'other.rb'), '--prepend', 'notify { "${tenant}": }'])
+    catalog = read('web01.example.com', 'catalog.json')
+    expect(catalog['resources'].find { |r| r['type'] == 'Notify' && r['title'] == 'green' }).not_to be_nil
+    expect(catalog['resources'].find { |r| r['type'] == 'Notify' && r['title'] != 'green' }['parameters']['message']).to include('ruby.example.com')
+    expect(catalog['classes']).to include('stdlib')
+    expect(read('web01.example.com', 'probes.json')['enc']['classes']).to eq(['stdlib'])
+    expect(run(['--enc', File.join(@tmp, 'nope.yaml')]).first).to eq(3)
+  end
+
   it 'compiles code in place of the manifest, with top-scope variables and a certname filter' do
     status, text = run(['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
     expect(status).to eq(0)

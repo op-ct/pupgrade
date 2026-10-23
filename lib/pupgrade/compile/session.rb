@@ -9,6 +9,7 @@ require 'pupgrade/compile/factset'
 require 'pupgrade/compile/module_index'
 require 'pupgrade/logging'
 require 'pupgrade/compile/probes'
+require 'pupgrade/compile/enc'
 require 'pupgrade/compile/mocks'
 
 module Pupgrade
@@ -27,7 +28,7 @@ module Pupgrade
       config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
                  about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
                         'relative to the control repo'
-      config_key 'compile.mocks', type: :string, default: nil, example: 'pupgrade/mocks.yaml',
+      config_key 'compile.mocks', type: :string, default: nil, example: 'pupgrade/compiler-mocks.yaml',
                  about: 'A mock file answering commands and facts module code asks for during a compile, ' \
                         'relative to the control repo'
       config_key 'compile.default_mocks', type: :boolean, default: true,
@@ -73,11 +74,14 @@ module Pupgrade
       #   environment.conf's
       # @param code [String, nil] Puppet code compiled in place of the manifest
       # @param prepend [String, nil] Puppet code evaluated before the manifest
-      # @param vars [Hash{String => Object}] top-scope variables
+      # @param enc [Enc] what decides each node's top-scope variables and
+      #   classes; `vars:` is the static shorthand for an ENC setting them
+      #   on every node
+      # @param vars [Hash{String => Object}] top-scope variables for every node
       # @param server_facts [Hash{String => Object}]
       # @param mocks [Mocks]
       # @param on_leak [String] one of {ON_LEAK}
-      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {},
+      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil,
                      server_facts: {}, mocks: Mocks.empty, on_leak: 'raise', on_mock: 'debug')
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
         raise Error, "on_mock must be one of #{Recorder::ON_MOCK.join(', ')}, got #{on_mock.inspect}" unless Recorder::ON_MOCK.include?(on_mock.to_s)
@@ -89,7 +93,7 @@ module Pupgrade
         @manifest     = manifest && File.expand_path(manifest, @repo_dir)
         @code         = code
         @prepend      = prepend
-        @vars         = vars.to_h { |k, v| [k.to_s, v] }
+        @enc          = enc || Enc.new(vars: vars)
         @server_facts = DEFAULT_SERVER_FACTS.merge(server_facts.to_h { |k, v| [k.to_s, v] })
         @mocks        = mocks
         @on_leak      = on_leak
@@ -129,14 +133,15 @@ module Pupgrade
       # @return [Result]
       def compile(factset)
         started  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock)
+        resolved = @enc.resolve(factset)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock, node: resolved)
         catalog  = nil
         error    = nil
         Probes.current = recorder
         begin
           Puppet.override(environments: @loader, current_environment: @env) do
             Puppet[:code] = code_for(@env)
-            catalog = Puppet::Parser::Compiler.compile(node_for(factset))
+            catalog = Puppet::Parser::Compiler.compile(node_for(factset, resolved))
           end
         rescue Leak, Puppet::Error, StandardError => e
           error = e.message
@@ -196,12 +201,15 @@ module Pupgrade
         ([@prepend] + files.map { |f| File.read(f) }).join("\n")
       end
 
-      def node_for(factset)
+      # @param resolved [Enc::Node] the variables and classes the ENC
+      #   stand-in decided for the node
+      def node_for(factset, resolved)
         node = Puppet::Node.new(factset.certname, environment: @env)
         node.fact_merge(Puppet::Node::Facts.new(factset.certname, deep_dup(factset.values)))
         node.trusted_data = trusted_for(factset)
         node.add_server_facts(@server_facts.merge('serverversion' => Puppet.version))
-        node.merge(@vars) unless @vars.empty?
+        node.merge(resolved.vars) unless resolved.vars.empty?
+        node.classes = resolved.classes unless resolved.classes.empty?
         node
       end
 

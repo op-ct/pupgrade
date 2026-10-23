@@ -1,5 +1,7 @@
 require 'yaml'
 
+require 'pupgrade/compile/enc'
+
 module Pupgrade
   module Compile
     # What the execution guard answers with: the site's mock file, with
@@ -49,6 +51,13 @@ module Pupgrade
           match.match?(command_line) && conditions.all? { |path, values| values.include?(dig(facts, path).to_s) }
         end
 
+        # The entry with its stdout's `${...}` references resolved for the node.
+        def for_node(node)
+          return self unless node.is_a?(Enc::Node) && stdout.include?('${')
+
+          with(stdout: Enc.interpolate(stdout, node, 'mock'))
+        end
+
         def dig(facts, path)
           path.split('.').reduce(facts) { |v, k| v.is_a?(Hash) ? v[k] : nil }
         end
@@ -77,11 +86,16 @@ module Pupgrade
 
       attr_reader :path, :commands, :facts
 
+      # @return [Array<Array(Regexp, Proc)>] the Ruby file's `mock` blocks,
+      #   asked before the entries
+      attr_accessor :blocks
+
       # @param data [Hash] the parsed mock file
       def initialize(data, path:, defaults: true)
         @path     = path
         @commands = Array(data['commands']).map { |c| command(c) }
         @facts    = (data['facts'] || {}).to_h { |k, v| [k.to_s, v] }
+        @blocks   = []
         return unless defaults
 
         shipped = YAML.safe_load(File.read(DEFAULTS_FILE)) || {}
@@ -89,10 +103,22 @@ module Pupgrade
       end
 
       # @param command_line [String]
-      # @param facts [Hash] the node's facts, for the entries' conditions
-      # @return [Command, nil] the first entry answering the command on this node
-      def for_command(command_line, facts = {})
-        @commands.find { |c| c.for?(command_line, facts) }
+      # @param node [Enc::Node, Hash] the node, or its facts alone
+      # @return [Command, nil] the first block or entry answering the command
+      #   on this node
+      def for_command(command_line, node = {})
+        facts = node.is_a?(Enc::Node) ? node.facts : node
+        @blocks.each do |pattern, block|
+          m = pattern.match(command_line)
+          next unless m
+
+          answer = block.call(node, m)
+          next if answer.nil?
+
+          stdout, status = answer.is_a?(Hash) ? [answer[:stdout] || answer['stdout'], answer[:exit] || answer['exit']] : [answer, 0]
+          return Command.new(match: pattern, action: 'mock', stdout: stdout.to_s, exit: Integer(status || 0), conditions: {})
+        end
+        @commands.find { |c| c.for?(command_line, facts) }&.for_node(node)
       end
 
       # @param name [String] a fact, dotted for a path into a structured one

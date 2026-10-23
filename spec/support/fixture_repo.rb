@@ -378,6 +378,24 @@ module Pupgrade
         simplib_fips: false
     YAML
 
+    # The ENC stand-in: $site from the certname's domain, $tenant from
+    # $site in Ruby, and a Ruby mock that declines so the YAML one answers.
+    ENC = <<~YAML.freeze
+      ---
+      rules:
+        - set:
+            site: '${certname[/\\A[^.]+\\.([^.]+)\\./, 1]}'
+        - when:
+            facts.os.family: RedHat
+          set:
+            pkg_manager: dnf
+    YAML
+
+    COMPILER_RB = <<~RUBY.freeze
+      variable(:tenant) { |node| node['site'] == 'example' ? 'blue' : nil }
+      mock(/\\Ahostname/) { |node, _m| node['site'] == 'nowhere' ? "ruby.example.com\\n" : nil }
+    RUBY
+
     # Two factsets in the two layouts compile reads: onceover's, with
     # trusted facts, and driftless's export, the facts hash alone.
     FACTSETS = {
@@ -520,6 +538,8 @@ module Pupgrade
       FACTSETS.each { |name, data| File.write(File.join(@dir, 'factsets', name), JSON.pretty_generate(data) + "\n") }
       FileUtils.mkdir_p(File.join(@dir, 'pupgrade'))
       File.write(File.join(@dir, 'pupgrade/compiler-mocks.yaml'), MOCKS)
+      File.write(File.join(@dir, 'pupgrade/enc.yaml'), ENC)
+      File.write(File.join(@dir, 'pupgrade/compiler.rb'), COMPILER_RB)
     end
 
     # One Puppetfile text: git modules at the given versions, Forge modules
