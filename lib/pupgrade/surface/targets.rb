@@ -1,3 +1,4 @@
+require 'digest'
 require 'fileutils'
 require 'json'
 require 'open3'
@@ -37,13 +38,15 @@ module Pupgrade
       # @param repo_dir [String, nil] the control repo, for names and the modulepath
       # @param cache_dir [String] where documents are kept
       # @param fetch [Boolean] whether to fetch a clone's origin before reading a ref
-      # @param refresh [Boolean] whether to read again what the cache holds
+      # @param refresh [Boolean, Symbol] `:all` (or true) to extract again
+      #   whatever the cache holds; `:schema` (the least, and the default
+      #   behaviour) to extract again only a document of an older schema
       # @param logger [#debug, #info]
       def initialize(repo_dir: nil, cache_dir:, fetch: false, refresh: false, logger: Pupgrade.logger)
         @repo_dir  = repo_dir && File.expand_path(repo_dir)
         @cache_dir = File.expand_path(cache_dir, @repo_dir || Dir.pwd)
         @fetch     = fetch
-        @refresh   = refresh
+        @refresh   = (refresh == true) ? :all : refresh
         @logger    = logger
       end
 
@@ -69,7 +72,7 @@ module Pupgrade
         raise Error, 'reading every module needs a control repo (--repo-dir)' unless inventory
 
         inventory.entries.select { |e| e.metadata.name && File.directory?(File.expand_path(e.path, @repo_dir)) }
-                 .map { |e| Target.new(spec: e.path, dir: File.expand_path(e.path, @repo_dir)) }
+          .map { |e| Target.new(spec: e.path, dir: File.expand_path(e.path, @repo_dir)) }
       end
 
       # @param spec [String] `DIR`, `DIR:REF`, `NAME`, `NAME:REF`, or a document file
@@ -102,7 +105,8 @@ module Pupgrade
       end
 
       # The target's document: a file as it is, else from the cache when it
-      # is there and not refreshed, else extracted and cached.
+      # is there, of this schema, and not refreshed, else extracted and
+      # cached.
       #
       # @return [Array(Hash, String, Boolean)] the document, the file it is
       #   in, and whether it was read from the cache
@@ -110,9 +114,14 @@ module Pupgrade
         return [Surface.load(target.file), target.file, false] if target.file
 
         path = cache_path(target)
-        if path && File.file?(path) && !@refresh
-          @logger.info("surface: #{target.spec}: cached at #{path}")
-          return [Surface.load(path), path, true]
+        if path && File.file?(path) && @refresh != :all
+          begin
+            doc = Surface.load(path)
+            @logger.info("surface: #{target.spec}: cached at #{path}")
+            return [doc, path, true]
+          rescue Surface::StaleSchema => e
+            @logger.info("surface: #{target.spec}: extracting again; #{e.message}")
+          end
         end
 
         doc = extract(target)
@@ -167,11 +176,13 @@ module Pupgrade
       end
 
       # The cache file for a target whose version is known before reading:
-      # a directory's metadata, or the metadata at the ref in its clone.
+      # a directory's metadata, or the metadata at the ref in its clone; a
+      # remote is named by its URL and ref, since nothing is known of it
+      # before the fetch.
       #
       # @return [String, nil] nil when the version is not known yet
       def cache_path(target)
-        return nil if target.git
+        return File.join(@cache_dir, remote_file_name(target.git, target.ref)) if target.git
 
         text =
           if target.ref
@@ -192,6 +203,14 @@ module Pupgrade
       def cache_path_for(doc, target)
         name = doc.dig('module', 'name') || File.basename(target.dir || target.git.to_s, '.git')
         File.join(@cache_dir, file_name(name, doc.dig('module', 'version'), target.ref))
+      end
+
+      # "stdlib-remote-1a2b3c4d--v9.6.0.json": the module's short name from
+      # the URL, a digest of the URL, and the ref.
+      def remote_file_name(url, ref)
+        short  = File.basename(url.to_s, '.git').split(%r{[-/]}).last
+        digest = Digest::SHA256.hexdigest(url.to_s)[0, 8]
+        "#{short}-remote-#{digest}--#{ref.to_s.tr('/', '_')}.json"
       end
 
       # "stdlib-9.6.0--v9.6.0.json": the module's short name, its version,

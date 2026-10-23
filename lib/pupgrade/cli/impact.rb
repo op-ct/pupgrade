@@ -81,11 +81,11 @@ module Pupgrade
         if @options[:summary]
           print_table(SUMMARY_COLUMNS, modules.map { |c, h, f| summary_row(c, h, f.select { |x| shown?(x) }) })
         else
-          print_table(COLUMNS, shown.map { |f| [f.module, f.kind, f.subject, f.where, f.detail] })
+          print_table(COLUMNS, shown.map { |f| [f.module, f.kind, f.subject, where_cell(f), detail_cell(f)] })
           print_history(modules) if @options[:changelog] || @options[:gitlog]
         end
         ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
-                               "#{shown.count { |f| !f.used? }} without#{' (no catalogs; uses unknown)' unless evidence}")
+                               "#{shown.count { |f| !f.used? }} without#{" (#{::Pupgrade::Ansi.enabled?($stderr) ? ::Pupgrade::Ansi.wrap('no catalogs; uses unknown', :red) : 'no catalogs; uses unknown'})" unless evidence}")
         exit(shown.any?(&:used?) ? 1 : 0)
       rescue ::Pupgrade::ModuleProposal::Error, ::Pupgrade::Surface::Error, ::Pupgrade::Surface::Targets::Error,
              ::Pupgrade::Impact::Evidence::Error => e
@@ -99,7 +99,7 @@ module Pupgrade
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
         o.on('--propose=PUPPETFILE', 'The proposed Puppetfile, as `check` takes it; the same as giving it first') { |v| @options[:propose] = v }
         o.on('--cache-dir=DIR', 'Where surface documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
-        o.on('--refresh', 'Read the surfaces again, ignoring what the cache holds') { @options[:refresh] = true }
+        o.on('--refresh', 'Extract the surfaces again, ignoring the cache') { @options[:refresh] = :all }
         o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: impact.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
         o.on('--no-catalogs', 'Read no catalogs: every change is a finding with its use unknown') { @options[:no_catalogs] = true }
 
@@ -191,6 +191,23 @@ module Pupgrade
       rescue StandardError => e
         ::Pupgrade.logger.warn("impact: Hiera references not checked: #{e.message}")
         {}
+      end
+
+      # How the verb of a change is coloured, as `module diff` colours it.
+      VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
+
+      def where_cell(finding)
+        finding.used? || finding.where.empty? ? finding.where : paint(finding.where, :red)
+      end
+
+      # "changed param type: Variant[…] -> Optional[…]": the verb coloured
+      # by what happened, what it happened to in cyan.
+      def detail_cell(finding)
+        phrase, rest = finding.detail.split(': ', 2)
+        verb, thing = phrase.split(' ', 2)
+        style = phrase.start_with?('added required') ? [:red] : VERB_STYLE.fetch(verb, [:yellow])
+        head  = [paint(verb, *style), thing && paint(thing, :cyan)].compact.join(' ')
+        rest ? "#{head}: #{rest}" : head
       end
 
       def summary_row(change, history, findings)

@@ -26,7 +26,7 @@ module Pupgrade
 
       config_key 'surface.cache_dir', type: :string, default: 'pupgrade/cache/api_surfaces',
                  about: 'Where `surface` keeps each module\'s document, named by module, version, and ref, relative to ' \
-                        'the control repo; read from there unless --refresh'
+                        'the control repo; read from there unless --refresh, or the document is of an older schema'
 
       # What is shared with `module diff`: finding the repo and building the
       # target reader from the options.
@@ -35,7 +35,8 @@ module Pupgrade
           o.on('-d', '--repo-dir=DIR', 'The control repo whose modulepath names resolve on',
                "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
           o.on('--cache-dir=DIR', 'Where documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
-          o.on('--refresh', 'Read again what the cache already holds') { @options[:refresh] = true }
+          o.on('--refresh[=WHAT]', %w[all schema], 'Extract again, ignoring the cache (all, the default), or only the cached',
+               'documents of an older schema (schema)') { |v| @options[:refresh] = (v || 'all').to_sym }
           o.on('--fetch', 'Fetch a clone\'s origin before reading it at a ref') { @options[:fetch] = true }
         end
 
@@ -62,7 +63,7 @@ module Pupgrade
         reader = targets
         list   = target_list(reader, argv)
         fatal!('surface: -o takes one module', help: true) if @options[:output] && list.size > 1
-        ::Pupgrade.logger.notice("surface: reading #{list.size} module(s)#{@options[:refresh] ? ', ignoring the cache' : ''}") if list.size > 1
+        ::Pupgrade.logger.notice("surface: reading #{list.size} module(s)#{', ignoring the cache' if (@options[:refresh] == :all)}") if list.size > 1
 
         list.each_with_index do |target, i|
           puts '' if i.positive?
@@ -93,7 +94,8 @@ module Pupgrade
         o.separator ''
         o.separator 'A module is a directory, or a name resolved on the control repo\'s modulepath like'
         o.separator '`module gitlog` does; `stdlib:v9.6.0` reads a ref of the deployed clone. Documents land'
-        o.separator 'in the cache as <module>-<version>[--<ref>].json and are reused until --refresh.'
+        o.separator 'in the cache as <module>-<version>[--<ref>].json and are reused until --refresh, or'
+        o.separator 'until pupgrade\'s document schema moves on, when they are extracted again as read.'
         o.separator 'Loading a module\'s Ruby is how its functions, types, providers, and facts are read, so'
         o.separator 'extraction runs in a process of its own, with the repo\'s modulepath in reach. Files that'
         o.separator 'fail to load are listed under "errors" in the document and warned about. The'
@@ -116,7 +118,7 @@ module Pupgrade
 
       def summary(target, doc, cached)
         counts = ::Pupgrade::Surface::Diff::SECTIONS.map { |s| "#{doc[s].size} #{s.tr('_', ' ')}" }.join(', ')
-        "surface: #{doc.dig('module', 'name') || target.spec} #{doc.dig('module', 'version')}#{cached ? ' (cached)' : ''}: #{counts}"
+        "surface: #{doc.dig('module', 'name') || target.spec} #{doc.dig('module', 'version')}#{' (cached)' if cached}: #{counts}"
       end
 
       def config_defaults
@@ -125,4 +127,3 @@ module Pupgrade
     end
   end
 end
-

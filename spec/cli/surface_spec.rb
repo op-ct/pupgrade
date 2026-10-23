@@ -61,6 +61,18 @@ RSpec.describe Pupgrade::CLI::Surface do
     expect(File.mtime(File.join(cache, 'concat-7.3.0.json'))).to eq(stamp)
     log = capture_log { run(described_class, ['concat', '--refresh']) }
     expect(log).not_to include('(cached)')
+
+    # a document of an older schema is extracted again as it is read
+    stale = JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))
+    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale.merge('schema_version' => 1)))
+    log = capture_log { run(described_class, ['-v', 'concat']) }
+    expect(log).to include('extracting again; ')
+    expect(JSON.parse(File.read(File.join(cache, 'concat-7.3.0.json')))['schema_version']).to eq(Pupgrade::Surface::Extract::SCHEMA_VERSION)
+    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale.merge('schema_version' => 99)))
+    expect(run(described_class, ['concat']).first).to eq(3)
+    File.write(File.join(cache, 'concat-7.3.0.json'), JSON.generate(stale))
+    expect(run(described_class, ['concat', '--refresh=schema']).first).to eq(0)
+    expect(run(described_class, ['concat', '--refresh=sideways']).first).to eq(2)
   end
 
   it 'reads every module with --all, one to a file or stdout, and a remote at a ref' do
@@ -77,7 +89,11 @@ RSpec.describe Pupgrade::CLI::Surface do
 
     status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])
     expect(status).to eq(0)
-    expect(out).to eq("#{cache}/stdlib-9.0.0--v9.0.0.json\n")
+    expect(out).to match(%r{\A#{Regexp.escape(cache)}/stdlib-remote-[0-9a-f]{8}--v9\.0\.0\.json\n\z})
+    # read back from the cache the next time
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log { run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0']) }
+    expect(log).to include('(cached)')
 
     expect(run(described_class, []).first).to eq(2)
     expect(run(described_class, ['--git', 'x']).first).to eq(2)

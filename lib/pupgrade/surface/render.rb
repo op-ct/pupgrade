@@ -32,24 +32,45 @@ module Pupgrade
         'type'          => 'type',
       }.freeze
 
+      # Data types whose bracketed part can run to any length, so it folds
+      # to `[…]`; a bounded one (`Integer[0, 65535]`, `String[1]`) is short
+      # and its bounds are what changes, so it stays whole.
+      UNBOUNDED = %w[Variant Enum Pattern Tuple Struct Regexp Error Hash Array].freeze
+
       # Longest value in a one-line detail.
       WIDTH = 70
+
+      # Marks telling two collapsed values apart when they read alike.
+      SUPERSCRIPTS = %w[¹ ²].freeze
 
       module_function
 
       # @param change [Diff::Change]
       # @return [String] "defined type puppet_authorization::rule::allow"
       def item(change)
+        kind, namespace, leaf = item_parts(change)
+        "#{kind} #{namespace}#{leaf}"
+      end
+
+      # The item in three parts for colouring: the surface kind, the
+      # namespace (`mod::class::` for a parameter, `mod::` for a namespaced
+      # name, '' when there is none), and the leaf.
+      #
+      # @return [Array(String, String, String)]
+      def item_parts(change)
         case change.section
-        when 'module'   then "module #{change.name}"
-        when 'metadata' then "#{METADATA.fetch(change.path.first)} #{change.name}"
+        when 'module'   then ['module', '', change.name]
+        when 'metadata' then [METADATA.fetch(change.path.first), '', change.name]
         else
           kind = SINGULAR.fetch(change.section)
           if change.path.first == 'params' && change.path.size >= 2
             param = change.path[1]
-            %w[classes defined_types].include?(change.section) ? "#{kind} #{change.name}::#{param}" : "#{kind} #{change.name} #{param}"
+            %w[classes defined_types].include?(change.section) ? [kind, "#{change.name}::", param] : [kind, "#{change.name} ", param]
+          elsif change.name.include?('::')
+            head, _, tail = change.name.rpartition('::')
+            [kind, "#{head}::", tail]
           else
-            "#{kind} #{change.name}"
+            [kind, '', change.name]
           end
         end
       end
@@ -84,14 +105,46 @@ module Pupgrade
       end
 
       # @return [String] the values on one line: "old -> new" abbreviated,
-      #   or what an added or removed entry is
+      #   a parameter as its declaration, signatures as parameter lists, or
+      #   what an added or removed entry is; two sides that read alike once
+      #   folded are told apart as `[…¹] -> […²]`
       def detail(change)
         return abbreviate(summary(change, change.new)) if entry_added?(change)
         return "was #{abbreviate(summary(change, change.old))}" if entry_removed?(change)
-        return abbreviate(value(change.new)) if change.old.nil?
-        return "was #{abbreviate(value(change.old))}" if change.new.nil?
+        return abbreviate(text_of(change, change.new)) if change.old.nil?
+        return "was #{abbreviate(text_of(change, change.old))}" if change.new.nil?
 
-        "#{abbreviate(value(change.old))} -> #{abbreviate(value(change.new))}"
+        old = abbreviate(text_of(change, change.old))
+        new = abbreviate(text_of(change, change.new))
+        old, new = distinguish(old, new) if old == new
+        "#{old} -> #{new}"
+      end
+
+      # A value as it reads in a detail: a parameter as `Type $name =
+      # default`, signatures as `(a, b)`, anything else as its text.
+      def text_of(change, v)
+        path = change.path
+        if path.first == 'params' && path.size == 2 && v.is_a?(Hash)
+          declaration(path[1], v)
+        elsif path == ['signatures'] && v.is_a?(Array)
+          v.map { |sig| signature(sig) }.join(' | ')
+        else
+          value(v)
+        end
+      end
+
+      # @return [String] "Boolean $x = $is_slave"
+      def declaration(name, param)
+        parts = [param['type'], "#{'*' if param['captures_rest']}$#{name}"].compact
+        parts << "= #{param['default']}" if param.key?('default')
+        parts.join(' ')
+      end
+
+      # @return [String] "(text, times) -> String"
+      def signature(sig)
+        text = "(#{Array(sig['params']).join(', ')}#{", &#{sig['block']}" if sig['block']})"
+        text += " -> #{sig['return_type']}" if sig['return_type']
+        text
       end
 
       # What an added or removed entry is: a metadata value as written, a
@@ -109,15 +162,15 @@ module Pupgrade
         if entry_added?(change) || entry_removed?(change)
           lines << "  #{entry_added?(change) ? '+' : '-'} #{summary(change, entry_added?(change) ? change.new : change.old)}"
         else
-          lines.concat(value(change.old).lines.map.with_index { |l, i| "  #{i.zero? ? '-' : ' '} #{l.chomp}" }) unless change.old.nil?
-          lines.concat(value(change.new).lines.map.with_index { |l, i| "  #{i.zero? ? '+' : ' '} #{l.chomp}" }) unless change.new.nil?
+          lines.concat(text_of(change, change.old).lines.map.with_index { |l, i| "  #{i.zero? ? '-' : ' '} #{l.chomp}" }) unless change.old.nil?
+          lines.concat(text_of(change, change.new).lines.map.with_index { |l, i| "  #{i.zero? ? '+' : ' '} #{l.chomp}" }) unless change.new.nil?
         end
         lines
       end
 
-      # @return [String] the text with its whitespace collapsed and every
-      #   bracketed part reduced to `[…]`, except that `Optional[X]` shows X
-      #   by the same rule; cut at {WIDTH}
+      # @return [String] the text with its whitespace collapsed and the
+      #   bracketed part of every unbounded type reduced to `[…]`, with
+      #   `Optional[X]` showing X by the same rule; cut at {WIDTH}
       def abbreviate(text)
         text = text.to_s.gsub(/\s+/, ' ').strip
         text = fold_brackets(text)
@@ -141,7 +194,9 @@ module Pupgrade
           out << text[i...open]
           name  = out[/[A-Za-z_:]+\z/]
           inner = text[open + 1...close]
-          out << ((name == 'Optional') ? "[#{fold_brackets(inner)}]" : '[…]')
+          out << if name.nil? || UNBOUNDED.include?(name.split('::').last) then '[…]'
+                 else "[#{fold_brackets(inner)}]"
+                 end
           i = close + 1
         end
         out
@@ -155,6 +210,12 @@ module Pupgrade
           return j if depth.zero?
         end
         nil
+      end
+
+      # Two abbreviated values that read the same: each ellipsis carries a
+      # superscript so the reader knows they differ inside.
+      def distinguish(old, new)
+        [old.gsub('…', "…#{SUPERSCRIPTS[0]}"), new.gsub('…', "…#{SUPERSCRIPTS[1]}")]
       end
 
       # @return [String, nil] "major", "minor", or "patch"

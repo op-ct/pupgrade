@@ -52,8 +52,8 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Diff do
       ['OS Ubuntu', 'changed', '18.04, 20.04 -> 20.04, 22.04'],
       ['class stdlib::version', 'changed param default', "'8.6.0' -> '9.6.0'"],
       ['function legacy_shout', 'removed', 'was ruby3x, in lib/puppet/parser/functions/legacy_shout.rb'],
-      ['function stdlib::shout', 'changed signatures', '[…] -> […]'],
-      ['type alias Stdlib::Port', 'changed type', 'Integer[…] -> Integer[…]'],
+      ['function stdlib::shout', 'changed signatures', '(text) -> (text, times)'],
+      ['type alias Stdlib::Port', 'changed type', 'Integer[0, 65535] -> Integer[1, 65535]'],
     ])
 
     stdlib = File.join(fixture.dir, 'modules/stdlib')
@@ -76,8 +76,8 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Diff do
         - ruby3x, in lib/puppet/parser/functions/legacy_shout.rb
 
       function stdlib::shout: changed signatures
-        - [{"params":["text"],"type":"Callable[String]"}]
-        + [{"params":["text","times"],"type":"Callable[String, Integer, 1, 2]"}]
+        - (text)
+        + (text, times)
 
       type alias Stdlib::Port: changed type
         - Integer[0, 65535]

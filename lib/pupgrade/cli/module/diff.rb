@@ -26,7 +26,8 @@ module Pupgrade
         COLUMNS         = %w[item difference detail].freeze
         SUMMARY_COLUMNS = (['surface'] + ::Pupgrade::Surface::Diff::KINDS + ['total']).freeze
 
-        # How the difference column is coloured, by its first word.
+        # How the difference column is coloured, by its first word; a
+        # required parameter added breaks callers, so it is red too.
         STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
         def execute(argv)
@@ -71,17 +72,30 @@ module Pupgrade
           o.separator ''
           o.separator 'Each side is a document `surface` wrote, a module directory, or a module of the'
           o.separator 'control repo by name, with `:REF` to read it at a ref of its clone: `stdlib:v9.6.0`.'
-          o.separator 'Sides read now are cached as `surface` caches them. Values in the table are cut to'
-          o.separator 'one line with bracketed parts folded to […]; --full shows them whole. Exits 1 when'
-          o.separator 'the two differ.'
+          o.separator 'Sides read now are cached as `surface` caches them; --refresh extracts them again.'
+          o.separator 'Values in the table are cut to one line, the bracketed part of a Variant, Enum,'
+          o.separator 'Pattern, Struct, Tuple, Hash, or Array folded to […]; --full shows them whole. Exits'
+          o.separator '1 when the two differ.'
         end
 
         private
 
         def row(change)
           phrase = ::Pupgrade::Surface::Render.difference(change)
-          [::Pupgrade::Surface::Render.item(change), paint(phrase, *STYLE.fetch(phrase.split.first, [:yellow])),
-           ::Pupgrade::Surface::Render.detail(change)]
+          [item_cell(change), paint(phrase, *phrase_style(phrase)), ::Pupgrade::Surface::Render.detail(change)]
+        end
+
+        # The surface kind cyan, a namespace grey, the leaf plain, so the
+        # items scan by kind and the names stand apart from their paths.
+        def item_cell(change)
+          kind, namespace, leaf = ::Pupgrade::Surface::Render.item_parts(change)
+          "#{paint(kind, :cyan)} #{namespace.empty? ? '' : paint(namespace, :grey)}#{leaf}"
+        end
+
+        def phrase_style(phrase)
+          return [:red] if phrase.start_with?('added required')
+
+          STYLE.fetch(phrase.split.first, [:yellow])
         end
 
         def print_blocks(changes)
@@ -94,7 +108,7 @@ module Pupgrade
             lines = ::Pupgrade::Surface::Render.block(c)
             head, *rest = lines
             item, phrase = head.split(': ', 2)
-            puts "#{item}: #{paint(phrase, *STYLE.fetch(phrase.split.first, [:yellow]))}"
+            puts "#{item}: #{paint(phrase, *phrase_style(phrase))}"
             rest.each { |l| puts l }
           end
         end

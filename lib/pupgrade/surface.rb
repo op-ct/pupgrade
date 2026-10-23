@@ -14,6 +14,10 @@ module Pupgrade
   module Surface
     class Error < StandardError; end
 
+    # A document of an older schema than this pupgrade writes: extracting
+    # again replaces it.
+    class StaleSchema < Error; end
+
     LIB = File.expand_path('..', __dir__)
 
     module_function
@@ -57,9 +61,10 @@ module Pupgrade
       raise Error, "#{path}: not a surface document" unless data.is_a?(Hash) && data['document'] == 'surface'
 
       version = data['schema_version']
-      unless version == Extract::SCHEMA_VERSION
-        side = (version.to_i > Extract::SCHEMA_VERSION) ? 'newer than this pupgrade reads' : 'older than this pupgrade reads'
-        raise Error, "#{path}: surface document schema #{version.inspect} is #{side} (#{Extract::SCHEMA_VERSION}); extract again with this pupgrade"
+      if version.to_i > Extract::SCHEMA_VERSION
+        raise Error, "#{path}: surface document schema #{version.inspect} is newer than this pupgrade reads (#{Extract::SCHEMA_VERSION})"
+      elsif version != Extract::SCHEMA_VERSION
+        raise StaleSchema, "#{path}: surface document schema #{version.inspect} is older than this pupgrade reads (#{Extract::SCHEMA_VERSION})"
       end
       data
     rescue JSON::ParserError => e
