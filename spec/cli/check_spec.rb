@@ -120,9 +120,9 @@ RSpec.describe Pupgrade::CLI::Check do
       expect(status).to eq(0)
       expect(cells(out)).to eq([
         %w[change conflict module subject detail],
-        ['-', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat', 'needs puppetlabs/concat >= 2.0.0; not on the modulepath'],
-        ['-', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib < 9.0.0; modules/stdlib is 9.4.0'],
-        ['-', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib >= 4.0.0 < 9.0.0; modules/stdlib is 9.4.0'],
+        ['- FIXD', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat', 'needs puppetlabs/concat >= 2.0.0; not on the modulepath'],
+        ['- FIXD', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib < 9.0.0; modules/stdlib is 9.4.0'],
+        ['- FIXD', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib >= 4.0.0 < 9.0.0; modules/stdlib is 9.4.0'],
       ])
     end
   end
@@ -161,17 +161,17 @@ RSpec.describe Pupgrade::CLI::Check do
       expect(status).to eq(1)
       expect(cells(out).map { |r| r.first(4) }).to eq([
         %w[change conflict module subject],
-        ['+', 'missing-dependency', 'org-nginx', 'puppetlabs/stdlib'],
-        ['+', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/stdlib'],
-        ['-', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib'],
-        ['-', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib'],
+        ['+ NEW', 'missing-dependency', 'org-nginx', 'puppetlabs/stdlib'],
+        ['+ NEW', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/stdlib'],
+        ['- FIXD', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib'],
+        ['- FIXD', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib'],
       ])
       status, out = run(['--no-config', '-d', dir, '--ignore', 'PUPPETLABS/STDLIB'])
       expect(status).to eq(1)
       expect(cells(out).map { |r| r.first(4) }[2]).to eq(['', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat'])
       expect(cells(out).size).to eq(6)
       _, out = run(['--no-config', '-d', dir, '--ignore', 'stdlib', '--hide-resolved'])
-      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 2, '' => 1)
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+ NEW' => 2, '' => 1)
 
       proposed = File.join(dir, 'Puppetfile.new')
       File.write(proposed, "mod 'puppetlabs-concat', '9.0.0'\n")
@@ -179,9 +179,9 @@ RSpec.describe Pupgrade::CLI::Check do
       expect(status).to eq(0)
       expect(cells(out).map { |r| r.first(3) }).to eq([
         %w[change conflict module],
-        ['-', 'missing-dependency', 'puppetlabs-apache'],
-        ['-', 'dependency-version', 'org-nginx'],
-        ['-', 'dependency-version', 'puppetlabs-apache'],
+        ['- FIXD', 'missing-dependency', 'puppetlabs-apache'],
+        ['- FIXD', 'dependency-version', 'org-nginx'],
+        ['- FIXD', 'dependency-version', 'puppetlabs-apache'],
       ])
     end
   end
@@ -251,18 +251,18 @@ RSpec.describe Pupgrade::CLI::Check do
       ])
       expect(cells(blocks[0]).drop(1)).to eq([
         %w[change conflict module subject detail],
-        ['-', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib < 9.0.0; modules/stdlib is 9.4.0'],
-        ['-', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib >= 4.0.0 < 9.0.0; modules/stdlib is 9.4.0'],
+        ['- FIXD', 'dependency-version', 'org-nginx', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib < 9.0.0; modules/stdlib is 9.4.0'],
+        ['- FIXD', 'dependency-version', 'puppetlabs-apache', 'puppetlabs/stdlib', 'needs puppetlabs/stdlib >= 4.0.0 < 9.0.0; modules/stdlib is 9.4.0'],
       ])
       expect(cells(blocks[1]).drop(1)).to eq([
         %w[change conflict module subject detail],
-        ['-', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat', 'needs puppetlabs/concat >= 2.0.0; not on the modulepath'],
+        ['- FIXD', 'missing-dependency', 'puppetlabs-apache', 'puppetlabs/concat', 'needs puppetlabs/concat >= 2.0.0; not on the modulepath'],
       ])
 
       status, out = run(['--no-config', '-d', dir, '--ignore', 'org-nginx', '--by-change'])
       expect(status).to eq(1)
       expect(out.lines.first.chomp).to eq('org-nginx (modules/nginx): removed (was not in the Puppetfile) (+0 -1)')
-      expect(cells(out).drop(1).map { |r| r.first(3) }).to eq([%w[change conflict module], ['-', 'dependency-version', 'org-nginx']])
+      expect(cells(out).drop(1).map { |r| r.first(3) }).to eq([%w[change conflict module], ['- FIXD', 'dependency-version', 'org-nginx']])
 
       expect(run(['--no-config', '-d', dir, '--by-change']).first).to eq(2)
       expect(run(['--no-config', '-d', dir, '--changed-only']).first).to eq(2)

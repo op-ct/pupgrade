@@ -69,8 +69,8 @@ module Pupgrade
     #     system row
     # @!attribute [r] requirement
     #   @return [String, nil] the version range a dependency row declares
-    Conflict = Data.define(:kind, :module, :subject, :detail, :parties, :requirement) do
-      def initialize(parties: [], requirement: nil, **rest)
+    Conflict = Data.define(:kind, :module, :subject, :detail, :parties, :requirement, :fault) do
+      def initialize(parties: [], requirement: nil, fault: nil, **rest)
         super
       end
     end
@@ -130,13 +130,15 @@ module Pupgrade
           found = by_name[ModuleName.short(dep)]
           if found.nil?
             Conflict.new(kind: 'missing-dependency', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
-                         requirement: requirement, detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath")
+                         requirement: requirement, detail: "needs #{dep} #{requirement || '(any version)'}; not on the modulepath",
+                         fault: 'not on the modulepath')
           else
             version = version_for(found, warnings)
             next if version.nil? || range.include?(version)
 
             Conflict.new(kind: 'dependency-version', module: e.metadata.name, subject: dep, parties: [normalize(dep)],
-                         requirement: requirement, detail: "needs #{dep} #{requirement}; #{found.path} is #{found.metadata.version}")
+                         requirement: requirement, detail: "needs #{dep} #{requirement}; #{found.path} is #{found.metadata.version}",
+                         fault: "#{found.path} is #{found.metadata.version}")
           end
         end
       end
@@ -175,7 +177,8 @@ module Pupgrade
         named << "#{against.size - 5} more" if against.size > 5
         Conflict.new(kind: 'puppet-version', module: name, subject: 'puppet',
                      parties: against.map(&:first).reject { |n| n == SITE }.map { |n| normalize(n) },
-                     detail: "requires puppet #{range}; no version in common with #{named.join(', ')}")
+                     detail: "requires puppet #{range}; no version in common with #{named.join(', ')}",
+                     fault: "no version in common with #{named.join(', ')}")
       end
       [conflicts, nil, suppressed]
     end
@@ -212,10 +215,10 @@ module Pupgrade
             subject = [os, release].compact.join(' ')
             if declared.nil?
               Conflict.new(kind: 'operatingsystem', module: e.metadata.name, subject: subject,
-                           detail: "missing #{os} (declared: #{support.keys.join(', ')})")
+                           detail: "missing #{os} (declared: #{support.keys.join(', ')})", fault: "missing #{os}")
             elsif release && !declared.empty? && declared.none? { |d| release_matches?(d, release) }
               Conflict.new(kind: 'operatingsystem', module: e.metadata.name, subject: subject,
-                           detail: "missing #{subject} (declared: #{os} #{declared.join(', ')})")
+                           detail: "missing #{subject} (declared: #{os} #{declared.join(', ')})", fault: "missing #{subject}")
             end
           end
         end

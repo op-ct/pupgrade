@@ -42,10 +42,13 @@ module Pupgrade
 
       # Prefixed to each row under --propose: how the conflict relates to
       # the current Puppetfile's.
-      CHANGE_MARK = { new: '+', gone: '-', same: ' ' }.freeze
+      CHANGE_MARK = { new: '+ NEW', gone: '- FIXD', same: '' }.freeze
 
-      # How each mark is coloured when stdout takes colour.
+      # How a row is coloured when stdout takes colour: the mark and the
+      # conflict kind carry the colour of the change, the rest of an
+      # introduced row is yellow, and a resolved row fades to grey.
       MARK_STYLE = { new: [:red], gone: [:green], same: [] }.freeze
+      ROW_STYLE  = { new: [:yellow], gone: [:grey], same: [] }.freeze
 
       # The sign each mark carries in a --summary cell under --propose.
       COUNT_SIGN = { new: '+', gone: '-', same: '=' }.freeze
@@ -161,11 +164,27 @@ module Pupgrade
       private
 
       def row(conflict)
-        @order.map { |col| conflict.public_send(CELL.fetch(col)) } + [conflict.detail]
+        @order.map { |col| conflict.public_send(CELL.fetch(col)) } + [detail_cell(conflict, [])]
       end
 
       def marked_row(r)
-        [paint(CHANGE_MARK.fetch(r.mark), *MARK_STYLE.fetch(r.mark))] + row(r.conflict)
+        mark  = r.mark
+        cells = @order.map do |col|
+          text = r.conflict.public_send(CELL.fetch(col))
+          paint(text, *(col == 'conflict' ? MARK_STYLE : ROW_STYLE).fetch(mark))
+        end
+        [paint(CHANGE_MARK.fetch(mark), *MARK_STYLE.fetch(mark))] + cells + [detail_cell(r.conflict, ROW_STYLE.fetch(mark))]
+      end
+
+      # The detail with the part in the way red, as `solve` shows it; a
+      # resolved row stays grey throughout.
+      def detail_cell(conflict, styles)
+        text  = conflict.detail
+        fault = conflict.fault
+        return paint(text, *styles) if styles == [:grey] || fault.nil? || !text.include?(fault)
+
+        before, after = text.split(fault, 2)
+        paint(before, *styles) + paint(fault, :red) + paint(after, *styles)
       end
 
       # Which marks the view drops: unchanged rows under --changed-only,
@@ -285,16 +304,25 @@ module Pupgrade
       def summary_rows(rows, marked:)
         rows.group_by { |r| r.conflict.module }.sort.map do |name, rs|
           groups = ::Pupgrade::ModuleResolver::KINDS.map { |kind| rs.select { |r| r.conflict.kind == kind } } + [rs]
-          [name] + groups.map { |group| marked ? marked_count(group) : group.size.to_s }
+          [name] + groups.each_with_index.map do |group, i|
+            marked ? marked_count(group, total: i == groups.size - 1) : count_cell(group.size, total: i == groups.size - 1)
+          end
         end
       end
 
-      def marked_count(rows)
+      def marked_count(rows, total:)
         parts = COUNT_SIGN.filter_map do |mark, sign|
           n = rows.count { |r| r.mark == mark }
           paint("#{sign}#{n}", *MARK_STYLE.fetch(mark)) if n.positive?
         end
-        parts.empty? ? '0' : parts.join(' ')
+        parts.empty? ? count_cell(0, total: total) : parts.join(' ')
+      end
+
+      # A zero recedes in a conflict column and is good news in the total.
+      def count_cell(n, total:)
+        return n.to_s unless n.zero?
+
+        paint('0', total ? :green : :grey)
       end
 
       # The conflicts the row filters let through, in the sort order.

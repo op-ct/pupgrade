@@ -49,17 +49,17 @@ RSpec.describe Pupgrade::CLI::Check do
     log = capture_log(level: :info) do
       status, out = run([])
       expect(status).to eq(1)
-      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '-' => 12, '' => 58)
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+ NEW' => 30, '- FIXD' => 12, '' => 58)
     end
     expect(log).to include('30 introduced, 12 resolved, 58 unchanged;')
 
     log = capture_log(level: :info) do
       _, out = run(['--changed-only'])
-      expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '-' => 12)
+      expect(cells(out).drop(1).map(&:first).tally).to eq('+ NEW' => 30, '- FIXD' => 12)
     end
     expect(log).to include('58 unchanged (hidden)')
     _, out = run(['--hide-resolved'])
-    expect(cells(out).drop(1).map(&:first).tally).to eq('+' => 30, '' => 58)
+    expect(cells(out).drop(1).map(&:first).tally).to eq('+ NEW' => 30, '' => 58)
   end
 
   it 'summarises introduced and resolved rows per module' do
