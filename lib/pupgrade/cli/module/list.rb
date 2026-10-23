@@ -16,7 +16,7 @@ module Pupgrade
         include ModuleCommand::Shared
         include Table
 
-        register_command name: 'list', subcommand_of: ModuleCommand
+        register_command name: %w[list ls], subcommand_of: ModuleCommand
         positional '[<globs>]'
         desc 'List the modules the control repo deploys, as declared and as found'
 
