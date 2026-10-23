@@ -106,13 +106,13 @@ RSpec.describe Pupgrade::CLI::Impact do
     log = capture_log do
       status = nil
       silently do
-        described_class.new.run(['--no-config', '-v', '-d', fixture.dir, '--no-catalogs', '--propose', proposed])
+        described_class.new.run(['--no-config', '-vv', '-d', fixture.dir, '--no-catalogs', '--propose', proposed])
       rescue SystemExit => e
         status = e.status
       end
       expect(status).to eq(0)
     end
-    expect(log).to include("info: surface: #{File.join(fixture.dir, 'modules/stdlib')}:v9.6.0: cached at")
+    expect(log).to include("debug: surface: #{File.join(fixture.dir, 'modules/stdlib')}:v9.6.0: cached at")
     expect(log).to include('info: impact: puppetlabs-stdlib: surfaces at v8.6.0 and v9.6.0')
     expect(File.mtime(File.join(cache, newer))).to eq(stamp)
     expect(run(['extra', 'args']).first).to eq(2)

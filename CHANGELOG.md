@@ -168,6 +168,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - pupgrade matches on the `<sha>`; the `<tag>` is a convenience for users
       listing files
   * documents are reused until `--refresh`
+  * nothing goes to stdout but `-o -`; the document's path is logged at
+    debug
   * Ruby surfaces are read in a process of its own, with the control repo's
     modulepath in reach
   * types and providers are read as Puppet loads them: the extractor asks

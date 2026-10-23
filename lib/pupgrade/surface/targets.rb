@@ -124,7 +124,7 @@ module Pupgrade
         if path && File.file?(path) && @refresh != :all && !commit&.dirty
           begin
             doc = Surface.load(path)
-            @logger.info("surface: #{target.spec}: cached at #{path}")
+            @logger.debug("surface: #{target.spec}: cached at #{path}")
             return [doc, path, true]
           rescue Surface::StaleSchema => e
             @logger.info("surface: #{target.spec}: extracting again; #{e.message}")
@@ -139,7 +139,7 @@ module Pupgrade
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, JSON.pretty_generate(doc) + "\n")
         remember(path)
-        @logger.info("surface: #{target.spec}: wrote #{path}")
+        @logger.debug("surface: #{target.spec}: wrote #{path}")
         [doc, path, false]
       rescue Surface::Error => e
         raise Error, e.message

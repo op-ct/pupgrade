@@ -42,29 +42,26 @@ RSpec.describe Pupgrade::CLI::Surface do
 
   it 'reads modules by name or directory into the cache, by version and ref, and reuses what it holds' do
     concat = fixture.surface_file('concat', '7.3.0')
-    status, out = run(described_class, ['concat'])
-    expect(status).to eq(0)
-    expect(out).to eq("#{cache}/#{concat}\n")
+    expect(run(described_class, ['concat'])).to eq([0, ''])
     expect(JSON.parse(File.read(File.join(cache, concat)))['defined_types'].keys).to eq(['concat::fragment'])
 
     stdlib = fixture.surface_file('stdlib', '9.6.0', 'v9.6.0')
-    status, out = run(described_class, ['stdlib:v9.6.0', File.join(fixture.dir, 'modules/concat')])
-    expect(status).to eq(0)
-    expect(out).to eq("#{cache}/#{stdlib}\n\n#{cache}/#{concat}\n")
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log { expect(run(described_class, ['-vv', 'stdlib:v9.6.0', File.join(fixture.dir, 'modules/concat')])).to eq([0, '']) }
+    expect(log).to include("debug: surface: stdlib:v9.6.0: wrote #{cache}/#{stdlib}", "cached at #{cache}/#{concat}")
     doc = JSON.parse(File.read(File.join(cache, stdlib)))
     expect(doc['module']['version']).to eq('9.6.0')
     expect(doc['source']).to include('ref' => 'v9.6.0', 'sha' => fixture.sha('stdlib', 'v9.6.0'), 'tags' => ['v9.6.0'])
 
     # the commit is what is matched, whatever the file is called
     File.rename(File.join(cache, stdlib), File.join(cache, "stdlib-9.6.0--renamed__#{fixture.sha('stdlib', 'v9.6.0')[0, 10]}.json"))
-    allow(Driftless).to receive(:logger).and_call_original
     log = capture_log { run(described_class, ['stdlib:v9.6.0']) }
     expect(log).to include('(cached)')
 
     # a dirty tree is written with its mark and never served
     File.write(File.join(fixture.dir, 'modules/concat/manifests/extra.pp'), "class concat::extra {}\n")
-    _status, out = run(described_class, ['concat'])
-    expect(out).to eq("#{cache}/#{concat.sub('.json', '-dirty.json')}\n")
+    log = capture_log { run(described_class, ['-vv', 'concat']) }
+    expect(log).to include("wrote #{cache}/#{concat.sub('.json', '-dirty.json')}")
     expect(JSON.parse(File.read(File.join(cache, concat.sub('.json', '-dirty.json'))))['source']).to include('dirty' => true)
     log = capture_log { run(described_class, ['concat']) }
     expect(log).not_to include('(cached)')
@@ -91,9 +88,7 @@ RSpec.describe Pupgrade::CLI::Surface do
   end
 
   it 'reads every module with --all, one to a file or stdout, and a remote at a ref' do
-    status, out = run(described_class, ['--all'])
-    expect(status).to eq(0)
-    expect(out.lines.reject { |l| l.strip.empty? }.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size)
+    expect(run(described_class, ['--all'])).to eq([0, ''])
     # a clone is keyed on its commit; a Forge install on its version alone
     expect(Dir.children(cache)).to include(fixture.surface_file('stdlib', '8.6.0'), 'translate-2.2.0.json')
 
@@ -103,9 +98,8 @@ RSpec.describe Pupgrade::CLI::Surface do
     _, out = run(described_class, ['firewall', '-o', '-'])
     expect(JSON.parse(out)['providers'].keys).to eq(%w[conntrack/iptables firewall/iptables firewall/ipv6])
 
-    status, out = run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])
-    expect(status).to eq(0)
-    expect(out).to eq("#{cache}/#{fixture.surface_file('stdlib', '9.0.0', 'v9.0.0')}\n")
+    expect(run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0'])).to eq([0, ''])
+    expect(Dir.children(cache)).to include(fixture.surface_file('stdlib', '9.0.0', 'v9.0.0'))
     # read back from the cache the next time
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log { run(described_class, ['--git', File.join(fixture.remotes_dir, 'puppetlabs-stdlib.git'), '--ref', 'v9.0.0']) }

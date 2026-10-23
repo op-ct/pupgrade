@@ -65,16 +65,13 @@ module Pupgrade
         fatal!('surface: -o takes one module', help: true) if @options[:output] && list.size > 1
         ::Pupgrade.logger.notice("surface: reading #{list.size} module(s)#{', ignoring the cache' if (@options[:refresh] == :all)}") if list.size > 1
 
-        list.each_with_index do |target, i|
-          puts '' if i.positive?
-          doc, path, cached = reader.document(target)
+        list.each do |target|
+          doc, _path, cached = reader.document(target)
           if @options[:output] == '-'
             print JSON.pretty_generate(doc) + "\n"
           elsif @options[:output]
             File.write(File.expand_path(@options[:output]), JSON.pretty_generate(doc) + "\n")
             puts File.expand_path(@options[:output])
-          else
-            puts path
           end
           ::Pupgrade.logger.notice(summary(target, doc, cached))
         end
