@@ -5,12 +5,12 @@ require 'stringio'
 require 'json'
 
 require 'support/fixture_repo'
-require 'pupgrade/cli/compile'
+require 'pupgrade/cli/catalog'
 require 'pupgrade/compile/session'
 
-# `compile diff` between two compiles of the fixture: before and after an
+# `catalog diff` between two compiles of the fixture: before and after an
 # edit to the profile and its data.
-RSpec.describe Pupgrade::CLI::Compile::Diff do
+RSpec.describe Pupgrade::CLI::Catalog::Diff do
   before(:all) do # rubocop:disable RSpec/BeforeAfterAll
     @tmp     = Dir.mktmpdir
     @fixture = Pupgrade::FixtureRepo.build(File.join(@tmp, 'repo'))
@@ -116,13 +116,13 @@ RSpec.describe Pupgrade::CLI::Compile::Diff do
   end
 
   it 'is reached from compile, which still compiles when no subcommand is named' do
-    expect(Pupgrade::CLI::Compile.find_subcommand('diff')).to eq(described_class)
+    expect(Pupgrade::CLI::Catalog.find_subcommand('diff')).to eq(described_class)
     captured = StringIO.new
     original = $stdout
     $stdout  = captured
     status   = nil
     begin
-      Pupgrade::CLI::Compile.new.run(['di', @before, @before])
+      Pupgrade::CLI::Catalog.new.run(['di', @before, @before])
     rescue SystemExit => e
       status = e.status
     ensure

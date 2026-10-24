@@ -86,7 +86,7 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     `exclude_dependencies`, `exclude_requirements`,
     `exclude_operatingsystems`, `branchfile`, `check_order`, `check_sort`
 
-- **`pupgrade compile`**` [options]`
+- **`pupgrade catalog compile`**` [options]`
 
   compiles one catalog per factset, deployed environment directory using
   Puppet's compiler (like onceover, but much faster without rspec-puppet)
@@ -152,9 +152,20 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     variables (config: `lookup.columns`)
   * exits `1` when the key is not found
 
-- **`pupgrade compile diff`**` FROM TO`
+- **`pupgrade catalog list`**
 
-  Shows what changed between two `compile` runs, node by node: resources,
+  Lists the compiled catalogs in the cache: one row per node with its
+  status and counts, from the probes record and catalog each compile wrote.
+
+- **`pupgrade catalog show`**` [-p] [-k] [KEYPATH] CERTGLOB[,…]`
+
+  Prints a compiled catalog, or its probes with `-p`, from the cache: whole,
+  or the part a key path names (`resources[0].title`, `classes`). `-k`
+  lists the keys there. Several nodes come back keyed by certname.
+
+- **`pupgrade catalog diff`**` FROM TO`
+
+  Shows what changed between two `catalog compile` runs, node by node: resources,
   parameters, classes, and relationship edges added, removed, or changed.
   * `--group` folds identical changes across nodes into one row
   * `--summary` counts changes per node

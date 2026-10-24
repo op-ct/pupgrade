@@ -2,7 +2,7 @@ require 'spec_helper'
 
 require 'pupgrade/config_keys'
 require 'pupgrade/cli/check'
-require 'pupgrade/cli/compile'
+require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/solve'
 require 'pupgrade/cli/impact'
 require 'pupgrade/cli/surface'
@@ -23,9 +23,9 @@ RSpec.describe Pupgrade::ConfigKeys do
       'modules.branchfile'               => Pupgrade::Inputs::Branchfile,
       'modules.check_order'              => Pupgrade::CLI::Check,
       'modules.check_sort'               => Pupgrade::CLI::Check,
-      'compile.factsets'                 => Pupgrade::CLI::Compile,
+      'compile.factsets'                 => Pupgrade::CLI::Catalog::Compile,
       'lookup.columns'                   => Pupgrade::CLI::Lookup,
-      'compile.cache_dir'                => Pupgrade::CLI::Compile,
+      'compile.cache_dir'                => Pupgrade::CLI::Catalog::Compile,
       'compile.environment'              => Pupgrade::Compile::Session,
       'compile.manifest'                 => Pupgrade::Compile::Session,
       'compile.prepend_file'             => Pupgrade::Compile::Session,

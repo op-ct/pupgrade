@@ -5,10 +5,10 @@ require 'stringio'
 require 'json'
 
 require 'support/fixture_repo'
-require 'pupgrade/cli/compile'
+require 'pupgrade/cli/catalog'
 
 # `compile` against the fixture control repo and its two factsets.
-RSpec.describe Pupgrade::CLI::Compile do
+RSpec.describe Pupgrade::CLI::Catalog::Compile do
   before(:all) do # rubocop:disable RSpec/BeforeAfterAll
     @tmp     = Dir.mktmpdir
     @fixture = Pupgrade::FixtureRepo.build(File.join(@tmp, 'repo'))

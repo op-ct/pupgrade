@@ -13,7 +13,7 @@ A toolkit for helping Puppet/OpenVox control repositories escape from [dependenc
     - [ENC rules](#enc-rules)
   - [The commands](#the-commands)
     - [check](#check)
-    - [compile](#compile)
+    - [catalog](#catalog)
     - [solve](#solve)
     - [impact](#impact)
     - [module](#module)
@@ -53,8 +53,8 @@ pupgrade has a command for each:
 | Which version could every module move to, within constraints and what the site uses?          | `solve`              |
 | What API surfaces _actually_ change between any two versions of a module?                     | `module diff`        |
 | Which of _our_ nodes/resources/code/Hiera keys would be affected by these changes?            | `impact`             |
-| Does anything change in the catalogs change ?                                                 | `compile diff`       |
-| What bits of each module are we _actually_ using?                                             | `surface`, `compile` |
+| Does anything change in the catalogs change ?                                                 | `catalog diff`       |
+| What bits of each module are we _actually_ using?                                             | `surface`, `catalog compile` |
 | What would a node get from Hiera, given its facts and ENC variables?                          | `lookup`             |
 
 Every command runs from your  deployed control repo (the directory holding
@@ -102,7 +102,7 @@ and pupgrade is [installed](#installation).
    stops the node until a mock answers it:
 
     ```shell
-    pupgrade compile --factsets pupgrade/factsets
+    pupgrade catalog compile --factsets pupgrade/factsets
     ```
 
 1. Let the solver propose a Puppetfile, then see what the proposal would do:
@@ -203,7 +203,7 @@ facts:                                  # Facter.value reads the factset lacks
 
 The first entry whose `match` fits and whose `when` holds answers. pupgrade
 applies its own mocks after yours, for the probes package providers make as
-they load (`pupgrade compile --show-default-mocks` prints them).
+they load (`pupgrade catalog compile --show-default-mocks` prints them).
 
 Every interception is in the node's `probes.json` under `leaks`; the compile
 table counts the answered ones under `mocks` and the rest under `leaks`.
@@ -271,20 +271,25 @@ pupgrade check --ignore puppetlabs-translate   # as if a module were gone
 A proposal is a Puppetfile overlay: only the entries that change, each
 replacing the current entry at the same path. `solve -o` writes one.
 
-### compile
+### catalog
 
-Compiles a catalog per factset through Puppet's own compiler, in the
-deployed environment, and records what each compile used: functions and
-their call sites, facts read, lookups made, types, providers, type aliases,
-warnings, deprecations, and the commands the guard intercepted. The
-catalogs and `probes.json` records land under `pupgrade/cache/catalogs/`.
+`catalog compile` compiles a catalog per factset through Puppet's own
+compiler, in the deployed environment, and records what each compile used:
+functions and their call sites, facts read, lookups made, types, providers,
+type aliases, warnings, deprecations, and the commands the guard
+intercepted. The catalogs and `probes.json` records land under
+`pupgrade/cache/catalogs/`, where `catalog list` and `catalog show` read
+them and `catalog diff` compares two runs.
 
 ```shell
-pupgrade compile                              # every factset in compile.factsets
-pupgrade compile --certname 'web*' -vv        # some nodes, with each mock answer logged
-pupgrade compile --fail-fast                  # stop at the first failure
-pupgrade compile --code 'notify { "${site}": }' --certname web01.example.com   # try something
-pupgrade compile diff /tmp/before /tmp/after  # catalogs of two runs, node by node
+pupgrade catalog compile                              # every factset in compile.factsets
+pupgrade catalog compile --certname 'web*' -vv        # some nodes, with each mock answer logged
+pupgrade catalog compile --fail-fast                  # stop at the first failure
+pupgrade catalog compile --code 'notify { "${site}": }' --certname web01.example.com   # try something
+pupgrade catalog diff /tmp/before /tmp/after  # catalogs of two runs, node by node
+pupgrade catalog list                         # what the cache holds, per node
+pupgrade catalog show resources[0] web01.example.com    # a part of a catalog, by key path
+pupgrade catalog show -p leaks 'web*'         # the probes of several nodes
 ```
 
 `--prepend CODE|@FILE` evaluates Puppet code before the manifest, for the
@@ -454,7 +459,7 @@ pupgrade solve -o Puppetfile.proposed
 
 # 3. compile every factset under OpenVox 8; the deprecations and warnings
 #    each compile raised are in its record
-pupgrade compile
+pupgrade catalog compile
 jq '.deprecations, .warnings' pupgrade/cache/catalogs/*/probes.json
 
 # 4. the module moves' impact, then catalogs before and after
@@ -512,16 +517,16 @@ backticks, and no provider confines, since the catalog is never applied).
 ```shell
 # 1. find them: a compile stops at the first command nothing answers, and
 #    the warning says what asked and from where
-pupgrade compile
+pupgrade catalog compile
 #   warning: guard: web01.example.com: execute: "hostname -f" is not answered by the
 #   mocks at site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4
 
 # 2. or find them all at once: every command runs for real, and is recorded
-pupgrade compile --on-leak allow
+pupgrade catalog compile --on-leak allow
 jq '.leaks[] | select(.action == "allowed")' pupgrade/cache/catalogs/*/probes.json
 
 # 3. answer each one in pupgrade/compiler-mocks.yaml (see Mocks), then
-pupgrade compile -vv          # each mocked answer logged, with its call site
+pupgrade catalog compile -vv          # each mocked answer logged, with its call site
 ```
 
 ### Comparing two control repo versions
@@ -534,12 +539,12 @@ deployed.
 git worktree add ../control-next upgrade/stdlib-9
 (cd ../control-next && r10k puppetfile install)
 
-pupgrade compile -d . -o /tmp/cat-now
-pupgrade compile -d ../control-next --factsets ../control/pupgrade/factsets -o /tmp/cat-next
+pupgrade catalog compile -d . -o /tmp/cat-now
+pupgrade catalog compile -d ../control-next --factsets ../control/pupgrade/factsets -o /tmp/cat-next
 
-pupgrade compile diff /tmp/cat-now /tmp/cat-next            # per node
-pupgrade compile diff /tmp/cat-now /tmp/cat-next --group    # identical changes folded across nodes
-pupgrade compile diff /tmp/cat-now /tmp/cat-next --changes param-changed --resources 'File*'
+pupgrade catalog diff /tmp/cat-now /tmp/cat-next            # per node
+pupgrade catalog diff /tmp/cat-now /tmp/cat-next --group    # identical changes folded across nodes
+pupgrade catalog diff /tmp/cat-now /tmp/cat-next --changes param-changed --resources 'File*'
 ```
 
 Catalog documents are sorted and carry repo-relative paths, so two checkouts

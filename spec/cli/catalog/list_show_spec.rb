@@ -1,0 +1,92 @@
+require 'spec_helper'
+require 'tmpdir'
+require 'fileutils'
+require 'stringio'
+require 'json'
+
+require 'support/fixture_repo'
+require 'pupgrade/cli/catalog'
+
+# `catalog list` and `catalog show` over one compile of the fixture.
+RSpec.describe Pupgrade::CLI::Catalog do
+  def self.silently
+    captured = StringIO.new
+    original = $stdout
+    $stdout  = captured
+    yield
+  rescue SystemExit
+    nil
+  ensure
+    $stdout = original
+  end
+
+  before(:all) do # rubocop:disable RSpec/BeforeAfterAll
+    @tmp      = Dir.mktmpdir
+    @fixture  = Pupgrade::FixtureRepo.build(File.join(@tmp, 'repo'))
+    @catalogs = File.join(@tmp, 'catalogs')
+    self.class.silently { Pupgrade::CLI::Catalog::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--mocks', 'pupgrade/compiler-mocks.yaml']) }
+  end
+
+  after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll
+
+  let(:fixture) { @fixture }
+
+  # [exit status, stdout] of a subcommand run on its own
+  def run(argv)
+    klass = { 'list' => described_class::List, 'ls' => described_class::List, 'show' => described_class::Show }.fetch(argv.first)
+    captured = StringIO.new
+    original = $stdout
+    $stdout  = captured
+    status   = nil
+    begin
+      klass.new.run(['--no-config', '-d', fixture.dir] + argv.drop(1))
+    rescue SystemExit => e
+      status = e.status
+    ensure
+      $stdout = original
+    end
+    [status, captured.string]
+  end
+
+  def cells(output)
+    output.lines.map(&:rstrip).reject { |l| l.start_with?('--') }.map { |l| l.split('|', -1).map(&:strip) }
+  end
+
+  before(:each) { silence_logger }
+
+  it 'lists the compiled nodes with their counts' do
+    status, out = run(['list', '--cache-dir', @catalogs])
+    expect(status).to eq(0)
+    table = cells(out)
+    expect(table.first).to eq(%w[certname status resources classes warnings leaks compiled])
+    expect(table.drop(1).map(&:first)).to eq(%w[db01.example.com web01.example.com])
+    expect(table[1][1]).to eq('ok')
+    expect(table[1][2].to_i).to be > 0
+    _, out = run(['ls', '--cache-dir', @catalogs, '--certname', 'web*'])
+    expect(cells(out).drop(1).map(&:first)).to eq(['web01.example.com'])
+    expect(run(['list', '--cache-dir', File.join(@tmp, 'nope')]).first).to eq(3)
+  end
+
+  it 'shows a catalog, a part of it by key path, its keys, and the probes' do
+    status, out = run(['show', '--cache-dir', @catalogs, 'web01.example.com'])
+    expect(status).to eq(0)
+    doc = JSON.parse(out)
+    expect(doc['name']).to eq('web01.example.com')
+
+    _, out = run(['show', '--cache-dir', @catalogs, 'resources[0].type', 'web01.example.com'])
+    expect(JSON.parse(out)).to eq(doc['resources'][0]['type'])
+    _, out = run(['show', '--cache-dir', @catalogs, '-k', '.', 'web01.example.com'])
+    expect(JSON.parse(out)).to include('resources', 'classes')
+    _, out = run(['show', '--cache-dir', @catalogs, '-k', 'resources', 'web01.example.com'])
+    expect(JSON.parse(out)).to eq("#{doc['resources'].size} entries")
+    _, out = run(['show', '--cache-dir', @catalogs, '--render-as', 'yaml', 'classes', '*'])
+    both = YAML.safe_load(out)
+    expect(both.keys).to eq(%w[db01.example.com web01.example.com])
+    _, out = run(['show', '--cache-dir', @catalogs, '-p', 'status', 'web01*'])
+    expect(JSON.parse(out)).to eq('ok')
+
+    expect(run(['show', '--cache-dir', @catalogs, 'nothing.here', 'web01.example.com']).first).to eq(1)
+    expect(run(['show', '--cache-dir', @catalogs, 'nobody']).first).to eq(3)
+    expect(run(['show']).first).to eq(2)
+  end
+end

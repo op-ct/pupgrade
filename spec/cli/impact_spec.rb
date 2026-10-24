@@ -6,7 +6,7 @@ require 'json'
 
 require 'support/fixture_repo'
 require 'pupgrade/cli/impact'
-require 'pupgrade/cli/compile'
+require 'pupgrade/cli/catalog'
 
 # `impact` on the fixture: a proposal moving stdlib, firewall, and apache,
 # with evidence from a compile of both factsets.
@@ -20,7 +20,7 @@ RSpec.describe Pupgrade::CLI::Impact do
       short, tag = pair.split('=')
       "mod 'puppetlabs-#{short}',\n  git: '#{File.join(@fixture.remotes_dir, "puppetlabs-#{short}.git")}',\n  tag: '#{tag}'\n"
     }.join)
-    silently { Pupgrade::CLI::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--mocks', 'pupgrade/compiler-mocks.yaml']) }
+    silently { Pupgrade::CLI::Catalog::Compile.new.run(['--no-config', '-d', @fixture.dir, '--factsets', 'factsets', '-o', @catalogs, '--mocks', 'pupgrade/compiler-mocks.yaml']) }
   end
 
   after(:all) { FileUtils.rm_rf(@tmp) } # rubocop:disable RSpec/BeforeAfterAll

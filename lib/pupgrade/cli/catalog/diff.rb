@@ -1,19 +1,19 @@
 require 'pupgrade/cli/base'
-require 'pupgrade/cli/compile'
+require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
 require 'pupgrade/compile/catalog_diff'
 
 module Pupgrade
   module CLI
-    class Compile
-      # `pupgrade compile diff`
+    class Catalog
+      # `pupgrade catalog diff`
       #
-      # What changed between two `compile` runs: one row per difference,
-      # by node; exit 1 when the catalogs differ.
+      # What changed between two `catalog compile` runs: one row per
+      # difference, by node; exit 1 when the catalogs differ.
       class Diff < Base
         include Table
 
-        register_command name: 'diff', subcommand_of: Compile
+        register_command name: 'diff', subcommand_of: Catalog
         positional '<from-dir>', '<to-dir>'
         desc 'Compare the catalogs of two compile runs, node by node'
         skip_config_load
@@ -34,9 +34,9 @@ module Pupgrade
         NAMED_NODES = 3
 
         def execute(argv)
-          fatal!('compile diff takes two directories', help: true) unless argv.size == 2
+          fatal!('catalog diff takes two directories', help: true) unless argv.size == 2
           check_kinds!
-          fatal!('compile diff: --group and --summary are one or the other', help: true) if @options[:group] && @options[:summary]
+          fatal!('catalog diff: --group and --summary are one or the other', help: true) if @options[:group] && @options[:summary]
           from, to = argv.map { |p| File.expand_path(p) }
           changes  = ::Pupgrade::Compile::CatalogDiff.directories(from, to, ignore_params: Array(@options[:ignore_params]))
           shown    = changes.select { |c| shown?(c) }
@@ -51,10 +51,10 @@ module Pupgrade
 
           nodes = changes.map(&:certname).uniq.size
           count = (shown.size == changes.size) ? "#{changes.size} change(s)" : "#{shown.size} of #{changes.size} change(s) shown"
-          ::Pupgrade.logger.notice("compile diff: #{count} across #{nodes} node(s)")
+          ::Pupgrade.logger.notice("catalog diff: #{count} across #{nodes} node(s)")
           exit(shown.empty? ? 0 : 1)
         rescue ::Pupgrade::Compile::CatalogDiff::Error => e
-          fatal!("compile diff: #{e.message}", 3)
+          fatal!("catalog diff: #{e.message}", 3)
         end
 
         protected
@@ -120,7 +120,7 @@ module Pupgrade
           unknown = (Array(@options[:changes]) + Array(@options[:skip_changes])) - ::Pupgrade::Compile::CatalogDiff::KINDS
           return if unknown.empty?
 
-          fatal!("compile diff: unknown change kind #{unknown.first.inspect} " \
+          fatal!("catalog diff: unknown change kind #{unknown.first.inspect} " \
                  "(known: #{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')})", help: true)
         end
 
