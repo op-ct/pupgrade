@@ -59,8 +59,8 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(status).to eq(0)
     expect(cells(text)).to eq([
       %w[certname resources classes warnings mocks leaks missing status],
-      %w[db01.example.com 12 7 2 1 0 0 ok],
-      %w[web01.example.com 12 7 2 1 0 0 ok],
+      %w[db01.example.com 12 7 1 1 0 0 ok],
+      %w[web01.example.com 12 7 1 1 0 0 ok],
     ])
     expect(Dir.children(out).sort).to eq(%w[db01.example.com web01.example.com])
     expect(Dir.children(File.join(out, 'web01.example.com')).sort).to eq(%w[catalog.json probes.json])
@@ -96,7 +96,15 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
       'ntp::version'               => { 'found' => false, 'automatic' => 1, 'explicit' => 0 },
     )
     expect(probes['deprecations']).to eq([{ 'message' => 'legacy_shout is deprecated; use stdlib::shout' }])
-    expect(probes['warnings'].map { |w| w['level'] }).to eq(%w[warning])
+    expect(probes['warnings']).to eq([]) # the deprecation is not counted twice
+    # Puppet's own warnings reach the log as warnings, deprecations as info
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log(level: :info) { run(['-v', '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web01*']) }
+    expect(log).to include('info: puppet: web01.example.com: deprecation: legacy_shout is deprecated; use stdlib::shout')
+    expect(log).not_to include('warning: puppet:')
+    code = ['-v', '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web01*', '--code', 'notify { "x": } warning("from the manifest")']
+    log = capture_log(level: :warning) { run(code) }
+    expect(log).to include('warning: puppet: web01.example.com: warning: from the manifest')
     expect(probes['leaks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'mocked',
                                      'location' => 'site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4' }])
     expect(probes['classes']).to include('apache' => { 'module' => 'apache' }, 'profile::base' => { 'module' => 'profile' })

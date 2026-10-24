@@ -171,15 +171,28 @@ module Pupgrade
         @providers["#{type}/#{provider}"] = { 'type' => type.to_s, 'provider' => provider.to_s, 'file' => relative(path) }
       end
 
+      # Puppet's own log: a warning or worse is logged at warning and
+      # recorded; the rest is trace. A deprecation is logged by Puppet as a
+      # warning too, and is left to {#deprecation}, which saw it first.
       def log(msg)
-        Pupgrade.logger.trace("puppet #{msg.level}: #{msg.message}#{" (#{msg.file}:#{msg.line})" if msg.file}")
-        return unless LOGGED_LEVELS.include?(msg.level)
+        where = " (#{msg.file && relative(msg.file.to_s)}:#{msg.line})" if msg.file
+        unless LOGGED_LEVELS.include?(msg.level) && !deprecation_text?(msg.message)
+          Pupgrade.logger.trace("puppet: #{@factset.certname}: #{msg.level}: #{msg.message}#{where}")
+          return
+        end
 
+        Pupgrade.logger.warning("puppet: #{@factset.certname}: #{msg.level}: #{msg.message}#{where}")
         @warnings << { 'level' => msg.level.to_s, 'message' => msg.message.to_s,
                        'file' => msg.file && relative(msg.file.to_s), 'line' => msg.line }.compact
       end
 
+      # Puppet logs a deprecation as its message, a newline, and the location.
+      def deprecation_text?(text)
+        $deprecation_warnings.value?(text.to_s.split("\n").first) # rubocop:disable Style/GlobalVars -- Puppet's own
+      end
+
       def deprecation(message, file, line)
+        Pupgrade.logger.info("puppet: #{@factset.certname}: deprecation: #{message}#{" (#{relative(file.to_s)}:#{line})" if file}")
         @deprecations << { 'message' => message.to_s, 'file' => file && relative(file.to_s), 'line' => line }.compact
       end
 

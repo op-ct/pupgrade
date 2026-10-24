@@ -100,7 +100,9 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - `leaks` counts unmocked commands (red = one failed the compile)
     - `missing` counts fact reads with no value in the factset or the mocks
     - failures are displayed under the table
-  * unanswered commands log at warning, mocked ones at `--on-mock LEVEL`
+  * unmocked commands log at warning, mocked ones at `--on-mock LEVEL`;
+    Puppet's own warnings log at warning with the certname, deprecations
+    at info
   * `pupgrade/compiler-mocks.yaml` is read by default when present
   * `--setting NAME=VALUE` and `compile.settings` set Puppet settings for
     the compile, such as `strict=error` and `strict_variables=true`
