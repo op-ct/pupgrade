@@ -131,8 +131,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   * Comes with an execution guard/mocking system to stub server-side functions
     (aka execution leaks) and direct calls to Facter's execution helpers
     - mocks are defined in `--mocks FILE`
-    - unmocked commands stops that node's compile (`--on-leak raise`, default)
-      or runs and is recorded (`--on-leak allow`)
+    - an unmocked command stops that node's compile (`--on-leak fail`, the
+      default) or runs and is recorded (`--on-leak allow`)
     - interception is in the probe record
   * default mocks ship with pupgrade (`--[no-]default-mocks`)
     - package queries such as `rpm -q` answer per OS family, so code compiled

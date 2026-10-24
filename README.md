@@ -179,7 +179,7 @@ A compile runs module code, and some of it runs commands: `hostname -f`,
 `rpm -q`, a `systemctl` in a custom function. pupgrade's execution guard
 catches the commands that go through Puppet's and Facter's execution
 helpers, and every `Facter.value` read. A command nothing answers stops that
-node's compile (`--on-leak raise`, the default), so you find them one at a
+node's compile (`--on-leak fail`, the default), so you find them one at a
 time, or all at once with `--on-leak allow`.
 
 `pupgrade/compiler-mocks.yaml` answers them:

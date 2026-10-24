@@ -34,8 +34,8 @@ module Pupgrade
       config_key 'compile.default_mocks', type: :boolean, default: true,
                  about: 'Whether pupgrade\'s own mocks for the probes package providers make while loading ' \
                         'apply after the mock file'
-      config_key 'compile.on_leak', type: :string, default: 'raise',
-                 about: 'What happens to a command the mocks do not answer: raise (stop that node\'s compile) ' \
+      config_key 'compile.on_leak', type: :string, default: 'fail',
+                 about: 'What happens to an unmocked command: fail (stop that node\'s compile) ' \
                         'or allow (run it, and record it)'
       config_key 'compile.vars', type: :hash, default: nil, example: { 'role' => 'web' },
                  about: 'Top-scope variables set before the manifest, as an ENC would'
@@ -46,7 +46,9 @@ module Pupgrade
 
       class Error < StandardError; end
 
-      ON_LEAK = %w[raise allow].freeze
+      ON_LEAK = %w[fail allow].freeze
+      # The old name of fail, still taken.
+      ON_LEAK_ALIASES = { 'raise' => 'fail' }.freeze
 
       DEFAULT_SERVER_FACTS = { 'servername' => 'pupgrade.local', 'serverip' => '127.0.0.1' }.freeze
 
@@ -86,7 +88,8 @@ module Pupgrade
       # @param settings [Hash{String => Object}] Puppet settings by name,
       #   applied after pupgrade's own
       def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil,
-                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise', on_mock: 'debug', settings: {})
+                     server_facts: {}, mocks: Mocks.empty, on_leak: 'fail', on_mock: 'debug', settings: {})
+        on_leak = ON_LEAK_ALIASES.fetch(on_leak, on_leak)
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
         raise Error, "on_mock must be one of #{Recorder::ON_MOCK.join(', ')}, got #{on_mock.inspect}" unless Recorder::ON_MOCK.include?(on_mock.to_s)
         raise Error, 'give code or prepend, not both' if code && prepend

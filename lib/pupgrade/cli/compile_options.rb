@@ -42,8 +42,8 @@ module Pupgrade
         o.on('--on-mock=LEVEL', ::Pupgrade::Compile::Recorder::ON_MOCK,
              "Log each mocked exec at LEVEL (#{::Pupgrade::Compile::Recorder::ON_MOCK.join(', ')}; default: debug)") { |v| @options[:on_mock] = v }
         o.on('--[no-]default-mocks', 'Apply pupgrade\'s built-in mocks for known exec leaks (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
-        o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK,
-             %q[Response to unmocked commands: 'raise' (default) or 'allow' (config: compile.on_leak)]) { |v| @options[:on_leak] = v }
+        o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK + ::Pupgrade::Compile::Session::ON_LEAK_ALIASES.keys,
+             %q[Response to unmocked commands: 'fail' (default) or 'allow' (config: compile.on_leak)]) { |v| @options[:on_leak] = v }
       end
 
       # @return [Driftless::ControlRepo]
@@ -148,7 +148,7 @@ module Pupgrade
           enc:           cfg.dig('compile', 'enc'),
           ruby:          cfg.dig('compile', 'ruby'),
           default_mocks: cfg.dig('compile', 'default_mocks'),
-          on_leak:       cfg.dig('compile', 'on_leak') || 'raise',
+          on_leak:       cfg.dig('compile', 'on_leak') || 'fail',
           vars:          cfg.dig('compile', 'vars'),
           server_facts:  cfg.dig('compile', 'server_facts'),
           settings:      cfg.dig('compile', 'settings'),

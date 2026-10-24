@@ -20,7 +20,7 @@ module Pupgrade
 
       # @param factset [Factset] the node's facts, answering Facter reads
       # @param mocks [Mocks] what the guard answers commands with
-      # @param on_leak [String] "raise" or "allow" for commands the mocks do not answer
+      # @param on_leak [String] "fail" or "allow" for unmocked commands
       # @param repo_dir [String] call sites are reported relative to it
       # The levels a mocked answer can be logged at; `silent` logs nothing.
       ON_MOCK = %w[silent trace debug info notice warning].freeze

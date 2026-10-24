@@ -22,7 +22,7 @@ module Pupgrade
     #
     # The first entry whose `match` fits the command line and whose `when`
     # fits the node's facts answers. A command no entry answers gets the
-    # run's `on_leak` policy: `raise` stops the node's compile, `allow` runs
+    # run's `on_leak` policy: `fail` stops the node's compile, `allow` runs
     # it and records it.
     class Mocks
       class Error < StandardError; end

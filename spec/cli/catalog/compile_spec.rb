@@ -128,7 +128,7 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     allow(Driftless).to receive(:logger).and_call_original
     status = text = nil
     log = capture_log(level: :warning) do
-      status, text = run(['--mocks', empty])
+      status, text = run(['--mocks', empty, '--on-leak', 'fail'])
     end
     expect(status).to eq(1)
     rows = cells(text)
@@ -276,6 +276,7 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(run(['--factsets', 'nope']).first).to eq(3)
     expect(run(['--mocks', 'nope.yaml']).first).to eq(1)
     expect(run(['--on-leak', 'ignore']).first).to eq(2)
+    expect(run(['--on-leak', 'raise', '--mocks', File.join(@tmp, 'empty-mocks.yaml')]).first).to eq(1) # the old name of fail
     expect(run(['--certname', 'nothing']).first).to eq(3)
   end
 end
