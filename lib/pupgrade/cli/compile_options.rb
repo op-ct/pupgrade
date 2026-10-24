@@ -31,6 +31,7 @@ module Pupgrade
         o.on('--enc=FILE', "Rules for per-node variables and classes (config: compile.enc; default: #{DEFAULT_ENC_FILE}") { |v| @options[:enc] = v }
         o.on('--ruby=FILE', "Rules for per-node ENC variables + classes, exec guard mocks (config: compile.ruby; default: #{DEFAULT_RUBY_FILE}") { |v| @options[:ruby] = v }
         o.on('--server-fact=NAME=VALUE[,…]', 'Set $server_facts (config: compile.server_facts)') { |v| pair(:server_facts, v) }
+        o.on('--setting=NAME=VALUE', 'Set a Puppet setting, e.g. strict=error (config: compile.settings)') { |v| pair(:settings, v) }
       end
 
       def declare_guard(o)
@@ -95,7 +96,7 @@ module Pupgrade
         end
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
-          prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {},
+          prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {}, settings: @options[:settings] || {},
           mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || 'debug',
         ).start
       rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, ::Pupgrade::Compile::Enc::Error, Errno::ENOENT => e
@@ -150,6 +151,7 @@ module Pupgrade
           on_leak:       cfg.dig('compile', 'on_leak') || 'raise',
           vars:          cfg.dig('compile', 'vars'),
           server_facts:  cfg.dig('compile', 'server_facts'),
+          settings:      cfg.dig('compile', 'settings'),
         }.compact
       end
     end

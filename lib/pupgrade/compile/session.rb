@@ -41,6 +41,8 @@ module Pupgrade
                  about: 'Top-scope variables set before the manifest, as an ENC would'
       config_key 'compile.server_facts', type: :hash, default: nil, example: { 'servername' => 'puppet.example.com' },
                  about: 'Entries of $server_facts to set or override; servername, serverip, and serverversion have defaults'
+      config_key 'compile.settings', type: :hash, default: nil, example: { 'strict' => 'error', 'strict_variables' => true },
+                 about: 'Puppet settings for the compile, applied after pupgrade\'s own'
 
       class Error < StandardError; end
 
@@ -81,8 +83,10 @@ module Pupgrade
       # @param server_facts [Hash{String => Object}]
       # @param mocks [Mocks]
       # @param on_leak [String] one of {ON_LEAK}
+      # @param settings [Hash{String => Object}] Puppet settings by name,
+      #   applied after pupgrade's own
       def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil,
-                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise', on_mock: 'debug')
+                     server_facts: {}, mocks: Mocks.empty, on_leak: 'raise', on_mock: 'debug', settings: {})
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
         raise Error, "on_mock must be one of #{Recorder::ON_MOCK.join(', ')}, got #{on_mock.inspect}" unless Recorder::ON_MOCK.include?(on_mock.to_s)
         raise Error, 'give code or prepend, not both' if code && prepend
@@ -98,6 +102,7 @@ module Pupgrade
         @mocks        = mocks
         @on_leak      = on_leak
         @on_mock      = on_mock.to_s
+        @settings     = (settings || {}).to_h { |k, v| [k.to_s, v] }
       end
 
       # @return [Array<String>] the environment's modulepath, absolute
@@ -195,7 +200,10 @@ module Pupgrade
 
       # Every path setting under the scratch directory, and a global
       # hiera.yaml with nothing in it, so the host's Puppet configuration
-      # plays no part.
+      # plays no part; then the settings asked for.
+      #
+      # @raise [Error] for a setting Puppet does not know or a value it
+      #   refuses
       def settings!
         File.write(File.join(@scratch, 'hiera.yaml'), "---\nversion: 5\nhierarchy: []\n")
         %i[confdir vardir codedir logdir rundir statedir].each { |s| Puppet[s] = @scratch }
@@ -203,6 +211,12 @@ module Pupgrade
         Puppet[:environmentpath] = @scratch
         Puppet[:log_level] = 'warning'
         Puppet[:disable_warnings] = []
+        @settings.each do |name, value|
+          Puppet[name.to_sym] = value
+          Pupgrade.logger.debug("compile: setting #{name} = #{value.inspect}")
+        rescue ArgumentError, Puppet::Error => e
+          raise Error, "setting #{name}: #{e.message}"
+        end
       end
 
       def catalog_version

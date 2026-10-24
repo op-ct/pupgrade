@@ -228,6 +228,34 @@ RSpec.describe Pupgrade::CLI::Compile do
     expect(titles).to eq(['from alt', 'from before'])
   end
 
+  it 'applies Puppet settings from the flag and the config, and refuses one Puppet does not know' do
+    # Puppet 8 is strict about unknown variables unless told otherwise,
+    # twice: strict_variables makes one an error, and strict=error raises
+    # the warning it is otherwise
+    code = ['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "x${nope}": }']
+    status, text = run(code)
+    expect(status).to eq(1)
+    expect(text).to include('Unknown variable')
+    expect(run(code + ['--setting', 'strict_variables=false']).first).to eq(1)
+    expect(run(code + ['--setting', 'strict_variables=false', '--setting', 'strict=warning']).first).to eq(0)
+    expect(run(code + ['--setting', 'no_such_setting=1']).first).to eq(3)
+
+    cfg = File.join(@tmp, 'settings.yaml')
+    File.write(cfg, "compile:\n  factsets: [factsets]\n  cache_dir: #{out}\n  settings:\n    strict_variables: false\n    strict: warning\n")
+    captured = StringIO.new
+    original = $stdout
+    $stdout  = captured
+    status   = nil
+    begin
+      described_class.new.run(['-c', cfg, '-d', fixture.dir, '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "x${nope}": }'])
+    rescue SystemExit => e
+      status = e.status
+    ensure
+      $stdout = original
+    end
+    expect(status).to eq(0)
+  end
+
   it 'refuses missing factsets, a bad mock file, and an unknown leak policy' do
     expect(run(['--factsets', 'nope']).first).to eq(3)
     expect(run(['--mocks', 'nope.yaml']).first).to eq(1)

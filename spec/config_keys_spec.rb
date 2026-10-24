@@ -34,6 +34,7 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.on_leak'                  => Pupgrade::Compile::Session,
       'compile.vars'                     => Pupgrade::Compile::Session,
       'compile.server_facts'             => Pupgrade::Compile::Session,
+      'compile.settings'                 => Pupgrade::Compile::Session,
       'solve.order'                      => Pupgrade::CLI::Solve,
       'solve.include_heads'              => Pupgrade::CLI::Solve,
       'solve.compile_cache'              => Pupgrade::CLI::Solve,

@@ -101,6 +101,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - failures are displayed under the table
   * unanswered commands log at warning, mocked ones at `--on-mock LEVEL`
   * `pupgrade/compiler-mocks.yaml` is read by default when present
+  * `--setting NAME=VALUE` and `compile.settings` set Puppet settings for
+    the compile, such as `strict=error` and `strict_variables=true`
   * dynamic ENC and execution guard mocks: rules can return results based
     on a node's certname + facts, using YAML rules and/or Ruby logic
     - YAML rules in `enc.yaml` + `compiler-mocks.yaml` can reference the
