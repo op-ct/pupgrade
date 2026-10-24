@@ -257,14 +257,17 @@ module Pupgrade
       # is a subdirectory of a larger repository (a site module in the
       # control repo) is keyed on its own changes, not on every commit of
       # the repository. Named after the tag the checkout sits at, else its
-      # branch.
+      # branch. A tree is dirty when it differs from the commit in anything
+      # but a removed `spec/`, which r10k removes from every module it
+      # deploys (`exclude_spec`, its default).
       def checkout_commit(dir)
         sha = git(dir, 'log', '-1', '--format=%H', '--', '.', why: 'the commit the module is at')
         return nil if sha.nil? || sha.empty?
 
         name = git(dir, 'describe', '--tags', '--exact-match', sha, why: 'the tag at it')
         name ||= git(dir, 'symbolic-ref', '--short', '-q', 'HEAD', why: 'the branch checked out')
-        dirty = !git(dir, 'status', '--porcelain', '--', '.', why: 'uncommitted changes').to_s.strip.empty?
+        changes = git(dir, 'status', '--porcelain', '--', '.', why: 'uncommitted changes').to_s.lines.map(&:strip)
+        dirty   = changes.reject { |line| line.match?(%r{\AD\s+spec/}) }.any?
         Commit.new(sha: sha, name: name, tags: tags_at(dir, sha), dirty: dirty)
       end
 

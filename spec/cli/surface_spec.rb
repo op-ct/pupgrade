@@ -66,6 +66,19 @@ RSpec.describe Pupgrade::CLI::Surface do
     log = capture_log { run(described_class, ['concat']) }
     expect(log).not_to include('(cached)')
     File.delete(File.join(fixture.dir, 'modules/concat/manifests/extra.pp'))
+    # a spec/ directory removed, as r10k deploys modules, is not dirt
+    concat_dir = File.join(fixture.dir, 'modules/concat')
+    FileUtils.mkdir_p(File.join(concat_dir, 'spec'))
+    File.write(File.join(concat_dir, 'spec/concat_spec.rb'), "# a spec\n")
+    git = ->(*args) { system({ 'GIT_CONFIG_GLOBAL' => '/dev/null' }, 'git', '-C', concat_dir, '-c', 'user.name=x', '-c', 'user.email=x@example.com', '-c', 'commit.gpgsign=false', *args, exception: true) }
+    git.call('add', 'spec')
+    git.call('commit', '-q', '-m', 'spec')
+    FileUtils.rm_rf(File.join(concat_dir, 'spec'))
+    concat = fixture.surface_file('concat', '7.3.0', 'HEAD').sub('--HEAD', '')
+    log = capture_log { run(described_class, ['-vv', 'concat']) }
+    expect(log).to include("wrote #{cache}/#{concat}")
+    expect(concat).not_to include('dirty')
+    expect(capture_log { run(described_class, ['concat']) }).to include('(cached)')
 
     stamp = File.mtime(File.join(cache, concat))
     log = capture_log { run(described_class, ['concat']) }
