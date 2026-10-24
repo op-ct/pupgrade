@@ -40,9 +40,11 @@ module Pupgrade
 
       COLUMNS = %w[module current chosen candidates note].freeze
 
-      # How a note's status word is coloured when stdout takes colour; the
-      # part of each violation that stands in the way is red.
-      NOTE_STYLE = { solved: [:red], unresolved: [:yellow], moved: [:green] }.freeze
+      # How a note's status word is coloured when stdout takes colour:
+      # green for a module in the solved set, red for one nothing fits,
+      # cyan for one the user placed; the part of each violation that
+      # stands in the way is red.
+      NOTE_STYLE = { solved: [:green], unresolved: [:red], lever: [:cyan] }.freeze
 
       def execute(argv)
         reject_extra_args!(argv)
@@ -140,9 +142,9 @@ module Pupgrade
       # The status word coloured by outcome; a solved row says what stands in
       # its way; the part of each violation in the way is red.
       def note(choice)
-        style = if choice.solved? then :solved
-                elsif choice.unresolved? then :unresolved
-                else :moved
+        style = if choice.unresolved? then :unresolved
+                elsif %w[bumped held\ at\ current].include?(choice.note) then :lever
+                else :solved
                 end
         text = paint(choice.note, *NOTE_STYLE.fetch(style))
         text += ": #{choice.why}" if choice.why
