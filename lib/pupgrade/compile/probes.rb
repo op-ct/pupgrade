@@ -181,9 +181,19 @@ module Pupgrade
           return
         end
 
-        Pupgrade.logger.warning("puppet: #{@factset.certname}: #{msg.level}: #{msg.message}#{where}")
+        level = (msg.level == :warning) ? '' : "#{msg.level}: "
+        Pupgrade.logger.warning("puppet: #{@factset.certname}: #{level}#{one_line(msg.message)}#{where}")
         @warnings << { 'level' => msg.level.to_s, 'message' => msg.message.to_s,
                        'file' => msg.file && relative(msg.file.to_s), 'line' => msg.line }.compact
+      end
+
+      # Puppet's own location suffix, when it has one, says less than the
+      # message's file and line (often "file & line not available"), so a
+      # logged line does without it, and without Puppet's line breaks.
+      PUPPET_LOCATION = /\s*\((?:file & line not available|file: [^)]*|location: [^)]*)\)\s*\z/.freeze
+
+      def one_line(text)
+        text.to_s.sub(PUPPET_LOCATION, '').gsub(/\s*\n\s*/, ' ').strip
       end
 
       # Puppet logs a deprecation as its message, a newline, and the location.

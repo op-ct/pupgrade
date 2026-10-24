@@ -104,7 +104,8 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(log).not_to include('warning: puppet:')
     code = ['-v', '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web01*', '--code', 'notify { "x": } warning("from the manifest")']
     log = capture_log(level: :warning) { run(code) }
-    expect(log).to include('warning: puppet: web01.example.com: warning: from the manifest')
+    expect(log).to include('warning: puppet: web01.example.com: from the manifest')
+    expect(log).not_to include('file & line not available')
     expect(probes['leaks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'mocked',
                                      'location' => 'site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4' }])
     expect(probes['classes']).to include('apache' => { 'module' => 'apache' }, 'profile::base' => { 'module' => 'profile' })
