@@ -249,6 +249,8 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(text).to include('Unknown variable')
     expect(run(code + ['--setting', 'strict_variables=false']).first).to eq(1)
     expect(run(code + ['--setting', 'strict_variables=false', '--setting', 'strict=warning']).first).to eq(0)
+    # the session puts the process's settings back when it closes
+    expect([Puppet[:strict_variables], Puppet[:strict]]).to eq([true, :error])
     expect(run(code + ['--setting', 'no_such_setting=1']).first).to eq(3)
 
     cfg = File.join(@tmp, 'settings.yaml')

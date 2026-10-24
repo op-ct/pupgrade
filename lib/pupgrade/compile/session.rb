@@ -189,6 +189,7 @@ module Pupgrade
       end
 
       def close
+        (@restore || {}).each { |name, value| Puppet[name.to_sym] = value }
         FileUtils.rm_rf(@scratch) if @scratch
       end
 
@@ -214,7 +215,11 @@ module Pupgrade
         Puppet[:environmentpath] = @scratch
         Puppet[:log_level] = 'warning'
         Puppet[:disable_warnings] = []
+        # Puppet's settings are global to the process, so what a session sets
+        # it puts back when it closes
+        @restore = {}
         @settings.each do |name, value|
+          @restore[name] = Puppet[name.to_sym]
           Puppet[name.to_sym] = value
           Pupgrade.logger.debug("compile: setting #{name} = #{value.inspect}")
         rescue ArgumentError, Puppet::Error => e
