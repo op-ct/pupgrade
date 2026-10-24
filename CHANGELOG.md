@@ -150,6 +150,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   * `--compile` evaluates manifests first, using pupguard's mocks and guards
   * `--list` displays all factset nodes, alongside important facts and
     variables (config: `lookup.columns`)
+  * a `%{module_name}` tier applies as in a class of the key's module;
+    `--module-name NAME` names another, `""` none
   * exits `1` when the key is not found
 
 - **`pupgrade catalog list`**

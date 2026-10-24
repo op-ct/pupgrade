@@ -77,6 +77,18 @@ RSpec.describe Pupgrade::CLI::Lookup do
     expect(run(['--node', 'web01.example.com', '--compile', '--mocks', File.join(@tmp, 'none.yaml'), 'profile::base::banner']).first).to eq(3)
   end
 
+  it 'applies a %{module_name} tier as a class of the key\'s module would' do
+    hiera = File.join(fixture.dir, 'hiera.yaml')
+    File.write(hiera, File.read(hiera).sub("hierarchy:\n", "hierarchy:\n  - name: modules\n    path: \"modules/%{module_name}.yaml\"\n"))
+    FileUtils.mkdir_p(File.join(fixture.dir, 'data/modules'))
+    File.write(File.join(fixture.dir, 'data/modules/profile.yaml'), "profile::base::banner: from the module tier\n")
+    expect(run(['profile::base::banner', '--node', 'web01.example.com'])).to eq([0, "--- from the module tier\n"])
+    expect(run(['profile::base::banner', '--node', 'web01.example.com', '--module-name', ''])).to eq([0, "--- RedHat on web01.example.com\n"])
+    expect(run(['profile::base::banner', '--node', 'web01.example.com', '--module-name', 'role'])).to eq([0, "--- RedHat on web01.example.com\n"])
+    _, out = run(['profile::base::banner', '--node', 'web01.example.com', '--explain'])
+    expect(out).to include('modules/profile.yaml')
+  end
+
   it 'lists the nodes with the facts and variables that place them' do
     status, out = run(['--list'])
     expect(status).to eq(0)

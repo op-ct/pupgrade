@@ -395,7 +395,9 @@ pupgrade lookup --list                         # every node with the facts and v
 ```
 
 `--compile` evaluates the manifests first, for a hierarchy that keys on a
-variable the manifests set.
+variable the manifests set. A `%{module_name}` tier applies as it would in
+a class of the key's module, `profile` for `profile::ssh::banner`;
+`--module-name` names another, or none.
 
 ## Scenarios
 

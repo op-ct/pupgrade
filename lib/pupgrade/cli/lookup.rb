@@ -50,11 +50,13 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         session = build_session(repo, 'lookup')
         explain = @options[:explain] || explain_options
         format  = @options[:format] || (explain ? 's' : 'yaml')
-        ::Pupgrade.logger.notice("lookup: #{keys.join(', ')} as #{factset.certname}#{', after compiling the manifests' if @options[:compile]}")
+        mod     = module_name_for(keys)
+        ::Pupgrade.logger.notice("lookup: #{keys.join(', ')} as #{factset.certname}#{" in module #{mod}" if mod}#{', after compiling the manifests' if @options[:compile]}")
         status = 0
         begin
-          session.scope(factset, compile: @options[:compile]) do |scope, node|
+          session.scope(factset, compile: @options[:compile]) do |top, node|
             ::Pupgrade.logger.info("lookup: #{factset.certname}: variables #{node.vars.inspect}")
+            scope = class_scope(top, mod)
             invocation = Puppet::Pops::Lookup::Invocation.new(scope, {}, {}, explain ? Puppet::Pops::Lookup::Explainer.new(explain_options, explain_options && !@options[:explain]) : nil)
             begin
               value = Puppet::Pops::Lookup.lookup(keys, nil, nil, false, merge_options, invocation)
@@ -79,6 +81,7 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         declare_repo_and_factsets(o)
         o.on('-n', '--node=CERTNAME', 'The factset to look up as, by certname (case-insensitive)') { |v| @options[:node] = v }
         o.on('--[no-]compile', 'Compile the manifests first, so variables they set reach the hierarchy') { |v| @options[:compile] = v }
+        o.on('--module-name=NAME', 'The module $module_name names, as in a class of it (default: the key\'s first segment; "" for none)') { |v| @options[:module_name] = v }
         o.on('--explain', 'Explain how the lookup went and where the value came from, as `puppet lookup --explain`') { @options[:explain] = true }
         o.on('--explain-options', 'Explain the lookup_options for the key, as `puppet lookup --explain-options`') { @options[:explain_options] = true }
         o.on('--merge=STRATEGY', MERGES, "How to merge values found at several levels (#{MERGES.join(', ')}; default: first)") { |v| @options[:merge] = v }
@@ -100,6 +103,28 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         found = load_factsets(repo, 'lookup').select { |f| f.certname.casecmp?(certname) }
         fatal!("lookup: no factset is #{certname.inspect} (--list shows them)", 3) if found.empty?
         found.first
+      end
+
+      # The module a class of the key's namespace would set $module_name to,
+      # so a `%{module_name}` tier applies as it does in a compile; nil for
+      # a key with no namespace, or when told none.
+      #
+      # @return [String, nil]
+      def module_name_for(keys)
+        return (@options[:module_name].empty? ? nil : @options[:module_name]) if @options.key?(:module_name)
+
+        first = keys.first.to_s
+        first.include?('::') ? first.split('::').first : nil
+      end
+
+      # A scope below the top one with $module_name set, as a class scope
+      # has it; the top scope itself when there is no module.
+      def class_scope(top, mod)
+        return top unless mod
+
+        scope = top.newscope
+        scope['module_name'] = mod
+        scope
       end
 
       def merge_options
