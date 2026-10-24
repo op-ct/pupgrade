@@ -50,37 +50,47 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         session = build_session(repo, 'lookup')
         explain = @options[:explain] || explain_options
         format  = @options[:format] || (explain ? 's' : 'yaml')
-        mod     = module_name_for(keys)
-        ::Pupgrade.logger.notice("lookup: #{keys.join(', ')} as #{factset.certname}#{" in module #{mod}" if mod}#{', after compiling the manifests' if @options[:compile]}")
-        status = 0
+        ::Pupgrade.logger.notice("lookup: #{keys.join(', ')} as #{factset.certname}#{', after compiling the manifests' if @options[:compile]}")
+        found = false
         begin
           session.scope(factset, compile: @options[:compile]) do |top, node|
             ::Pupgrade.logger.info("lookup: #{factset.certname}: variables #{node.vars.inspect}")
-            scope = class_scope(top, mod)
-            invocation = Puppet::Pops::Lookup::Invocation.new(scope, {}, {}, explain ? Puppet::Pops::Lookup::Explainer.new(explain_options, explain_options && !@options[:explain]) : nil)
-            begin
-              value = Puppet::Pops::Lookup.lookup(keys, nil, nil, false, merge_options, invocation)
-              puts render(value, format) unless explain
-            rescue Puppet::DataBinding::LookupError => e
-              invocation.report_text { e.message }
-              puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
-              # not found is an answer; anything else is the lookup failing
-              fatal!("lookup: #{e.message}", 3) unless e.message.include?('did not find a value')
+            # the first key with a value answers, each in its own module's scope
+            keys.each do |key|
+              mod   = module_name_for(key)
+              scope = class_scope(top, mod)
+              ::Pupgrade.logger.debug("lookup: #{key}#{" in module #{mod}" if mod}")
+              invocation = Puppet::Pops::Lookup::Invocation.new(scope, {}, {}, explain ? Puppet::Pops::Lookup::Explainer.new(explain_options, explain_options && !@options[:explain]) : nil)
+              begin
+                value = Puppet::Pops::Lookup.lookup([key], nil, nil, false, merge_options, invocation)
+              rescue Puppet::DataBinding::LookupError => e
+                invocation.report_text { e.message }
+                print_explanation(invocation, format) if explain
+                # not found is an answer; anything else is the lookup failing
+                fatal!("lookup: #{e.message}", 3) unless e.message.include?('did not find a value')
 
-              ::Pupgrade.logger.warning("lookup: #{e.message}") unless explain
-              status = 1
-              next
-            rescue ArgumentError, Puppet::Error => e
-              # a value that fails to interpolate (an undefined variable)
-              puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
-              fatal!("lookup: #{e.message}", 3)
+                ::Pupgrade.logger.info("lookup: #{e.message}") unless explain
+                next
+              rescue ArgumentError, Puppet::Error => e
+                # a value that fails to interpolate (an undefined variable)
+                print_explanation(invocation, format) if explain
+                fatal!("lookup: #{e.message}", 3)
+              end
+              ::Pupgrade.logger.notice("lookup: #{key} answered#{" in module #{mod}" if mod}") if keys.size > 1 || mod
+              print_explanation(invocation, format) if explain
+              puts render(value, format) unless explain
+              found = true
+              break
             end
-            puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
           end
         ensure
           session.close
         end
-        exit status
+        return exit(0) if found
+
+        names = (keys.size == 1) ? "the name '#{keys.first}'" : "any of the names [#{keys.map { |k| "'#{k}'" }.join(', ')}]"
+        ::Pupgrade.logger.warning("lookup: Function lookup() did not find a value for #{names}") unless explain
+        exit 1
       rescue ::Pupgrade::Compile::Leak, Puppet::Error => e
         fatal!("lookup: #{e.message}", 3)
       end
@@ -120,11 +130,14 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
       # a key with no namespace, or when told none.
       #
       # @return [String, nil]
-      def module_name_for(keys)
+      def module_name_for(key)
         return (@options[:module_name].empty? ? nil : @options[:module_name]) if @options.key?(:module_name)
 
-        first = keys.first.to_s
-        first.include?('::') ? first.split('::').first : nil
+        key.to_s.include?('::') ? key.to_s.split('::').first : nil
+      end
+
+      def print_explanation(invocation, format)
+        puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format))
       end
 
       # A scope below the top one with $module_name set, as a class scope

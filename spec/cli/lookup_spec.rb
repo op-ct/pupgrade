@@ -87,6 +87,8 @@ RSpec.describe Pupgrade::CLI::Lookup do
     expect(run(['profile::base::banner', '--node', 'web01.example.com', '--module-name', 'role'])).to eq([0, "--- RedHat on web01.example.com\n"])
     _, out = run(['profile::base::banner', '--node', 'web01.example.com', '--explain'])
     expect(out).to include('modules/profile.yaml')
+    # each key in its own module's scope: a miss under one does not drag the next under it
+    expect(run(['role::nope', 'profile::base::banner', '--node', 'web01.example.com'])).to eq([0, "--- from the module tier\n"])
 
     allow(Driftless).to receive(:logger).and_call_original
     status = nil
