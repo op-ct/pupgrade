@@ -397,7 +397,9 @@ pupgrade lookup --list                         # every node with the facts and v
 `--compile` evaluates the manifests first, for a hierarchy that keys on a
 variable the manifests set. A `%{module_name}` tier applies as it would in
 a class of the key's module, `profile` for `profile::ssh::banner`;
-`--module-name` names another, or none.
+`--module-name` names another, or none. Exit 1 is a key not found; 3 is a
+lookup that failed, a backend that could not decrypt or parse, with the
+error printed.
 
 ## Scenarios
 

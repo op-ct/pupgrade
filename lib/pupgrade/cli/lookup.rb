@@ -63,7 +63,13 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
               puts render(value, format) unless explain
             rescue Puppet::DataBinding::LookupError => e
               invocation.report_text { e.message }
+              puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
+              # not found is an answer; anything else is the lookup failing
+              fatal!("lookup: #{e.message}", 3) unless e.message.include?('did not find a value')
+
+              ::Pupgrade.logger.warning("lookup: #{e.message}") unless explain
               status = 1
+              next
             end
             puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
           end

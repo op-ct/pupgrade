@@ -152,7 +152,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     variables (config: `lookup.columns`)
   * a `%{module_name}` tier applies as in a class of the key's module;
     `--module-name NAME` names another, `""` none
-  * exits `1` when the key is not found
+  * exits `1` when the key is not found, `3` when the lookup fails (a
+    backend error is printed, not swallowed)
 
 - **`pupgrade catalog list`**
 
