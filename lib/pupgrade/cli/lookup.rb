@@ -70,6 +70,10 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
               ::Pupgrade.logger.warning("lookup: #{e.message}") unless explain
               status = 1
               next
+            rescue ArgumentError, Puppet::Error => e
+              # a value that fails to interpolate (an undefined variable)
+              puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
+              fatal!("lookup: #{e.message}", 3)
             end
             puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format)) if explain
           end

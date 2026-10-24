@@ -99,6 +99,12 @@ RSpec.describe Pupgrade::CLI::Lookup do
     expect(status).to eq(3)
     expect(log).to include('FATAL: lookup:')
     File.write(File.join(fixture.dir, 'data/modules/profile.yaml'), "profile::base::banner: from the module tier\n")
+
+    # a value interpolating an undefined variable fails the lookup, in one line
+    File.write(File.join(fixture.dir, 'data/common.yaml'), File.read(File.join(fixture.dir, 'data/common.yaml')) + "profile::base::legacy: \"%{::nope}\"\n")
+    log = capture_log(level: :warning) { status, = run(['profile::base::legacy', '--node', 'web01.example.com']) }
+    expect(status).to eq(3)
+    expect(log).to include("FATAL: lookup: Undefined variable '::nope'")
   end
 
   it 'lists the nodes with the facts and variables that place them' do
