@@ -35,10 +35,8 @@ module Pupgrade
                         'version forward to the first that fits, driven by --bump'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Whether the tip of a tag-pinned module\'s tracking branch (modules.branchfile) is a candidate'
-      config_key 'solve.catalogs_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
-                 about: 'A `compile` output directory (catalogs and probe records) to read instead of ' \
-                        'compile.catalogs_dir, relative to the control repo: evidence of what the site uses, for ' \
-                        '--prune-unused. Unset, the last compile is read'
+      config_key 'solve.compile_cache', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` cache to read instead of compile.cache_dir: evidence of what the site uses, for --prune-unused'
 
       COLUMNS = %w[module current chosen candidates note].freeze
 
@@ -51,10 +49,10 @@ module Pupgrade
         repo = @options[:repo_dir] ? ::Driftless::ControlRepo.new(@options[:repo_dir]) : ::Driftless::ControlRepo.detect(Dir.pwd)
         fatal!('solve requires --repo-dir (auto-detection did not supply it)', help: true) unless repo
         fatal!("repo-dir not readable: #{repo.dir}", 3) unless repo.readable?
-        dir = catalogs_dir(repo)
+        dir = compile_cache(repo)
         if @options[:prune_unused] && dir.nil?
-          fatal!('solve: --prune-unused needs a `compile` output directory: --catalogs-dir DIR, solve.catalogs_dir, or ' \
-                 "compile.catalogs_dir (#{@options[:compile_catalogs_dir]}) once `compile` has written it", help: true)
+          fatal!('solve: --prune-unused needs a `compile` cache: --compile-cache DIR, solve.compile_cache, or ' \
+                 "compile.cache_dir (#{@options[:compile_cache_dir]}) once `compile` has written it", help: true)
         end
 
         inventory  = ::Driftless::ModuleInventory.new(repo.dir)
@@ -110,7 +108,7 @@ module Pupgrade
 
         o.separator ''
         o.separator 'Pruning by what the site uses:'
-        o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: solve.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
+        o.on('--compile-cache=DIR', 'The `compile` cache to read (config: solve.compile_cache, else compile.cache_dir)') { |v| @options[:compile_cache] = v }
         o.on('--prune-unused', 'Ignore dependency edges to and from modules the catalogs show unused') { @options[:prune_unused] = true }
 
         o.separator ''
@@ -217,13 +215,13 @@ module Pupgrade
         text
       end
 
-      # --catalogs-dir or the configured directory, else compile's when it
+      # --compile-cache or the configured directory, else compile's when it
       # is there and the solve will read it.
-      def catalogs_dir(repo)
-        return File.expand_path(@options[:catalogs_dir], repo.dir) if @options[:catalogs_dir]
+      def compile_cache(repo)
+        return File.expand_path(@options[:compile_cache], repo.dir) if @options[:compile_cache]
         return nil unless @options[:prune_unused]
 
-        default = File.expand_path(@options[:compile_catalogs_dir], repo.dir)
+        default = File.expand_path(@options[:compile_cache_dir], repo.dir)
         File.directory?(default) ? default : nil
       end
 
@@ -255,8 +253,8 @@ module Pupgrade
           branchfile:       cfg.dig('modules', 'branchfile'),
           order:            cfg.dig('solve', 'order') || 'newest',
           include_heads:    cfg.dig('solve', 'include_heads') || false,
-          catalogs_dir:         cfg.dig('solve', 'catalogs_dir'),
-          compile_catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
+          compile_cache:     cfg.dig('solve', 'compile_cache'),
+          compile_cache_dir: cfg.dig('compile', 'cache_dir') || 'pupgrade/cache/catalogs',
           exclude:          {
             'modules'          => cfg.dig('modules', 'exclude_modules'),
             'dependencies'     => cfg.dig('modules', 'exclude_dependencies'),

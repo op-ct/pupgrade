@@ -34,10 +34,8 @@ module Pupgrade
       positional '<puppetfile>'
       desc 'What a proposed Puppetfile would change for the site: surface changes mapped to their uses'
 
-      config_key 'impact.catalogs_dir', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
-                 about: 'A `compile` output directory (catalogs and probe records) to read instead of ' \
-                        'compile.catalogs_dir, relative to the control repo: evidence of what each node uses. Unset, ' \
-                        'the last compile is read'
+      config_key 'impact.compile_cache', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
+                 about: 'A `compile` cache to read instead of compile.cache_dir: evidence of what each node uses'
 
       COLUMNS         = %w[module impact subject where detail].freeze
       SUMMARY_COLUMNS = %w[module from to commits findings used].freeze
@@ -100,7 +98,7 @@ module Pupgrade
         o.on('--propose=PUPPETFILE', 'The proposed Puppetfile, as `check` takes it; the same as giving it first') { |v| @options[:propose] = v }
         o.on('--cache-dir=DIR', 'Where surface documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
         o.on('--refresh', 'Extract the surfaces again, ignoring the cache') { @options[:refresh] = :all }
-        o.on('--catalogs-dir=DIR', 'A `compile` output directory (config: impact.catalogs_dir, else compile.catalogs_dir)') { |v| @options[:catalogs_dir] = v }
+        o.on('--compile-cache=DIR', 'The `compile` cache to read (config: impact.compile_cache, else compile.cache_dir)') { |v| @options[:compile_cache] = v }
         o.on('--no-catalogs', 'Read no catalogs: every change is a finding with its use unknown') { @options[:no_catalogs] = true }
 
         o.separator ''
@@ -127,9 +125,9 @@ module Pupgrade
       def load_evidence(repo)
         return nil if @options[:no_catalogs]
 
-        dir = @options[:catalogs_dir]
-        if dir.nil? && File.directory?(File.expand_path(@options[:compile_catalogs_dir], repo.dir))
-          dir = @options[:compile_catalogs_dir]
+        dir = @options[:compile_cache]
+        if dir.nil? && File.directory?(File.expand_path(@options[:compile_cache_dir], repo.dir))
+          dir = @options[:compile_cache_dir]
         end
         return nil unless dir
 
@@ -259,8 +257,8 @@ module Pupgrade
       def config_defaults
         cfg = ::Pupgrade.config
         {
-          catalogs_dir:         cfg.dig('impact', 'catalogs_dir'),
-          compile_catalogs_dir: cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
+          compile_cache:     cfg.dig('impact', 'compile_cache'),
+          compile_cache_dir: cfg.dig('compile', 'cache_dir') || 'pupgrade/cache/catalogs',
           cache_dir:            cfg.dig('surface', 'cache_dir') || 'pupgrade/cache/api_surfaces',
         }.compact
       end

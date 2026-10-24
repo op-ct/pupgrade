@@ -39,7 +39,7 @@ module Pupgrade
 
       config_key 'compile.factsets', type: :array, default: [], example: ['spec/factsets'],
                  about: 'Factset files or directories (onceover layout or a plain facts hash), relative to the control repo'
-      config_key 'compile.catalogs_dir', type: :string, default: 'pupgrade/cache/catalogs',
+      config_key 'compile.cache_dir', type: :string, default: 'pupgrade/cache/catalogs',
                  about: 'Cache location for <certname>/{catalog,probes}.json files'
 
       COLUMNS = %w[certname resources classes warnings mocks leaks status].freeze
@@ -60,7 +60,7 @@ module Pupgrade
         factsets = load_factsets(repo, 'compile')
         ::Pupgrade.logger.notice("compile: #{factsets.size} factset(s) against #{repo.dir}")
         session  = build_session(repo, 'compile')
-        out      = File.expand_path(@options[:catalogs_dir], repo.dir)
+        out      = File.expand_path(@options[:cache_dir], repo.dir)
         rows     = []
         failures = []
         progress = @options[:progress].nil? ? $stdout.tty? : @options[:progress]
@@ -99,7 +99,7 @@ module Pupgrade
 
       def configure_parser(o)
         declare_repo_and_factsets(o)
-        o.on('-o', '--catalogs-dir=DIR', 'Cache location for <certname>/{catalog,probes}.json files') { |v| @options[:catalogs_dir] = v }
+        o.on('-o', '--cache-dir=DIR', 'Cache location for <certname>/{catalog,probes}.json files (config: compile.cache_dir)') { |v| @options[:cache_dir] = v }
         o.on('--certname=GLOB[,…]', Array, 'Compile factsets with matching certnames') { |v| accumulate(:certnames, v) }
         o.on('-f', '--[no-]fail-fast', 'Stop at the first compile that fails') { |v| @options[:fail_fast] = v }
         o.on('--[no-]progress', 'Print a green P or red F per compile as it goes (default: when stdout is a terminal)') { |v| @options[:progress] = v }

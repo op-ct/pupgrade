@@ -25,7 +25,7 @@ RSpec.describe Pupgrade::ConfigKeys do
       'modules.check_sort'               => Pupgrade::CLI::Check,
       'compile.factsets'                 => Pupgrade::CLI::Compile,
       'lookup.columns'                   => Pupgrade::CLI::Lookup,
-      'compile.catalogs_dir'             => Pupgrade::CLI::Compile,
+      'compile.cache_dir'                => Pupgrade::CLI::Compile,
       'compile.environment'              => Pupgrade::Compile::Session,
       'compile.manifest'                 => Pupgrade::Compile::Session,
       'compile.prepend_file'             => Pupgrade::Compile::Session,
@@ -36,8 +36,8 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.server_facts'             => Pupgrade::Compile::Session,
       'solve.order'                      => Pupgrade::CLI::Solve,
       'solve.include_heads'              => Pupgrade::CLI::Solve,
-      'solve.catalogs_dir'               => Pupgrade::CLI::Solve,
-      'impact.catalogs_dir'              => Pupgrade::CLI::Impact,
+      'solve.compile_cache'              => Pupgrade::CLI::Solve,
+      'impact.compile_cache'             => Pupgrade::CLI::Impact,
       'surface.cache_dir'                => Pupgrade::CLI::Surface,
     )
     expect(described_class.subsystems.sort).to eq(%w[compile impact logging lookup modules output solve surface])

@@ -155,7 +155,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     exclusions = File.join(@tmp, 'exclusions.yaml')
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log do
-      status, out = run(['--hold', 'puppetlabs-apt', '--catalogs-dir', evidence, '--prune-unused', '--write-exclusions-file', exclusions])
+      status, out = run(['--hold', 'puppetlabs-apt', '--compile-cache', evidence, '--prune-unused', '--write-exclusions-file', exclusions])
     end
     expect(status).to eq(1)
     expect(rows(out)['puppet-redis']).to eq(['tag v8.8.0', 'v10.0.0', '2', 'newest'])
@@ -167,7 +167,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(log).to include('solve: puppetlabs-yumrepo_core -> stdlib: used, but not a declared dependency')
     expect(log).to include('evidence from 1 node(s)')
     # read back, the file covers everything the result still breaks
-    status, out = run(['--hold', 'puppetlabs-apt', '--catalogs-dir', evidence, '--prune-unused', '--exclusion-file', exclusions])
+    status, out = run(['--hold', 'puppetlabs-apt', '--compile-cache', evidence, '--prune-unused', '--exclusion-file', exclusions])
     expect(status).to eq(0)
     expect(out).not_to include('broken before the solve')
     expect(run(['--exclusion-file', File.join(@tmp, 'nope.yaml')]).first).to eq(3)
@@ -176,7 +176,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(rows(out)).not_to have_key('puppetlabs-apt')
     expect(rows(out)['puppet-redis'].last).to include('broken before the solve: needs puppetlabs/apt >= 4.1.0 < 9.0.0, but apt is not on the modulepath')
     expect(run(['--prune-unused']).first).to eq(2)
-    expect(run(['--catalogs-dir', File.join(@tmp, 'nope')]).first).to eq(3)
+    expect(run(['--compile-cache', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)
   end
 end

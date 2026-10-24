@@ -214,7 +214,7 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     set of exclusions can be tried before the config adopts it
   * exits `1` when any module is unresolved, or a constraint broken before
     the solve is still broken and not excluded
-  * config subsystem `solve`: `order`, `include_heads`, `catalogs_dir`
+  * config subsystem `solve`: `order`, `include_heads`, `compile_cache`
 
 - **`pupgrade impact`**` [options] PUPPETFILE`
 
@@ -229,7 +229,7 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   * `--modules`, `--impacts`, `--all` filters
   * `use unknown` and `no catalogs` red, detail verbs coloured
   * exits `1` when any finding has a use
-  * config subsystem `impact`: `catalogs_dir`
+  * config subsystem `impact`: `compile_cache`
 
 - **`pupgrade config`**` new|print`
 

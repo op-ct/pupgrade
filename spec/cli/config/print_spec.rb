@@ -61,7 +61,7 @@ RSpec.describe Pupgrade::CLI::Config::Print do
     expect(YAML.safe_load(out)).to eq('order' => 'oldest', 'include_heads' => false)
     expect(YAML.safe_load(run(['-d']).last).keys).to include('compile', 'surface', 'solve')
     expect(YAML.safe_load(run([]).last).keys).not_to include('compile')
-    expect(run(['compile.catalogs_dir'])).to eq([0, "pupgrade/cache/catalogs\n"])
+    expect(run(['compile.cache_dir'])).to eq([0, "pupgrade/cache/catalogs\n"])
     expect(run(['solve.nope']).first).to eq(3)
     expect(run(['nope']).first).to eq(3)
     expect(run(%w[a b]).first).to eq(2)

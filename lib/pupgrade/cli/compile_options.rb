@@ -139,7 +139,7 @@ module Pupgrade
         cfg = ::Pupgrade.config
         {
           factsets:      cfg.dig('compile', 'factsets'),
-          catalogs_dir:  cfg.dig('compile', 'catalogs_dir') || 'pupgrade/cache/catalogs',
+          cache_dir:     cfg.dig('compile', 'cache_dir') || 'pupgrade/cache/catalogs',
           environment:   cfg.dig('compile', 'environment') || 'production',
           manifest:      cfg.dig('compile', 'manifest'),
           prepend_file:  cfg.dig('compile', 'prepend_file'),

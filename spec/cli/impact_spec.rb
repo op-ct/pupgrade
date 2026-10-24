@@ -59,7 +59,7 @@ RSpec.describe Pupgrade::CLI::Impact do
   before(:each) { silence_logger }
 
   it 'maps each surface change to the nodes, resources, and call sites the evidence shows' do
-    status, out = run(['--catalogs-dir', catalogs])
+    status, out = run(['--compile-cache', catalogs])
     expect(status).to eq(1)
     rows = cells(out).drop(1).map { |r| r.first(4) }
     expect(rows).to eq([
@@ -74,14 +74,14 @@ RSpec.describe Pupgrade::CLI::Impact do
   end
 
   it 'summarises per module with the commits crossed, and prints the history on request' do
-    _, out = run(['--catalogs-dir', catalogs, '--summary'])
+    _, out = run(['--compile-cache', catalogs, '--summary'])
     expect(cells(out)).to eq([
       %w[module from to commits findings used],
       ['puppetlabs-apache', 'tag v10.1.1', 'tag v12.0.0', '2', '1', '1'],
       ['puppetlabs-firewall', 'tag v5.0.0', 'tag v8.0.0', '3', '1', '1'],
       ['puppetlabs-stdlib', 'tag v8.6.0', 'tag v9.6.0', '3', '3', '3'],
     ])
-    _, out = run(['--catalogs-dir', catalogs, '--modules', 'puppetlabs-stdlib', '--gitlog', '--changelog'])
+    _, out = run(['--compile-cache', catalogs, '--modules', 'puppetlabs-stdlib', '--gitlog', '--changelog'])
     expect(out).to include('puppetlabs-stdlib: tag v8.6.0 -> tag v9.6.0, 3 commit(s)', 'Release 9.0.0', '## 9.6.0')
     expect(out).not_to include('puppetlabs-apache:')
   end
@@ -91,10 +91,10 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(status).to eq(0)
     expect(cells(out).drop(1).map { |r| [r[1], r[3]] }).to all(match([a_string_matching(/\A(class|type|function)-/), 'use unknown']))
     expect(cells(out).drop(1).map { |r| r[1] }).to include('type-alias-changed')
-    _, out = run(['--catalogs-dir', catalogs, '--impacts', 'function-removed'])
+    _, out = run(['--compile-cache', catalogs, '--impacts', 'function-removed'])
     expect(cells(out).drop(1).map { |r| r[2] }).to eq(['legacy_shout'])
     expect(run(['--impacts', 'bogus']).first).to eq(2)
-    expect(run(['--catalogs-dir', File.join(@tmp, 'nope')]).first).to eq(3)
+    expect(run(['--compile-cache', File.join(@tmp, 'nope')]).first).to eq(3)
   end
 
   it 'keeps the surfaces it reads in the cache, reuses them, and takes --propose as well as the positional' do

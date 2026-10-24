@@ -208,7 +208,7 @@ RSpec.describe Pupgrade::CLI::Compile do
         manifest: alt.pp
         prepend_file: before.pp
         mocks: pupgrade/compiler-mocks.yaml
-        catalogs_dir: #{out}
+        cache_dir: #{out}
         vars:
           role: db
     YAML
