@@ -1,0 +1,6 @@
+---
+commands:
+  - match: '^hostname'
+    stdout: "mocked.example.com\n"
+facts:
+  simplib_fips: false

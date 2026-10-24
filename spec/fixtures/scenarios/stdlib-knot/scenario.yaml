@@ -1,0 +1,525 @@
+---
+# The stdlib major-bump knot: pupgrade's spec fixture, as data.
+#
+# Old releases depend on stdlib < 9 and new ones on stdlib >= 9. The deployed
+# state holds every conflict kind; Puppetfile.proposed bumps stdlib and a few
+# modules with it, introducing many conflicts and resolving a few. Built by
+# spec/support/scenario_builder.rb; see the format notes there. Keys that
+# start with `.` only hold anchors.
+
+.shared:
+  operatingsystems:
+    os_el_old: &os_el_old { RedHat: ['7', '8'], CentOS: ['7'], Ubuntu: ['18.04', '20.04'], Debian: ['10', '11'] }
+    os_el: &os_el { RedHat: ['8', '9'], Rocky: ['8', '9'], Ubuntu: ['20.04', '22.04'], Debian: ['11', '12'] }
+    os_deb: &os_deb { Ubuntu: ['20.04', '22.04'], Debian: ['11', '12'] }
+    os_rh: &os_rh { RedHat: ['7', '8', '9'], CentOS: ['7'], OracleLinux: ['7', '8', '9'] }
+    os_foss: &os_foss { Rocky: ['8', '9'], AlmaLinux: ['8', '9'], CentOS: ['7'] }
+  ranges:
+    stdlib_old: &stdlib_old '>= 4.13.1 < 9.0.0'
+    stdlib_new: &stdlib_new '>= 9.0.0 < 10.0.0'
+    puppet_old: &puppet_old '>= 6.0.0 < 8.0.0'
+    puppet_mid: &puppet_mid '>= 7.0.0 < 9.0.0'
+    puppet_new: &puppet_new '>= 8.0.0 < 9.0.0'
+
+forge: 'https://forge.example.com'
+
+# What a release declares when it does not say.
+release_defaults:
+  puppet: *puppet_mid
+  operatingsystems: *os_el_old
+
+# In build order: commit dates count up across the whole build, so the
+# order is part of every sha.
+modules:
+  - name: puppetlabs-stdlib
+    deployed: '8.6.0'
+    releases:
+      - version: '8.6.0'
+      - version: '9.0.0'
+        operatingsystems: *os_el
+        remove:
+          - lib/puppet/parser/functions/legacy_shout.rb
+      - version: '9.4.0'
+        operatingsystems: *os_el
+      - version: '9.6.0'
+        operatingsystems: *os_el
+  - name: puppetlabs-concat
+    deployed: '7.3.0'
+    releases:
+      - version: '7.3.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '9.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-apt
+    deployed: '8.5.0'
+    releases:
+      - version: '8.5.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        operatingsystems: *os_deb
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_deb
+      - version: '9.4.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_deb
+  - name: puppetlabs-inifile
+    deployed: '5.4.0'
+    releases:
+      - version: '5.4.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '6.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '6.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-apache
+    deployed: '10.1.1'
+    unreleased: true
+    releases:
+      - version: '10.1.1'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/concat: '>= 6.4.0 < 8.0.0'
+      - version: '11.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        operatingsystems: *os_el
+      - version: '12.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppetlabs-postgresql
+    deployed: '8.3.0'
+    releases:
+      - version: '8.3.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/concat: '>= 4.1.0 < 8.0.0'
+          puppetlabs/apt: '>= 2.0.0 < 9.0.0'
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+          puppetlabs/apt: *stdlib_new
+        operatingsystems: *os_el
+      - version: '10.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+          puppetlabs/apt: *stdlib_new
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppetlabs-mysql
+    deployed: '13.3.0'
+    releases:
+      - version: '13.3.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '15.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-firewall
+    deployed: '5.0.0'
+    releases:
+      - version: '5.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        puppet: *puppet_old
+      - version: '6.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '8.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppetlabs-ntp
+    deployed: '9.2.0'
+    releases:
+      - version: '9.2.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '10.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '10.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-motd
+    deployed: '6.3.0'
+    releases:
+      - version: '6.3.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-vcsrepo
+    deployed: '5.4.0'
+    releases:
+      - version: '5.4.0'
+      - version: '6.0.0'
+        operatingsystems: *os_el
+      - version: '6.1.0'
+        operatingsystems: *os_el
+  - name: puppetlabs-java
+    deployed: '9.0.0'
+    releases:
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '10.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '11.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-puppetdb
+    deployed: '7.13.0'
+    releases:
+      - version: '7.13.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/postgresql: '>= 6.5.0 < 9.0.0'
+          puppetlabs/firewall: '>= 1.1.3 < 6.0.0'
+          puppetlabs/inifile: '>= 1.1.3 < 6.0.0'
+      - version: '8.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/postgresql: '>= 9.0.0 < 11.0.0'
+          puppetlabs/firewall: *puppet_mid
+          puppetlabs/inifile: '>= 6.0.0 < 7.0.0'
+        operatingsystems: *os_el
+      - version: '8.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/postgresql: '>= 9.0.0 < 11.0.0'
+          puppetlabs/firewall: *puppet_mid
+          puppetlabs/inifile: '>= 6.0.0 < 7.0.0'
+        operatingsystems: *os_el
+  - name: puppetlabs-tomcat
+    deployed: '7.0.0'
+    releases:
+      - version: '6.3.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/concat: '>= 1.1.1 < 8.0.0'
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        operatingsystems: *os_el
+      - version: '7.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppetlabs-yumrepo_core
+    deployed: '2.0.0'
+    releases:
+      - version: '2.0.0'
+      - version: '2.1.0'
+        operatingsystems: *os_el
+  - name: puppet-nginx
+    deployed: '4.4.0'
+    branch: master
+    releases:
+      - version: '4.4.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/concat: '>= 4.1.0 < 8.0.0'
+      - version: '5.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        operatingsystems: *os_el
+      - version: '6.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppet-archive
+    deployed: '6.1.2'
+    branch: master
+    releases:
+      - version: '6.1.2'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+      - version: '7.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppet-systemd
+    deployed: '4.2.0'
+    branch: master
+    releases:
+      - version: '4.2.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/inifile: '>= 4.0.0 < 6.0.0'
+      - version: '5.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/inifile: '>= 6.0.0 < 7.0.0'
+        operatingsystems: *os_el
+      - version: '6.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/inifile: '>= 6.0.0 < 7.0.0'
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppet-epel
+    deployed: '4.1.0'
+    branch: master
+    releases:
+      - version: '4.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        operatingsystems: *os_rh
+      - version: '5.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_rh
+  - name: puppet-selinux
+    deployed: '3.4.0'
+    branch: master
+    unreleased: true
+    releases:
+      - version: '3.4.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        operatingsystems: *os_rh
+      - version: '4.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_rh
+      - version: '4.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_rh
+  - name: puppet-logrotate
+    deployed: '6.0.0'
+    branch: master
+    releases:
+      - version: '6.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppet-redis
+    deployed: '8.8.0'
+    branch: master
+    releases:
+      - version: '8.8.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/apt: '>= 4.1.0 < 9.0.0'
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/apt: *stdlib_new
+        operatingsystems: *os_el
+      - version: '10.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/apt: *stdlib_new
+        operatingsystems: *os_el
+  - name: puppet-kafka
+    deployed: '8.1.0'
+    branch: master
+    releases:
+      - version: '8.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppet/zookeeper: '>= 0.5.0 < 2.0.0'
+          puppet/archive: '>= 4.0.0 < 7.0.0'
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppet/zookeeper: '>= 1.0.0 < 2.0.0'
+          puppet/archive: '>= 7.0.0 < 8.0.0'
+        operatingsystems: *os_el
+  - name: puppet-letsencrypt
+    deployed: '9.0.0'
+    branch: master
+    releases:
+      - version: '9.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/vcsrepo: '>= 3.0.0 < 6.0.0'
+      - version: '10.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/vcsrepo: '>= 6.0.0 < 7.0.0'
+        operatingsystems: *os_el
+      - version: '11.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/vcsrepo: '>= 6.0.0 < 7.0.0'
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: puppet-python
+    deployed: '6.4.0'
+    branch: master
+    releases:
+      - version: '6.4.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppet/epel: '>= 3.0.0 < 5.0.0'
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppet/epel: '>= 5.0.0 < 6.0.0'
+        operatingsystems: *os_el
+  - name: puppet-fail2ban
+    deployed: '4.1.0'
+    branch: master
+    releases:
+      - version: '4.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        operatingsystems: *os_deb
+      - version: '5.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_deb
+  - name: saz-timezone
+    deployed: '6.1.0'
+    branch: master
+    tag_prefix: ''
+    releases:
+      - version: '6.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        puppet: *puppet_old
+      - version: '7.0.0'
+        dependencies:
+          puppetlabs/stdlib: '>= 4.13.1 < 10.0.0'
+        operatingsystems: *os_el
+  - name: saz-ssh
+    deployed: '11.1.0'
+    branch: master
+    tag_prefix: ''
+    releases:
+      - version: '11.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          puppetlabs/concat: *puppet_old
+      - version: '12.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        operatingsystems: *os_el
+      - version: '13.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+          puppetlabs/concat: *stdlib_new
+        puppet: *puppet_new
+        operatingsystems: *os_el
+  - name: saz-sudo
+    deployed: '7.0.2'
+    branch: master
+    tag_prefix: ''
+    releases:
+      - version: '7.0.2'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+      - version: '8.0.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_new
+        operatingsystems: *os_el
+  - name: simp-simplib
+    deployed: '4.9.0'
+    branch: master
+    unreleased: true
+    releases:
+      - version: '4.9.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+        operatingsystems: *os_foss
+      - version: '4.10.0'
+        dependencies:
+          puppetlabs/stdlib: '>= 8.0.0 < 10.0.0'
+        operatingsystems: *os_foss
+  - name: simp-pupmod
+    deployed: '8.5.0'
+    branch: master
+    releases:
+      - version: '8.5.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          simp/simplib: '>= 4.0.0 < 5.0.0'
+        operatingsystems: *os_foss
+      - version: '8.6.0'
+        dependencies:
+          puppetlabs/stdlib: '>= 8.0.0 < 10.0.0'
+          simp/simplib: '>= 4.0.0 < 5.0.0'
+        operatingsystems: *os_foss
+  - name: acme-baseline
+    deployed: '0.1.0'
+    unreleased: true
+    track: true
+    releases:
+      - version: '0.1.0'
+        dependencies:
+          puppetlabs/stdlib: *stdlib_old
+          simp/simplib: '>= 4.0.0 < 5.0.0'
+          puppetlabs/firewall: '>= 5.0.0 < 9.0.0'
+  - name: puppetlabs-translate
+    deployed: '2.2.0'
+    forge: true
+    releases:
+      - version: '2.2.0'
+        puppet: '>= 4.10.0 < 8.0.0'
+  - name: puppetlabs-facts
+    deployed: '1.4.0'
+    forge: true
+    releases:
+      - version: '1.4.0'
+        puppet: '>= 6.0.0 < 9.0.0'
+        operatingsystems: *os_el
+
+# Puppetfile overlays written beside the deployed Puppetfile: the file name,
+# then the version each listed module moves to. Unlisted modules stay put.
+proposals:
+  Puppetfile.proposed:
+    puppetlabs-stdlib: '9.6.0'
+    puppetlabs-concat: '9.1.0'
+    puppetlabs-apt: '9.4.0'
+    puppetlabs-apache: '12.0.0'
+    puppetlabs-postgresql: '10.0.0'
+    puppetlabs-puppetdb: '8.1.0'

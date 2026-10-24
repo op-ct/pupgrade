@@ -1,0 +1,8 @@
+---
+rules:
+  - set:
+      site: '${certname[/\A[^.]+\.([^.]+)\./, 1]}'
+  - when:
+      facts.os.family: RedHat
+    set:
+      pkg_manager: dnf

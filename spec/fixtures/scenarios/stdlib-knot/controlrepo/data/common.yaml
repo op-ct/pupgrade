@@ -1,0 +1,4 @@
+---
+profile::base::ntp_servers:
+  - time.example.com
+profile::base::banner: "%{facts.os.family} on %{facts.networking.fqdn}"

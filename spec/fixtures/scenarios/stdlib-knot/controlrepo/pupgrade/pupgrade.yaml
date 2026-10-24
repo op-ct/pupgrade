@@ -1,0 +1,11 @@
+---
+compile:
+  factsets: [factsets]
+lookup:
+  columns: [os.name, os.release.major, networking.fqdn]
+modules:
+  operatingsystems:
+    RedHat: ['8', '9']
+    Ubuntu: ['22.04']
+  requirements:
+    puppet: '>= 8.0.0 < 9.0.0'

@@ -1,0 +1,17 @@
+{
+  "os": {
+    "family": "Debian",
+    "name": "Ubuntu",
+    "release": {
+      "major": "22.04",
+      "full": "22.04"
+    }
+  },
+  "osfamily": "Debian",
+  "kernel": "Linux",
+  "networking": {
+    "fqdn": "db01.example.com",
+    "hostname": "db01",
+    "domain": "example.com"
+  }
+}

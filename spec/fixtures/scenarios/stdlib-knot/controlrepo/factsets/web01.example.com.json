@@ -1,0 +1,30 @@
+{
+  "name": "web01.example.com",
+  "values": {
+    "os": {
+      "family": "RedHat",
+      "name": "Rocky",
+      "release": {
+        "major": "9",
+        "full": "9.3"
+      }
+    },
+    "osfamily": "RedHat",
+    "kernel": "Linux",
+    "networking": {
+      "fqdn": "web01.example.com",
+      "hostname": "web01",
+      "domain": "example.com"
+    }
+  },
+  "trusted": {
+    "authenticated": "remote",
+    "certname": "web01.example.com",
+    "extensions": {
+      "pp_role": "web"
+    },
+    "hostname": "web01",
+    "domain": "example.com",
+    "external": {}
+  }
+}
