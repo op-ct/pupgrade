@@ -7,7 +7,7 @@ require 'json'
 require 'support/fixture_repo'
 require 'pupgrade/cli/catalog'
 
-# `catalog list` and `catalog show` over one compile of the fixture.
+# `catalog list`, `catalog show`, and `catalog resources` over one compile of the fixture.
 RSpec.describe Pupgrade::CLI::Catalog do
   def self.silently
     captured = StringIO.new
@@ -33,7 +33,7 @@ RSpec.describe Pupgrade::CLI::Catalog do
 
   # [exit status, stdout] of a subcommand run on its own
   def run(argv)
-    klass = { 'list' => described_class::List, 'ls' => described_class::List, 'show' => described_class::Show }.fetch(argv.first)
+    klass = { 'list' => described_class::List, 'ls' => described_class::List, 'show' => described_class::Show, 'resources' => described_class::Resources }.fetch(argv.first)
     captured = StringIO.new
     original = $stdout
     $stdout  = captured
@@ -88,5 +88,31 @@ RSpec.describe Pupgrade::CLI::Catalog do
     expect(run(['show', '--cache-dir', @catalogs, 'nothing.here', 'web01.example.com']).first).to eq(1)
     expect(run(['show', '--cache-dir', @catalogs, 'nobody']).first).to eq(3)
     expect(run(['show']).first).to eq(2)
+  end
+
+  it 'lists resources by type and title glob across nodes, shows one whole, and exits 1 when none matches' do
+    status, out = run(['resources', '--cache-dir', @catalogs, 'web01.example.com'])
+    expect(status).to eq(0)
+    table = cells(out)
+    expect(table.first).to eq(%w[certname type title source])
+    expect(table.drop(1).map { |r| r[1] }).to include('Class', 'Notify')
+    _, out = run(['resources', '--cache-dir', @catalogs, 'notify', '*'])
+    rows = cells(out).drop(1)
+    expect(rows.map(&:first).uniq).to eq(%w[db01.example.com web01.example.com])
+    expect(rows.map { |r| r[1] }.uniq).to eq(['Notify'])
+    expect(rows.first.last).to match(/\A(site-modules|modules)\/.*\.pp:\d+\z/)
+    title = rows.first[2]
+    status, out = run(['resources', '--cache-dir', @catalogs, 'NOTIFY', title, 'web01.example.com', '--full'])
+    expect(status).to eq(0)
+    doc = JSON.parse(out)
+    expect(doc.map { |r| [r['type'], r['title'], r['certname']] }).to eq([['Notify', title, 'web01.example.com']])
+    _, out = run(['resources', '--cache-dir', @catalogs, 'notify', "#{title[0, 3]}*", 'web01.example.com', '--params'])
+    expect(cells(out).first).to eq(%w[certname type title parameters])
+    expect(cells(out)[1].last).to include('message')
+    _, out = run(['resources', '--cache-dir', @catalogs, "Notify[#{title}]", 'web01.example.com'])
+    expect(cells(out).drop(1).map { |r| r[0, 3] }).to eq([['web01.example.com', 'Notify', title]])
+    expect(run(['resources', '--cache-dir', @catalogs, 'file', '/no/such', 'web01.example.com']).first).to eq(1)
+    expect(run(['resources', '--cache-dir', @catalogs, 'nobody']).first).to eq(3)
+    expect(run(['resources', '--cache-dir', @catalogs, 'a', 'b', 'c', 'd']).first).to eq(2)
   end
 end

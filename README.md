@@ -282,14 +282,16 @@ intercepted. The catalogs and `probes.json` records land under
 them and `catalog diff` compares two runs.
 
 ```shell
-pupgrade catalog compile                              # every factset in compile.factsets
-pupgrade catalog compile --certname 'web*' -vv        # some nodes, with each mock answer logged
+pupgrade catalog compile                              # compile all factsets
+
+pupgrade catalog compile --certname 'web*' -vv        # compile selected factsets
 pupgrade catalog compile --fail-fast                  # stop at the first failure
 pupgrade catalog compile --code 'notify { "${site}": }' --certname web01.example.com   # try something
-pupgrade catalog diff /tmp/before /tmp/after  # catalogs of two runs, node by node
-pupgrade catalog list                         # what the cache holds, per node
-pupgrade catalog show resources[0] web01.example.com    # a part of a catalog, by key path
-pupgrade catalog show -p leaks 'web*'         # the probes of several nodes
+pupgrade catalog diff /tmp/before /tmp/after          # compare catalogs of two runs
+pupgrade catalog list                                 # display catalogs in cache
+pupgrade catalog resources file '/etc/ssh/*' 'web*'   # resources by type and title
+pupgrade catalog resources 'File[/etc/ssh/sshd_config]' web01.example.com --full
+pupgrade catalog show -p leaks 'web*'      # display a catalog's compile-time leaks
 ```
 
 `--prepend CODE|@FILE` evaluates Puppet code before the manifest, for the

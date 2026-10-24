@@ -160,11 +160,17 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   Lists the compiled catalogs in the cache: one row per node with its
   status and counts, from the probes record and catalog each compile wrote.
 
+- **`pupgrade catalog resources`**` [TYPE [TITLE] | Type[title]] CERTGLOB[,…]`
+
+  Lists the resources of compiled catalogs, with each resource's source file
+  and line. `--full` prints the matches whole, `--params` their parameter names.
+  Exits 1 when nothing matches.
+
 - **`pupgrade catalog show`**` [-p] [-k] [KEYPATH] CERTGLOB[,…]`
 
-  Prints a compiled catalog, or its probes with `-p`, from the cache: whole,
-  or the part a key path names (`resources[0].title`, `classes`). `-k`
-  lists the keys there. Several nodes come back keyed by certname.
+  Prints a compiled catalog, or its probes with `-p`, from the cache: the whole
+  data structure or the part a key path names (`resources[0].title`,
+  `classes`). `-k` lists the keys there.
 
 - **`pupgrade catalog diff`**` FROM TO`
 
