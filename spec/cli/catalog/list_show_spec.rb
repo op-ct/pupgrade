@@ -58,7 +58,7 @@ RSpec.describe Pupgrade::CLI::Catalog do
     status, out = run(['list', '--cache-dir', @catalogs])
     expect(status).to eq(0)
     table = cells(out)
-    expect(table.first).to eq(%w[certname status resources classes warnings leaks compiled])
+    expect(table.first).to eq(%w[certname status resources classes warnings leaks missing compiled])
     expect(table.drop(1).map(&:first)).to eq(%w[db01.example.com web01.example.com])
     expect(table[1][1]).to eq('ok')
     expect(table[1][2].to_i).to be > 0

@@ -41,7 +41,7 @@ module Pupgrade
         config_key 'compile.cache_dir', type: :string, default: 'pupgrade/cache/catalogs',
                    about: 'Cache location for <certname>/{catalog,probes}.json files'
 
-        COLUMNS = %w[certname resources classes warnings mocks leaks status].freeze
+        COLUMNS = %w[certname resources classes warnings mocks leaks missing status].freeze
 
         config_key 'compile.enc', type: :string, default: nil, example: DEFAULT_ENC_FILE,
                    about: 'Rules deciding each node\'s top-scope variables and classes'
@@ -155,15 +155,16 @@ module Pupgrade
           }.compact.merge(result.probes)
         end
 
-        # The mocks column counts what the mocks answered; leaks what nothing
-        # did, red when one stopped the compile, yellow when it ran or a fact
-        # was missing.
+        # mocks counts mocked commands; leaks unmocked ones, red when one
+        # stopped the compile, yellow when it ran; missing the fact reads
+        # with no value in the factset or the mocks, which run nothing.
         def row(result)
           p = result.probes
           actions = p['leaks'].map { |l| l['action'].to_s }
           mocked  = actions.count { |a| a.start_with?('mocked') }
           raised  = actions.count('raised')
-          leaked  = actions.size - mocked
+          missing = actions.count('missing')
+          leaked  = actions.size - mocked - missing
           leaks   = if raised.positive? then paint(leaked.to_s, :red)
                     elsif leaked.positive? then paint(leaked.to_s, :yellow)
                     else leaked.to_s
@@ -172,7 +173,7 @@ module Pupgrade
            result.catalog ? result.catalog['resources'].size.to_s : '-',
            result.catalog ? result.catalog['classes'].size.to_s : '-',
            (p['warnings'].size + p['deprecations'].size).to_s,
-           mocked.to_s, leaks,
+           mocked.to_s, leaks, missing.positive? ? paint(missing.to_s, :yellow) : '0',
            result.ok? ? paint('ok', :green) : paint('failed', :red)]
         end
 

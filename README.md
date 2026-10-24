@@ -206,7 +206,10 @@ applies its own mocks after yours, for the probes package providers make as
 they load (`pupgrade catalog compile --show-default-mocks` prints them).
 
 Every interception is in the node's `probes.json` under `leaks`; the compile
-table counts the answered ones under `mocks` and the rest under `leaks`.
+table counts mocked commands under `mocks`, unmocked commands under `leaks`,
+and fact reads with no value in the factset or the mocks under `missing`. A
+missing fact runs nothing: Puppet gets no value, and the catalog may differ
+for it.
 
 ### ENC rules
 

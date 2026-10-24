@@ -3,6 +3,8 @@ require 'tmpdir'
 require 'fileutils'
 require 'stringio'
 require 'json'
+require 'open3'
+require 'rbconfig'
 
 require 'support/fixture_repo'
 require 'pupgrade/cli/catalog'
@@ -56,9 +58,9 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     status, text = run(['--mocks', 'pupgrade/compiler-mocks.yaml'])
     expect(status).to eq(0)
     expect(cells(text)).to eq([
-      %w[certname resources classes warnings mocks leaks status],
-      %w[db01.example.com 12 7 2 1 0 ok],
-      %w[web01.example.com 12 7 2 1 0 ok],
+      %w[certname resources classes warnings mocks leaks missing status],
+      %w[db01.example.com 12 7 2 1 0 0 ok],
+      %w[web01.example.com 12 7 2 1 0 0 ok],
     ])
     expect(Dir.children(out).sort).to eq(%w[db01.example.com web01.example.com])
     expect(Dir.children(File.join(out, 'web01.example.com')).sort).to eq(%w[catalog.json probes.json])
@@ -130,7 +132,7 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     end
     expect(status).to eq(1)
     rows = cells(text)
-    expect(rows.drop(1).take(2).map { |r| r.values_at(4, 5, 6) }).to eq([%w[0 1 failed], %w[0 1 failed]])
+    expect(rows.drop(1).take(2).map { |r| r.values_at(4, 5, 6, 7) }).to eq([%w[0 1 0 failed], %w[0 1 0 failed]])
     expect(text).to include('web01.example.com: Evaluation Error')
     expect(log.lines.grep(/\Awarning: guard:/).size).to eq(2)
     expect(log).to include('warning: guard: web01.example.com: execute: "hostname -f" is not answered by the mocks at')
@@ -254,6 +256,20 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
       $stdout = original
     end
     expect(status).to eq(0)
+  end
+
+  it 'counts a fact read with no value under missing, not leaks' do
+    factset = JSON.parse(File.read(File.join(fixture.dir, 'factsets/web01.example.com.json')))
+    factset['values'].delete('kernel')
+    dir = File.join(@tmp, 'no-kernel')
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, 'web01.example.com.json'), JSON.generate(factset))
+    # the provider reads the fact as its file loads, once per process, so a process of its own
+    out, status = Open3.capture2(RbConfig.ruby, '-I', File.expand_path('../../../lib', __dir__), File.expand_path('../../../bin/pupgrade', __dir__),
+                                 '--no-config', '--no-color', 'catalog', 'compile', '-d', fixture.dir, '--factsets', dir, '-o', File.join(@tmp, 'no-kernel-out'),
+                                 '--mocks', 'pupgrade/compiler-mocks.yaml', '--code', 'firewall { "x": action => "accept" }', err: File::NULL)
+    expect(status.exitstatus).to eq(0)
+    expect(cells(out)[1].values_at(0, 5, 6, 7)).to eq(%w[web01.example.com 0 1 ok])
   end
 
   it 'refuses missing factsets, a bad mock file, and an unknown leak policy' do

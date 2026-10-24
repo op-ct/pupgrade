@@ -97,7 +97,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   * `--show-default-mocks` prints the shipped mocks
   * in the post-compile summary table:
     - `mocks` column counts answered commands
-    - `leaks` counts what got through unmocked (red = one failed the compile)
+    - `leaks` counts unmocked commands (red = one failed the compile)
+    - `missing` counts fact reads with no value in the factset or the mocks
     - failures are displayed under the table
   * unanswered commands log at warning, mocked ones at `--on-mock LEVEL`
   * `pupgrade/compiler-mocks.yaml` is read by default when present
