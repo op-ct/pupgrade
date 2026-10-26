@@ -66,9 +66,9 @@ module Pupgrade
                                                    holds: @options[:holds] || [], evidence: evidence, prune_unused: @options[:prune_unused])
         entries = ::Pupgrade::ModuleProposal.new(inventory, nil, ignore: @options[:ignore] || []).entries
         ::Pupgrade.logger.notice("solve: reading the candidates of #{entries.size} module(s) from their clones#{' after fetching' if @options[:fetch]}")
-        lists   = entries.to_h { |e| [e.path, candidates.for(e)] }
+        lists = entries.to_h { |e| [e.path, candidates.for(e)] }
         ::Pupgrade.logger.notice("solve: solving, #{@options[:order]} first#{'; pruning edges the catalogs show unused' if @options[:prune_unused]}")
-        plan    = solver.solve(entries, lists)
+        plan = solver.solve(entries, lists)
         log_warnings(inventory.warnings + candidates.warnings + plan.warnings.map { |w| "solve: #{w}" })
 
         shown = plan.choices.select { |c| @options[:all] || c.moved? || c.solved? || c.unresolved? || c.note == 'held at current' || !c.violations.empty? || !c.prior.empty? }
@@ -143,7 +143,7 @@ module Pupgrade
       # label of an unresolvable constraint.
       def note(choice)
         style = if choice.unresolved? then :unresolved
-                elsif %w[bumped held\ at\ current].include?(choice.note) then :lever
+                elsif ['bumped', 'held at current'].include?(choice.note) then :lever
                 else :solved
                 end
         text = paint(choice.note, *NOTE_STYLE.fetch(style))
@@ -165,8 +165,8 @@ module Pupgrade
         wanted = plan.choices.select { |c| globs.include?('all') || ::Pupgrade::ModuleName.any?(globs, c.name, c.entry.metadata.name, File.basename(c.entry.path)) }
         wanted.each do |choice|
           puts ''
-          puts "#{choice.name}: #{choice.chosen.ref} (#{[('current' if choice.chosen.current), choice.note].compact.uniq.join(', ')})"
-          puts(choice.derivation ? choice.derivation.lines.map { |l| "  #{l}" }.join.chomp : '  nothing stood in the way')
+          puts "#{paint(choice.name, :bold)}: #{choice.chosen.ref} (#{[ note(choice) ].compact.uniq.join(', ')})"
+          puts(choice.derivation ? choice.derivation.lines.map { |l| "  #{l}" }.join.chomp : paint('  nothing stood in the way', :dim))
         end
       end
 
