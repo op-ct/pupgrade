@@ -423,8 +423,10 @@ module Pupgrade
         end
 
         texts   = PubGrub.leaves(failure.incompatibility).map { |inc| source.keys.fetch(inc) { [nil, nil, inc.to_s] } }.uniq
+        # the constraint nearest the module: its own, else another module's on it
         own     = texts.select { |depender, _, _| depender == short }.map(&:last)
-        others  = texts.reject { |depender, _, text| depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ") }.map(&:last)
+        own     = texts.select { |_, key, _| key == short }.map(&:last) if own.empty?
+        others  = texts.reject { |depender, _key, text| depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ") || own.include?(text) }.map(&:last)
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
         Pupgrade.logger.debug("solve: #{short}: #{asked.text}:\n#{failure.explanation}")
