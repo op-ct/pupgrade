@@ -271,8 +271,10 @@ pupgrade check --propose Puppetfile.proposed --by-change   # grouped by the entr
 pupgrade check --ignore puppetlabs-translate   # as if a module were gone
 ```
 
-A proposal is a Puppetfile overlay: only the entries that change, each
-replacing the current entry at the same path. `solve -o` writes one.
+The `--propose`d Puppetfile is an overlay containing just the new/updated `mod`
+entries, which completely replace and `mod` entries they override.
+- [`solve -o PUPPETFILE`](#solve) writes its dep-solved changes as a Puppetfile proposal overlay, which can be verified with `check --propose`
+- An entry without `git:` is taken for a Forge module, so a `tag:` alone gives a module with no version.
 
 ### catalog
 
