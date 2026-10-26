@@ -230,8 +230,10 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     release that does; one no candidate meets is not the solve's to fix:
     set aside, and if still broken in the result shown on the row as
     `broken before the solve` until an exclusion covers it
-  * `--explain MODULES` prints the solver's whole derivation for a solved or
-    unresolved module
+  * under `--order oldest` a moved module's note says what pushed it off
+    its current version
+  * `--explain MODULES` prints the solver's whole derivation for a solved,
+    first-fit, or unresolved module
   * `--prune-unused` ignores dependency edges to, and from, modules no
     compile used (needs `compile` output)
   * `--write-exclusions-file FILE` records what the result relies on, as

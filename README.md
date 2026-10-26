@@ -432,7 +432,7 @@ pupgrade check --propose Puppetfile.stdlib --by-change
 #    else to the first release that accepts it
 pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 -o Puppetfile.proposed
 
-# 3. what the proposal leaves unresolved, and why each solved module stopped short
+# 3. what the proposal leaves unresolved, and what pushed each module off its version
 pupgrade check --propose Puppetfile.proposed --summary
 pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 --explain apache
 

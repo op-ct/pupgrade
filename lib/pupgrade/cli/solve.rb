@@ -211,7 +211,9 @@ module Pupgrade
         short = plan.choices.count(&:solved?)
         open  = plan.choices.count(&:unresolved?)
         prior = plan.choices.sum { |c| c.prior.size }
-        text  = "solve: #{moved} of #{plan.choices.size} module(s) move, #{short} solved short of newest, #{open} unresolved"
+        text  = "solve: #{moved} of #{plan.choices.size} module(s) move"
+        text += (@options[:order] == 'oldest') ? ', each to its first fit' : ", #{short} solved short of newest"
+        text += ", #{open} unresolved"
         text += "; #{prior} constraint(s) broken before the solve still broken and not excluded (--write-exclusions-file writes them)" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence

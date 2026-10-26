@@ -82,7 +82,8 @@ module Pupgrade
       #     candidates to choose from ("Forge module")
       # @!attribute [r] why
       #   @return [String, nil] for a solved module, the constraint of its
-      #     own in the way and what stands against it
+      #     own in the way and what stands against it; for a first fit,
+      #     what pushed it off its current version
       # @!attribute [r] derivation
       #   @return [String, nil] the solver's whole explanation behind `why`,
       #     or behind an unresolved module's pinning
@@ -389,37 +390,41 @@ module Pupgrade
         return [@reasons[short], nil, nil] if @reasons.key?(short)
 
         newest = @lists[short].map { |c| version_of(c) }.max
-        if version_of(chosen) == newest || @order == 'oldest'
-          return ['current', nil, nil] if chosen.current
+        return ['current', nil, nil] if chosen.current && (version_of(chosen) == newest || @order == 'oldest')
+        return ['newest', nil, nil] if version_of(chosen) == newest && @order == 'newest'
 
-          return [(@order == 'newest') ? 'newest' : 'first fit', nil, nil]
+        if @order == 'oldest'
+          # moved the least it could: what pushed it off its current version
+          current = version_of(@current[short])
+          why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is asked to stay at #{current}"))
+          return ['first fit', why, derivation]
         end
 
-        why, derivation = solved_because(short, chosen, pinned)
+        why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is asked past #{version_of(chosen)}"))
         ['solved', why, derivation]
       end
 
-      # Why a module stopped short: the solver is asked for a set with the
-      # module past its chosen version, under the same facts, and the
-      # leaves of its refusal are the module's own constraint in the way
-      # and what stands against it.
+      # Why a module is where it is: the solver is asked, under the same
+      # facts, for a set with the module elsewhere (past its chosen
+      # version, or off its current one), and the leaves of its refusal are
+      # the module's own constraint in the way and what stands against it.
       #
-      # @return [Array(String, String|nil)]
-      def solved_because(short, chosen, pinned)
-        asked   = "#{short} is asked past #{version_of(chosen)}"
-        source  = build_source(@ignored, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: asked))
+      # @param asked [PubGrub::Fact] the versions ruled out, with its words
+      # @return [Array(String, String|nil)] why, and the whole derivation
+      def because(short, pinned, asked)
+        source = build_source(@ignored, pinned, asked)
         _decisions, failure = PubGrub.solve(source)
         unless failure
-          Pupgrade.logger.warn("solve: #{short}: a set with it past #{version_of(chosen)} exists; --bump #{short} would take it")
-          return ["a set with #{short} past #{version_of(chosen)} exists (--bump #{short})", nil]
+          Pupgrade.logger.warn("solve: #{short}: a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}")
+          return ["a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}", nil]
         end
 
         texts   = PubGrub.leaves(failure.incompatibility).map { |inc| source.keys.fetch(inc) { [nil, nil, inc.to_s] } }.uniq
         own     = texts.select { |depender, _, _| depender == short }.map(&:last)
-        others  = texts.reject { |depender, _, text| depender == short || text == asked || text.start_with?("no versions satisfy #{short} ") }.map(&:last)
+        others  = texts.reject { |depender, _, text| depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ") }.map(&:last)
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
-        Pupgrade.logger.debug("solve: #{short}: short of its newest because:\n#{failure.explanation}")
+        Pupgrade.logger.debug("solve: #{short}: #{asked.text}:\n#{failure.explanation}")
         [why.empty? ? failure.explanation.lines.first.to_s.strip : why, failure.explanation]
       end
 
