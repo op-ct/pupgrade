@@ -166,7 +166,7 @@ module Pupgrade
         wanted = plan.choices.select { |c| globs.include?('all') || ::Pupgrade::ModuleName.any?(globs, c.name, c.entry.metadata.name, File.basename(c.entry.path)) }
         wanted.each do |choice|
           puts ''
-          puts "#{choice.name}: #{choice.chosen} (#{choice.note})"
+          puts "#{choice.name}: #{choice.chosen.ref} (#{[('current' if choice.chosen.current), choice.note].compact.uniq.join(', ')})"
           puts(choice.derivation ? choice.derivation.lines.map { |l| "  #{l}" }.join.chomp : '  nothing stood in the way')
         end
       end
