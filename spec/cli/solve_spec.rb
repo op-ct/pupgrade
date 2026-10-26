@@ -53,14 +53,15 @@ RSpec.describe Pupgrade::CLI::Solve do
   it 'finds the set every constraint holds in, says what stops a module short, and moves the rest under a bump' do
     # with nothing asked of the operating systems or Puppet, baseline (one version, needing stdlib < 9) holds stdlib and all behind it
     status, out = run([], config: ['--no-config'])
-    expect(status).to eq(1) # constraints broken before the solve, still broken, not excluded
+    expect(status).to eq(1) # unresolvable constraints, not excluded
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to match(['tag v8.6.0', '(current)', '3', a_string_starting_with('solved: every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')])
     expect(table['puppetlabs-apache'].last).to start_with('solved: apache >= 11.0.0 depends on stdlib >= 9.0.0, < 10.0.0; every version of baseline depends on stdlib >= 4.13.1, < 9.0.0')
     expect(table['saz-timezone']).to eq(['tag 6.1.0', '7.0.0', '1', 'newest'])
-    # a constraint the module cannot meet by moving is not the solve's to fix: set aside, on the row until excluded
-    expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', 'v7.1.0', '1', 'newest; broken before the solve: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
-                                                                           'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
+    # tomcat's ranges a move of stdlib and concat would meet, so they stay in force; baseline holds stdlib, and
+    # tomcat, already broken, is the one pinned rather than a module that was intact
+    expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', '(current)', '1', 'unresolved: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
+                                                                              'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
     expect(table).not_to have_key('puppetlabs-facts')
     _, out = run(['--explain', 'stdlib'], config: ['--no-config'])
     expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (current, solved)\n  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
@@ -72,7 +73,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.6.0', '3', 'newest'])
     expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.6.0')])
-    expect(table['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('Forge module; broken before the solve: requires puppet >= 4.10.0 < 8.0.0')])
+    expect(table['puppetlabs-translate']).to match(['2.2.0 (forge)', '(current)', '0', a_string_starting_with('Forge module; unresolvable: requires puppet >= 4.10.0 < 8.0.0')])
     _, out = run(['--all'])
     expect(rows(out)['puppetlabs-facts']).to eq(['1.4.0 (forge)', '(current)', '0', 'Forge module'])
 
@@ -84,8 +85,8 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-apache']).to eq(['tag v10.1.1', 'v12.0.0', '2', 'newest'])
     expect(table['puppetlabs-puppetdb']).to eq(['tag v7.13.0', 'v8.1.0', '2', 'newest'])
     expect(table['acme-baseline']).to match(['branch main', '(current)', '0', a_string_starting_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.6.0')])
-    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'newest; broken before the solve: needs puppet/zookeeper >= 1.0.0 < 2.0.0, but zookeeper is not on the modulepath'])
-    expect(table['puppetlabs-apt'].last).to eq('newest; broken before the solve: supports Ubuntu, Debian, but missing RedHat')
+    expect(table['puppet-kafka']).to eq(['tag v8.1.0', 'v9.0.0', '1', 'newest; unresolvable: needs puppet/zookeeper >= 1.0.0 < 2.0.0, but zookeeper is not on the modulepath'])
+    expect(table['puppetlabs-apt'].last).to eq('newest; unresolvable: supports Ubuntu, Debian, but missing RedHat')
 
     proposed = Driftless::Inputs::Puppetfile.load_file(overlay)
     expect(proposed.error).to be_nil
@@ -117,12 +118,12 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-concat'].last).to start_with('held at current: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.0.0')
     expect(table['puppetlabs-apache'].last).to start_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.0.0')
     # with nothing required of the operating systems or Puppet, the current
-    # versions fit and nothing drives a move; only what was broken before shows
+    # versions fit and nothing drives a move; only the unresolvable shows
     _, out = run(['--order', 'oldest'], config: ['--no-config']) # the old name of nearest
     table = rows(out)
     expect(table.keys).to eq(%w[puppet-kafka puppetlabs-tomcat])
-    expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', '(current)', '1', 'current; broken before the solve: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
-                                                                             'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
+    expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', '(current)', '1', 'unresolved: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \
+                                                                              'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
   end
 
   it 'takes bumps and holds by any spelling, warns about the ones that name nothing, and explains' do
@@ -183,12 +184,12 @@ RSpec.describe Pupgrade::CLI::Solve do
     # read back, the file covers everything the result still breaks
     status, out = run(['--hold', 'puppetlabs-apt', '--compile-cache', evidence, '--prune-unused', '--exclusion-file', exclusions])
     expect(status).to eq(0)
-    expect(out).not_to include('broken before the solve')
+    expect(out).not_to include('unresolvable')
     expect(run(['--exclusion-file', File.join(@tmp, 'nope.yaml')]).first).to eq(3)
 
     _, out = run(['--ignore', 'apt,zookeeper'])
     expect(rows(out)).not_to have_key('puppetlabs-apt')
-    expect(rows(out)['puppet-redis'].last).to include('broken before the solve: needs puppetlabs/apt >= 9.0.0 < 10.0.0, but apt is not on the modulepath')
+    expect(rows(out)['puppet-redis'].last).to include('unresolvable: needs puppetlabs/apt >= 9.0.0 < 10.0.0, but apt is not on the modulepath')
     expect(run(['--prune-unused']).first).to eq(2)
     expect(run(['--compile-cache', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)

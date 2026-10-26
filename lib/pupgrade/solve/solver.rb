@@ -16,8 +16,8 @@ module Pupgrade
     # dependency ranges, the Puppet requirement, and the operating systems
     # of interest hold, found by PubGrub, each module as far along its
     # candidates as the set allows. What pupgrade decides around the
-    # solver: constraints already broken at the current versions are left
-    # out (the solve is not what broke them); a hold or a bump is a fact
+    # solver: a constraint no release of any module could meet is left out
+    # as unresolvable; a hold or a bump is a fact
     # the solver cannot overrule; a module no version of which fits is
     # pinned at its least-broken version and the solve goes on without its
     # constraints. A module short of its newest candidate ("solved") is
@@ -73,9 +73,9 @@ module Pupgrade
       #   @return [Array<Violation>] what the choice breaks that held at the
       #     current versions
       # @!attribute [r] prior
-      #   @return [Array<Violation>] what the choice breaks that was broken
-      #     already at the current versions: set aside by the solve, and
-      #     not excluded, so still counting against the exit status
+      #   @return [Array<Violation>] what the choice breaks that no release
+      #     could have met: unresolvable, kept from the solver, and not
+      #     excluded, so still counting against the exit status
       # @!attribute [r] note
       #   @return [String] why this candidate: "newest", "nearest",
       #     "current", "bumped", "held at current"; "solved" when the set
@@ -178,10 +178,10 @@ module Pupgrade
         ignored = @ignored = Set.new
         @prior.each do |short, broken|
           broken.each do |v|
-            if fixable?(short, v.key, state)
+            if fixable?(short, v.key)
               Pupgrade.logger.debug("solve: #{short}: broken at #{@current[short]}: #{v}; a candidate meets it, so it stays a constraint")
             else
-              Pupgrade.logger.debug("solve: #{short}: broken at #{@current[short]}: #{v}; no candidate meets it, so it is set aside")
+              Pupgrade.logger.debug("solve: #{short}: broken at #{@current[short]}: #{v}; no release meets it: unresolvable, kept from the solver")
               ignored << [short, v.key]
             end
           end
@@ -293,19 +293,31 @@ module Pupgrade
         (@holds - @matched[:hold]).each { |g| @warnings << "--hold #{g} matches no module" }
       end
 
-      # Whether the module itself can meet a constraint its current version
-      # breaks: some candidate of it does, against the versions deployed
-      # now. What the module cannot fix by moving is not the solve's to
-      # fix, and is set aside.
-      def fixable?(short, key, state)
+      # Whether a move of the module, or of the dependency a range names,
+      # would meet a constraint the module's current version breaks.
+      #
+      # @return [Boolean] false for what the solve sets aside
+      def fixable?(short, key)
         entry = @by_name[short]
-        @lists[short].any? { |candidate| violations(entry, candidate, state).none? { |v| v.key == key } }
+        @lists[short].any? do |candidate|
+          if key == 'puppet' || key.start_with?('os ')
+            site_violations(entry, candidate.metadata).none? { |v| v.key == key }
+          else
+            next false if @by_name[key].nil?
+
+            dep, requirement = candidate.metadata.dependencies.find { |d, _| key(d) == key }
+            next true if dep.nil?
+
+            range = range_for(requirement)
+            range.nil? || @versions[key].any? { |v| range.include?(v) }
+          end
+        end
       end
 
       # ---- the solver's view -----------------------------------------------------
 
       # @param ignored [Set<Array(String, String)>] [module, key] constraints
-      #   left out: broken before the solve
+      #   kept from the solver as unresolvable
       # @param pinned [Hash{String => Array(Candidate, String)}] modules kept
       #   at a version whatever they need
       # @param asked [Fact, nil] one more fact, for the second query
@@ -348,15 +360,25 @@ module Pupgrade
         @prune && (target.nil? || !used?(target) || !used?(@by_name[short]))
       end
 
-      # The module to pin when there is no solution: a module whose own
-      # constraint is in the derivation, the ones the user moved or held
-      # first (their version is settled), then the one with the fewest
-      # candidates, which has the least room to give.
+      # The module to pin when nothing fits, among those whose own
+      # constraint is in the derivation: a lever's first, then one broken
+      # before the solve that cannot mend itself by moving, then the one
+      # with the fewest candidates.
       #
       # @return [String, nil]
       def misfit(failure, source, pinned)
         dependers = PubGrub.leaves(failure.incompatibility).filter_map { |inc| source.keys[inc]&.first }.uniq - pinned.keys
-        dependers.min_by { |short| [@levers.key?(short) ? 0 : 1, @lists[short].size, short] }
+        dependers.min_by { |short| [@levers.key?(short) ? 0 : 1, needs_others?(short) ? 0 : 1, @lists[short].size, short] }
+      end
+
+      # Whether a constraint in force broke the module's current version
+      # and no candidate of its own meets it against the deployed versions.
+      def needs_others?(short)
+        entry = @by_name[short]
+        state = @current.transform_values { |c| version_of(c) }
+        @prior[short].any? do |v|
+          !@ignored.include?([short, v.key]) && @lists[short].none? { |c| violations(entry, c, state).none? { |w| w.key == v.key } }
+        end
       end
 
       # The version a misfit is kept at: the lever's, else the candidate
@@ -379,7 +401,8 @@ module Pupgrade
         chosen  = candidate_at(short, decisions[short])
         broken  = violations(entry, chosen, decisions)
         prior, fresh = broken.partition { |v| ignored.include?([short, v.key]) }
-        note, why, derivation = note_for(short, chosen, pinned)
+        # a pinned module breaking nothing at the version kept is noted as chosen
+        note, why, derivation = note_for(short, chosen, fresh.empty? ? pinned.except(short) : pinned)
         Choice.new(entry: entry, candidates: @lists[short], chosen: chosen, violations: fresh, prior: prior,
                    note: note, why: why, derivation: derivation)
       end
@@ -426,7 +449,8 @@ module Pupgrade
         # the constraint nearest the module: its own, else another module's on it
         own     = texts.select { |depender, _, _| depender == short }.map(&:last)
         own     = texts.select { |_, key, _| key == short }.map(&:last) if own.empty?
-        others  = texts.reject { |depender, _key, text| depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ") || own.include?(text) }.map(&:last)
+        noise   = ->(depender, text) { depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ", 'root depends on') || own.include?(text) }
+        others  = texts.reject { |depender, _key, text| noise.call(depender, text) }.map(&:last)
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
         Pupgrade.logger.debug("solve: #{short}: #{asked.text}:\n#{failure.explanation}")

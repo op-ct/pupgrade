@@ -21,8 +21,8 @@ module Pupgrade
     # A version for every deployed git module, from the tags its clone
     # holds: one row per module that moves or stops short, a Puppetfile overlay
     # for `check --propose`, and the exclusions the result relies on. Exit 1
-    # when any module is unresolved, or a constraint broken before the
-    # solve is still broken and no exclusion covers it.
+    # when any module is unresolved, or an unresolvable constraint is not
+    # excluded.
     class Solve < Base
       include Table
       extend ::Pupgrade::ConfigKeys::DSL
@@ -121,15 +121,13 @@ module Pupgrade
         o.separator ''
         o.separator 'The solver (PubGrub) finds a set of versions in which every dependency range, the'
         o.separator 'Puppet requirement, and the operating systems of interest hold, each module as far'
-        o.separator 'along its candidates as the set allows. A constraint already broken at the current'
-        o.separator 'versions stays in force when a release of the module meets it; one no release meets is'
-        o.separator 'set aside, and if still broken in the result the row says "broken before the solve"'
-        o.separator 'until an exclusion covers it. A hold or a bump is a fact the solver cannot overrule. A'
-        o.separator 'module no version of which fits is "unresolved": kept at the candidate breaking the least,'
-        o.separator 'its constraints set aside. One short of its newest candidate is "solved", and the note'
-        o.separator 'says which of its constraints is in the way'
-        o.separator 'and what stands against it. Exits 1 when any module is unresolved, or any constraint'
-        o.separator 'broken before the solve is still broken and not excluded.'
+        o.separator 'along its candidates as the set allows. A constraint no release of any module could meet is'
+        o.separator '"unresolvable": kept from the solver, and on the row until an exclusion covers it. A hold'
+        o.separator 'or a bump is a fact the solver cannot overrule. A module no version of which fits is'
+        o.separator '"unresolved": kept at the candidate breaking the least, its constraints set aside. One short'
+        o.separator 'of its newest candidate is "solved", and the note says which of its constraints is in the'
+        o.separator 'way and what stands against it. Exits 1 when any module is unresolved, or any'
+        o.separator 'unresolvable constraint is not excluded.'
       end
 
       private
@@ -141,7 +139,8 @@ module Pupgrade
       end
 
       # The status word coloured by outcome; a solved row says what stands in
-      # its way; the part of each violation in the way is red.
+      # its way; the part of each violation in the way is red, as is the
+      # label of an unresolvable constraint.
       def note(choice)
         style = if choice.unresolved? then :unresolved
                 elsif %w[bumped held\ at\ current].include?(choice.note) then :lever
@@ -150,7 +149,7 @@ module Pupgrade
         text = paint(choice.note, *NOTE_STYLE.fetch(style))
         text += ": #{choice.why}" if choice.why
         text += ": #{violations_text(choice.violations)}" unless choice.violations.empty?
-        text += "; #{paint('broken before the solve', :yellow)}: #{violations_text(choice.prior)}" unless choice.prior.empty?
+        text += "; #{paint('unresolvable', :red)}: #{violations_text(choice.prior)}" unless choice.prior.empty?
         text
       end
 
@@ -214,7 +213,7 @@ module Pupgrade
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move"
         text += %w[nearest oldest].include?(@options[:order]) ? ', each to its nearest fit' : ", #{short} solved short of newest"
         text += ", #{open} unresolved"
-        text += "; #{prior} constraint(s) broken before the solve still broken and not excluded (--write-exclusions-file writes them)" if prior.positive?
+        text += "; #{prior} unresolvable constraint(s), not excluded (--write-exclusions-file writes them)" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text

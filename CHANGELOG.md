@@ -230,11 +230,12 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     version of baseline depends on stdlib >= 4.13.1, < 9.0.0`
   * a module no version of which fits is `unresolved`: kept at the
     candidate breaking the least, its constraints set aside
-  * a constraint already broken at the current versions stays in force
-    when some candidate of the module meets it, so the solve steers to a
-    release that does; one no candidate meets is not the solve's to fix:
-    set aside, and if still broken in the result shown on the row as
-    `broken before the solve` until an exclusion covers it
+  * a constraint broken at the current versions stays in force when a
+    move of either module would meet it; one no move meets is
+    `unresolvable`: kept from the solver, and on the row until an
+    exclusion covers it
+  * when nothing fits, a module already broken that cannot mend itself by
+    moving is pinned before one that was intact
   * under `--order nearest` a moved module's note says what pushed it off
     its current version
   * `--explain MODULES` prints the solver's whole derivation for a solved,
@@ -243,11 +244,11 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     compile used (needs `compile` output)
   * `--write-exclusions-file FILE` records what the result relies on, as
     the config's `modules.exclude_*` lists: the pruned edges it violates
-    and the constraints broken before the solve that are still broken;
+    and the unresolvable constraints;
     `--exclusion-file FILE` reads such a file on top of the config, so a
     set of exclusions can be tried before the config adopts it
-  * exits `1` when any module is unresolved, or a constraint broken before
-    the solve is still broken and not excluded
+  * exits `1` when any module is unresolved, or an unresolvable constraint
+    is not excluded
   * config subsystem `solve`: `order`, `include_heads`, `compile_cache`
 
 - **`pupgrade impact`**` [options] PUPPETFILE`
