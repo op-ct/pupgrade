@@ -14,7 +14,7 @@ module Pupgrade
       class Gitlog < Base
         include ModuleCommand::Shared
 
-        register_command name: 'gitlog', subcommand_of: ModuleCommand
+        register_command name: %w[gitlog gl], subcommand_of: ModuleCommand
         positional '<module>', '[<ref>]'
         desc 'Show a deployed module\'s git log, or what a ref has beyond it'
 
