@@ -4,6 +4,7 @@ require 'optparse'
 require 'pupgrade/config'
 require 'pupgrade/config_validator'
 require 'pupgrade/logging'
+require 'pupgrade/version'
 
 module Pupgrade
   module CLI
@@ -208,6 +209,7 @@ module Pupgrade
 
       def build_parser
         OptionParser.new do |o|
+          o.version = Pupgrade::VERSION
           o.banner = self.class.desc ? "#{usage_line}\n\n#{self.class.desc}" : usage_line
           add_subcommand_section(o)
           o.separator ''
