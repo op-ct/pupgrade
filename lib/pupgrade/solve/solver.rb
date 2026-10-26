@@ -197,7 +197,7 @@ module Pupgrade
           short = misfit(failure, source, pinned)
           raise Error, "no set of versions fits, and nothing more can give:\n#{failure.explanation}" unless short
 
-          pinned[short] = [pin_for(short, state), failure.explanation]
+          pinned[short] = [pin_for(short, state), refusal(failure, "no version of #{short} fits the rest.")]
           Pupgrade.logger.info("solve: #{short}: no version fits the rest; kept at #{pinned[short].first}, its constraints set aside")
         end
 
@@ -422,11 +422,13 @@ module Pupgrade
         if @order == 'nearest'
           # moved the least it could: what pushed it off its current version
           current = version_of(@current[short])
-          why, derivation = because(short, pinned, decisions, PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is asked to stay at #{current}"))
+          why, derivation = because(short, pinned, decisions, "stay at #{current}",
+                                    PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is held at #{current} (--explain)"))
           return ['nearest', why, derivation]
         end
 
-        why, derivation = because(short, pinned, decisions, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is asked past #{version_of(chosen)}"))
+        why, derivation = because(short, pinned, decisions, "go past #{version_of(chosen)}",
+                                  PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is held above #{version_of(chosen)} (--explain)"))
         ['solved', why, derivation]
       end
 
@@ -439,17 +441,18 @@ module Pupgrade
       # what holds the module in this set.
       #
       # @param decisions [Hash{String => SemanticPuppet::Version}] the set chosen
+      # @param move [String] the move asked about: "stay at 10.1.1"
       # @param asked [PubGrub::Fact] the versions ruled out, with its words
       # @return [Array(String, String|nil)] why, and the whole derivation
-      def because(short, pinned, decisions, asked)
+      def because(short, pinned, decisions, move, asked)
         source = build_source(@ignored, pinned, asked)
         _decisions, failure = PubGrub.solve(source)
         unless failure
-          Pupgrade.logger.info("solve: #{short}: a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}; the order chose this one")
+          Pupgrade.logger.info("solve: #{short}: a set exists where it can #{move}; the order chose this one")
           held = decisions.except(short).map { |s, v| PubGrub::Fact.new(package: s, range: PubGrub.except(v), text: "#{s} is #{v} in this set") }
           source = build_source(@ignored, pinned, asked, *held)
           _decisions, failure = PubGrub.solve(source)
-          return ["a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}", nil] unless failure
+          return ["a set exists where it can #{move}", nil] unless failure
         end
 
         texts   = PubGrub.leaves(failure.incompatibility).map { |inc| source.keys.fetch(inc) { [nil, nil, inc.to_s] } }.uniq
@@ -461,7 +464,12 @@ module Pupgrade
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
         Pupgrade.logger.debug("solve: #{short}: #{asked.text}:\n#{failure.explanation}")
-        [why.empty? ? failure.explanation.lines.first.to_s.strip : why, failure.explanation]
+        [why.empty? ? failure.explanation.lines.first.to_s.strip : why, refusal(failure, "#{short} cannot #{move}.")]
+      end
+
+      # The solver's derivation, closing with what it means here.
+      def refusal(failure, conclusion)
+        failure.explanation.sub(/version solving has failed\.\z/, conclusion)
       end
 
       # ---- constraints -----------------------------------------------------------

@@ -36,12 +36,12 @@ RSpec.describe Pupgrade::Solve::PubGrub do
     expect(failure).to be_nil
     expect(decisions.transform_values(&:to_s)).to eq('stdlib' => '8.0.0', 'app' => '1.0.0')
 
-    asked = described_class::Fact.new(package: 'stdlib', range: described_class.up_to(version('8.0.0')), text: 'stdlib is asked past 8.0.0')
+    asked = described_class::Fact.new(package: 'stdlib', range: described_class.up_to(version('8.0.0')), text: 'stdlib is held above 8.0.0 (--explain)')
     src   = source.call([asked])
     decisions, failure = described_class.solve(src)
     expect(decisions).to be_nil
     texts = described_class.leaves(failure.incompatibility).map { |l| src.keys.fetch(l) { [nil, nil, l.to_s] } }
-    expect(texts).to include(['app', 'stdlib', 'every version of app depends on stdlib >= 1.0.0, < 9.0.0'], [nil, nil, 'stdlib is asked past 8.0.0'])
+    expect(texts).to include(['app', 'stdlib', 'every version of app depends on stdlib >= 1.0.0, < 9.0.0'], [nil, nil, 'stdlib is held above 8.0.0 (--explain)'])
 
     bump = described_class::Fact.new(package: 'app', range: described_class.except(version('2.0.0')), text: 'app is bumped to 2.0.0 (--bump)')
     _decisions, failure = described_class.solve(source.call([bump]))

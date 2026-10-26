@@ -64,7 +64,9 @@ RSpec.describe Pupgrade::CLI::Solve do
                                                                               'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
     expect(table).not_to have_key('puppetlabs-facts')
     _, out = run(['--explain', 'stdlib'], config: ['--no-config'])
-    expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (current, solved)\n  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
+    expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (solved: every version of baseline depends on stdlib >= 4.13.1, < 9.0.0)\n" \
+                           "  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
+    expect(out).to include("stdlib is held above 8.6.0 (--explain)", "    stdlib cannot go past 8.6.0.\n")
 
     # the config asks for RedHat 9, which the old releases do not claim and the new ones do: a constraint a
     # module can meet by moving stays in force, so the set moves past baseline, which fits nowhere
@@ -106,7 +108,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-apache']).to match(['tag v10.1.1', 'v11.0.0', '2', a_string_starting_with('nearest: ')])
     expect(table['puppetlabs-firewall']).to match(['tag v5.0.0', 'v7.0.0', '3', a_string_starting_with('nearest: ')])
     _, out = run(['--order', 'nearest', '--bump', 'puppetlabs-stdlib', '--explain', 'apache'], config: ['--no-config'])
-    expect(out).to include("puppetlabs-apache: v11.0.0 (nearest)\n  Because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n    and apache is asked to stay at 10.1.1,")
+    expect(out).to include("\n  Because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n    and apache is held at 10.1.1 (--explain),")
     expect(table['puppetlabs-facts']).to eq(['1.4.0 (forge)', '(current)', '0', 'Forge module'])
 
     # a hold and a bump are facts; what fits neither is unresolved
@@ -147,8 +149,8 @@ RSpec.describe Pupgrade::CLI::Solve do
     table = rows(out.split("\n\n", 2).first)
     expect(table['puppetlabs-firewall']).to eq(['tag v5.0.0', 'v8.0.0', '3', 'bumped: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0'])
     expect(table['puppetlabs-puppetdb'].last).to start_with('unresolved: needs puppetlabs/firewall >= 1.1.3 < 6.0.0, but firewall moves to 8.0.0')
-    expect(out).to include("puppetlabs-puppetdb: v7.13.0 (current, unresolved)\n  Because puppetdb >= 8.0.0 depends on stdlib >= 9.0.0, < 10.0.0\n")
-    expect(out).to include("  So, because firewall is bumped to 8.0.0 (--bump)\n    and stdlib is held at 8.6.0 (--hold),\n    version solving has failed.")
+    expect(out).to include("\n  Because puppetdb >= 8.0.0 depends on stdlib >= 9.0.0, < 10.0.0\n")
+    expect(out).to include("  So, because firewall is bumped to 8.0.0 (--bump)\n    and stdlib is held at 8.6.0 (--hold),\n    no version of puppetdb fits the rest.")
   end
 
   it 'prunes dependency edges to and from modules the evidence shows unused, writes the exclusions the result relies on, and reads them back' do
