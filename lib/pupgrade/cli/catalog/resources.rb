@@ -47,7 +47,21 @@ module Pupgrade
           elsif @options[:params]
             print_table(%w[certname type title parameters], found.map { |name, r| [name, r['type'], r['title'], (r['parameters'] || {}).keys.sort.join(', ')] })
           else
-            print_table(COLUMNS, found.map { |name, r| [name, r['type'], r['title'], source(repo, r)] })
+            prev_name = ''
+            alt = true
+            print_table(COLUMNS, found.map do |name, r|
+              alt = !alt if prev_name != name
+              prev_name = name
+              rcol = alt ? :cyan : :reset
+              [
+                paint(name, rcol),
+                paint(r['type'], rcol),
+                paint(r['title'], rcol),
+                source(repo, r).split(':', 2).then do |x|
+                  "#{paint(x.first, rcol)}#{paint(":#{x.last}", :dim)}" unless x.empty?
+                end,
+              ]
+            end)
           end
           ::Pupgrade.logger.notice("catalog resources: #{found.size} resource(s) across #{names.size} node(s)")
           exit(found.empty? ? 1 : 0)
