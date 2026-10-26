@@ -215,8 +215,9 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   vendors, each module as far along its candidates as the set allows.
   * `-o` writes the moves as a Puppetfile overlay for `check --propose` and
     `impact`
-  * `--order newest` (default) prefers the newest candidate; `oldest` the
-    nearest to the current, driven by `--bump MODULE[=REF]`
+  * `--order newest` (default) prefers the newest fitting candidate;
+    `nearest` the one nearest the current version, driven by
+    `--bump MODULE[=REF]`; `oldest` is still taken for `nearest`
   * `--hold MODULES` and `--bump` are facts the solver cannot overrule;
     `--ignore MODULES` drops modules for the run
   * a module short of its newest candidate is `solved`, and the note says
@@ -230,10 +231,10 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     release that does; one no candidate meets is not the solve's to fix:
     set aside, and if still broken in the result shown on the row as
     `broken before the solve` until an exclusion covers it
-  * under `--order oldest` a moved module's note says what pushed it off
+  * under `--order nearest` a moved module's note says what pushed it off
     its current version
   * `--explain MODULES` prints the solver's whole derivation for a solved,
-    first-fit, or unresolved module
+    nearest, or unresolved module
   * `--prune-unused` ignores dependency edges to, and from, modules no
     compile used (needs `compile` output)
   * `--write-exclusions-file FILE` records what the result relies on, as

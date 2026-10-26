@@ -96,20 +96,20 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(baseline).to be_nil
   end
 
-  it 'moves the least it can from the current versions when driven by a bump, and shows all with --all' do
-    _, out = run(['--order', 'oldest', '--bump', 'puppetlabs-stdlib', '--all'])
+  it 'moves each module to the fitting version nearest its current one when driven by a bump, and shows all with --all' do
+    _, out = run(['--order', 'nearest', '--bump', 'puppetlabs-stdlib', '--all'])
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.6.0', '3', 'bumped'])
-    # a first fit says what pushed the module off its current version
-    expect(table['puppetlabs-concat']).to eq(['tag v7.3.0', 'v9.0.0', '2', 'first fit: concat 7.3.0 supports Ubuntu 18.04, 20.04, but missing Ubuntu 22.04'])
-    expect(table['puppetlabs-apache']).to match(['tag v10.1.1', 'v11.0.0', '2', a_string_starting_with('first fit: ')])
-    expect(table['puppetlabs-firewall']).to match(['tag v5.0.0', 'v7.0.0', '3', a_string_starting_with('first fit: ')])
-    _, out = run(['--order', 'oldest', '--bump', 'puppetlabs-stdlib', '--explain', 'apache'], config: ['--no-config'])
-    expect(out).to include("puppetlabs-apache: v11.0.0 (first fit)\n  Because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n    and apache is asked to stay at 10.1.1,")
+    # a nearest fit says what pushed the module off its current version
+    expect(table['puppetlabs-concat']).to eq(['tag v7.3.0', 'v9.0.0', '2', 'nearest: concat 7.3.0 supports Ubuntu 18.04, 20.04, but missing Ubuntu 22.04'])
+    expect(table['puppetlabs-apache']).to match(['tag v10.1.1', 'v11.0.0', '2', a_string_starting_with('nearest: ')])
+    expect(table['puppetlabs-firewall']).to match(['tag v5.0.0', 'v7.0.0', '3', a_string_starting_with('nearest: ')])
+    _, out = run(['--order', 'nearest', '--bump', 'puppetlabs-stdlib', '--explain', 'apache'], config: ['--no-config'])
+    expect(out).to include("puppetlabs-apache: v11.0.0 (nearest)\n  Because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n    and apache is asked to stay at 10.1.1,")
     expect(table['puppetlabs-facts']).to eq(['1.4.0 (forge)', '(current)', '0', 'Forge module'])
 
     # a hold and a bump are facts; what fits neither is unresolved
-    status, out = run(['--order', 'oldest', '--bump', 'puppetlabs-stdlib=v9.0.0', '--hold', 'puppetlabs-concat'])
+    status, out = run(['--order', 'nearest', '--bump', 'puppetlabs-stdlib=v9.0.0', '--hold', 'puppetlabs-concat'])
     expect(status).to eq(1)
     table = rows(out)
     expect(table['puppetlabs-stdlib']).to eq(['tag v8.6.0', 'v9.0.0', '3', 'bumped'])
@@ -118,7 +118,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-apache'].last).to start_with('unresolved: needs puppetlabs/stdlib >= 4.13.1 < 9.0.0, but stdlib moves to 9.0.0')
     # with nothing required of the operating systems or Puppet, the current
     # versions fit and nothing drives a move; only what was broken before shows
-    _, out = run(['--order', 'oldest'], config: ['--no-config'])
+    _, out = run(['--order', 'oldest'], config: ['--no-config']) # the old name of nearest
     table = rows(out)
     expect(table.keys).to eq(%w[puppet-kafka puppetlabs-tomcat])
     expect(table['puppetlabs-tomcat']).to eq(['tag v7.0.0', '(current)', '1', 'current; broken before the solve: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0; ' \

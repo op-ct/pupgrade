@@ -311,7 +311,7 @@ pupgrade's.
 ```shell
 pupgrade solve                                 # the newest set that fits
 pupgrade solve --bump puppetlabs-stdlib        # stdlib to its newest, whatever that breaks
-pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0   # move stdlib, drag the rest the least
+pupgrade solve --order nearest --bump puppetlabs-stdlib=v9.6.0  # move stdlib, drag the rest the least
 pupgrade solve --hold puppetlabs-apache        # keep one where it is
 pupgrade solve --prune-unused -o Puppetfile.proposed   # ignore edges to and from modules no catalog used
 pupgrade solve --explain stdlib,baseline       # the solver's reasoning in full
@@ -430,11 +430,11 @@ pupgrade check --propose Puppetfile.stdlib --by-change
 
 # 2. let the solver move the dependents with it: stdlib first, everything
 #    else to the first release that accepts it
-pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 -o Puppetfile.proposed
+pupgrade solve --order nearest --bump puppetlabs-stdlib=v9.6.0 -o Puppetfile.proposed
 
 # 3. what the proposal leaves unresolved, and what pushed each module off its version
 pupgrade check --propose Puppetfile.proposed --summary
-pupgrade solve --order oldest --bump puppetlabs-stdlib=v9.6.0 --explain apache
+pupgrade solve --order nearest --bump puppetlabs-stdlib=v9.6.0 --explain apache
 
 # 4. what the site would feel: removed functions at their call sites,
 #    parameters removed or retyped against the nodes and Hiera keys setting them

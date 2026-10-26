@@ -25,7 +25,9 @@ module Pupgrade
     class Solver
       class Error < StandardError; end
 
-      ORDERS = %w[newest oldest].freeze
+      ORDERS = %w[newest nearest].freeze
+      # The old name of nearest, still taken.
+      ORDER_ALIASES = { 'oldest' => 'nearest' }.freeze
 
       ZERO = SemanticPuppet::Version.parse('0.0.0')
 
@@ -75,14 +77,14 @@ module Pupgrade
       #     already at the current versions: set aside by the solve, and
       #     not excluded, so still counting against the exit status
       # @!attribute [r] note
-      #   @return [String] why this candidate: "newest", "first fit",
+      #   @return [String] why this candidate: "newest", "nearest",
       #     "current", "bumped", "held at current"; "solved" when the set
       #     allowed no newer candidate; "unresolved" when no candidate fits
       #     and this one breaks the least; a reason when there were no
       #     candidates to choose from ("Forge module")
       # @!attribute [r] why
       #   @return [String, nil] for a solved module, the constraint of its
-      #     own in the way and what stands against it; for a first fit,
+      #     own in the way and what stands against it; for a nearest,
       #     what pushed it off its current version
       # @!attribute [r] derivation
       #   @return [String, nil] the solver's whole explanation behind `why`,
@@ -125,8 +127,8 @@ module Pupgrade
       # @param operatingsystems [Hash] `modules.operatingsystems`
       # @param requirements [Hash] `modules.requirements`
       # @param exclude [Hash] the `modules.exclude_*` globs
-      # @param order [String] one of {ORDERS}: which candidate the solver
-      #   prefers, the newest or the nearest to the current
+      # @param order [String] one of {ORDERS}: which fitting candidate the
+      #   solver prefers, the newest or the nearest to the current
       # @param bumps [Hash{String => String, nil}] modules to move, by any
       #   spelling of the name, to a ref or to their newest candidate
       # @param holds [Array<String>] modules kept at their current version
@@ -136,6 +138,7 @@ module Pupgrade
       # @param prune_unused [Boolean]
       def initialize(operatingsystems: {}, requirements: {}, exclude: {}, order: 'newest', bumps: {}, holds: [],
                      evidence: nil, prune_unused: false)
+        order = ORDER_ALIASES.fetch(order, order)
         raise ArgumentError, "order must be one of #{ORDERS.join(', ')}" unless ORDERS.include?(order)
         raise ArgumentError, '--prune-unused needs evidence' if prune_unused && evidence.nil?
 
@@ -390,14 +393,14 @@ module Pupgrade
         return [@reasons[short], nil, nil] if @reasons.key?(short)
 
         newest = @lists[short].map { |c| version_of(c) }.max
-        return ['current', nil, nil] if chosen.current && (version_of(chosen) == newest || @order == 'oldest')
+        return ['current', nil, nil] if chosen.current && (version_of(chosen) == newest || @order == 'nearest')
         return ['newest', nil, nil] if version_of(chosen) == newest && @order == 'newest'
 
-        if @order == 'oldest'
+        if @order == 'nearest'
           # moved the least it could: what pushed it off its current version
           current = version_of(@current[short])
           why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is asked to stay at #{current}"))
-          return ['first fit', why, derivation]
+          return ['nearest', why, derivation]
         end
 
         why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is asked past #{version_of(chosen)}"))

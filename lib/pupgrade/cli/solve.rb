@@ -31,8 +31,8 @@ module Pupgrade
       desc 'Pick a version for every module along its tags, and write the proposed Puppetfile'
 
       config_key 'solve.order', type: :string, default: 'newest',
-                 about: 'newest: move every module as far as its constraints allow; oldest: from the current ' \
-                        'version forward to the first that fits, driven by --bump'
+                 about: 'newest: move every module as far as its constraints allow; nearest: the fitting ' \
+                        'version nearest the current one, driven by --bump'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Whether the tip of a tag-pinned module\'s tracking branch (modules.branchfile) is a candidate'
       config_key 'solve.compile_cache', type: :string, default: nil, example: 'pupgrade/cache/catalogs-alt',
@@ -101,7 +101,7 @@ module Pupgrade
 
         o.separator ''
         o.separator 'Candidates:'
-        o.on('--order=ORDER', ::Pupgrade::Solve::Solver::ORDERS, 'newest (default) or oldest (config: solve.order)') { |v| @options[:order] = v }
+        o.on('--order=ORDER', ::Pupgrade::Solve::Solver::ORDERS + ::Pupgrade::Solve::Solver::ORDER_ALIASES.keys, 'newest (default) or nearest (config: solve.order)') { |v| @options[:order] = v }
         o.on('--bump=MODULE[=REF]', 'Move MODULE to REF, or to its newest candidate; repeatable') { |v| bump(v) }
         o.on('--hold=MODULES', Array, 'Keep these modules at their current version; comma-separated, repeatable') { |v| accumulate(:holds, v) }
         o.on('--branchfile=FILE', 'The branch each tag-pinned module follows (config: modules.branchfile)') { |v| @options[:branchfile] = v }
@@ -212,7 +212,7 @@ module Pupgrade
         open  = plan.choices.count(&:unresolved?)
         prior = plan.choices.sum { |c| c.prior.size }
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move"
-        text += (@options[:order] == 'oldest') ? ', each to its first fit' : ", #{short} solved short of newest"
+        text += %w[nearest oldest].include?(@options[:order]) ? ', each to its nearest fit' : ", #{short} solved short of newest"
         text += ", #{open} unresolved"
         text += "; #{prior} constraint(s) broken before the solve still broken and not excluded (--write-exclusions-file writes them)" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
