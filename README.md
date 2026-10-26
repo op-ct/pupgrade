@@ -325,9 +325,11 @@ holding stdlib, and everything behind stdlib, back: fix its range, exclude
 the edge, or `--bump puppetlabs-stdlib` and read what breaks. A hold or a
 bump is a fact the solver cannot overrule, so a module no version of which
 fits the facts is `unresolved`, kept at the candidate breaking the least.
-A constraint already broken at the current versions is not the solve's to
-fix: it is set aside, and if the result still breaks it the row says `broken
-before the solve` until an exclusion covers it. Exits 1 when any module is
+A constraint already broken at the current versions stays in force when a
+release of the module would meet it, so the solve steers there; one no
+release meets is not the solve's to fix: it is set aside, and if the result
+still breaks it the row says `broken before the solve` until an exclusion
+covers it. Exits 1 when any module is
 unresolved, or any such constraint is still broken and not excluded.
 
 Exclusions are decided in `pupgrade.yaml`, but trying a set first is a loop

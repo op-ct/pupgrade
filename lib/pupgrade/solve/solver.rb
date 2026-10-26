@@ -171,8 +171,17 @@ module Pupgrade
 
         state   = @current.transform_values { |c| version_of(c) }
         @prior  = @by_name.to_h { |short, entry| [short, violations(entry, @current[short], state)] }
-        ignored = @prior.flat_map { |short, broken| broken.map { |v| [short, v.key] } }.to_set
-        @prior.each { |short, broken| broken.each { |v| Pupgrade.logger.debug("solve: #{short}: already broken at #{@current[short]}: #{v}; not a constraint") } }
+        ignored = @ignored = Set.new
+        @prior.each do |short, broken|
+          broken.each do |v|
+            if fixable?(short, v.key, state)
+              Pupgrade.logger.debug("solve: #{short}: broken at #{@current[short]}: #{v}; a candidate meets it, so it stays a constraint")
+            else
+              Pupgrade.logger.debug("solve: #{short}: broken at #{@current[short]}: #{v}; no candidate meets it, so it is set aside")
+              ignored << [short, v.key]
+            end
+          end
+        end
 
         pinned = {}
         decisions = nil
@@ -278,6 +287,15 @@ module Pupgrade
       def unmatched_levers
         (@bumps.keys - @matched[:bump]).each { |g| @warnings << "--bump #{g} matches no module" }
         (@holds - @matched[:hold]).each { |g| @warnings << "--hold #{g} matches no module" }
+      end
+
+      # Whether the module itself can meet a constraint its current version
+      # breaks: some candidate of it does, against the versions deployed
+      # now. What the module cannot fix by moving is not the solve's to
+      # fix, and is set aside.
+      def fixable?(short, key, state)
+        entry = @by_name[short]
+        @lists[short].any? { |candidate| violations(entry, candidate, state).none? { |v| v.key == key } }
       end
 
       # ---- the solver's view -----------------------------------------------------
@@ -388,9 +406,8 @@ module Pupgrade
       #
       # @return [Array(String, String|nil)]
       def solved_because(short, chosen, pinned)
-        ignored = @prior.flat_map { |s, broken| broken.map { |v| [s, v.key] } }.to_set
         asked   = "#{short} is asked past #{version_of(chosen)}"
-        source  = build_source(ignored, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: asked))
+        source  = build_source(@ignored, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: asked))
         _decisions, failure = PubGrub.solve(source)
         unless failure
           Pupgrade.logger.warn("solve: #{short}: a set with it past #{version_of(chosen)} exists; --bump #{short} would take it")

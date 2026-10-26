@@ -225,9 +225,11 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     version of baseline depends on stdlib >= 4.13.1, < 9.0.0`
   * a module no version of which fits is `unresolved`: kept at the
     candidate breaking the least, its constraints set aside
-  * a constraint already broken at the current versions is not the solve's
-    to fix: set aside, and if still broken in the result shown on the row
-    as `broken before the solve` until an exclusion covers it
+  * a constraint already broken at the current versions stays in force
+    when some candidate of the module meets it, so the solve steers to a
+    release that does; one no candidate meets is not the solve's to fix:
+    set aside, and if still broken in the result shown on the row as
+    `broken before the solve` until an exclusion covers it
   * `--explain MODULES` prints the solver's whole derivation for a solved or
     unresolved module
   * `--prune-unused` ignores dependency edges to, and from, modules no
