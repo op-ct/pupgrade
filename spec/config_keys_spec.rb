@@ -32,6 +32,7 @@ RSpec.describe Pupgrade::ConfigKeys do
       'compile.mocks'                    => Pupgrade::Compile::Session,
       'compile.default_mocks'            => Pupgrade::Compile::Session,
       'compile.on_leak'                  => Pupgrade::Compile::Session,
+      'compile.on_mock'                  => Pupgrade::Compile::Session,
       'compile.vars'                     => Pupgrade::Compile::Session,
       'compile.server_facts'             => Pupgrade::Compile::Session,
       'compile.settings'                 => Pupgrade::Compile::Session,

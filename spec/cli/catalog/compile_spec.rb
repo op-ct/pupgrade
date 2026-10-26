@@ -167,6 +167,10 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(text).to start_with("P\n")
     expect(log).to include('notice: guard: web01.example.com: execute: "hostname -f": mocked at')
     expect(log).to include('info: compile: mocks from ')
+    # a filter traces one node, or the nodes with a fact, and leaves the rest at the default
+    log = capture_log(level: :debug) { run(['-vv', '--on-mock', 'certname=web*:notice', '--on-mock', 'facts.os.family=Debian:info']) }
+    expect(log).to include('notice: guard: web01.example.com: execute: "hostname -f": mocked at', 'info: guard: db01.example.com: execute: "hostname -f": mocked at')
+    expect(run(['--on-mock', 'node=web*:info']).first).to eq(3)
 
     status, text = run(['--show-default-mocks'])
     expect(status).to eq(0)
@@ -254,12 +258,13 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(run(code + ['--setting', 'no_such_setting=1']).first).to eq(3)
 
     cfg = File.join(@tmp, 'settings.yaml')
-    File.write(cfg, "compile:\n  factsets: [factsets]\n  cache_dir: #{out}\n  settings:\n    strict_variables: false\n    strict: warning\n")
+    File.write(cfg, "compile:\n  factsets: [factsets]\n  cache_dir: #{out}\n  settings:\n    strict_variables: false\n    strict: warning\n  on_mock: ['certname=web*:notice']\n")
     captured = StringIO.new
     original = $stdout
     $stdout  = captured
     status   = nil
-    begin
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log(level: :notice) do
       described_class.new.run(['-c', cfg, '-d', fixture.dir, '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "x${nope}": }'])
     rescue SystemExit => e
       status = e.status
@@ -267,6 +272,17 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
       $stdout = original
     end
     expect(status).to eq(0)
+    expect(log).not_to include('guard:') # --code compiles no module code that runs a command
+    # compile.on_mock holds standing rules for the site manifest's compile
+    $stdout = captured
+    log = capture_log(level: :notice) do
+      described_class.new.run(['-c', cfg, '-d', fixture.dir, '--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*'])
+    rescue SystemExit
+      nil
+    ensure
+      $stdout = original
+    end
+    expect(log).to include('notice: guard: web01.example.com: execute: "hostname -f": mocked at')
   end
 
   it 'counts a fact read with no value under missing, not leaks' do

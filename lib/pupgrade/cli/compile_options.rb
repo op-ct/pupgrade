@@ -2,6 +2,7 @@ require 'driftless/control_repo'
 require 'pupgrade/compile/enc'
 require 'pupgrade/compile/factset'
 require 'pupgrade/compile/mocks'
+require 'pupgrade/compile/on_mock'
 require 'pupgrade/compile/session'
 
 module Pupgrade
@@ -39,8 +40,9 @@ module Pupgrade
         o.separator 'Mocking options (compiler execution guard):'
         o.on('--mocks=FILE', "Rules for mocking command and fact executions (config: compile.mocks; default: #{DEFAULT_MOCKS_FILE}") { |v| @options[:mocks] = v }
         o.on('--show-default-mocks', 'Print the mocks pupgrade applies after the file, and exit') { @options[:show_default_mocks] = true }
-        o.on('--on-mock=LEVEL', ::Pupgrade::Compile::Recorder::ON_MOCK,
-             "Log each mocked exec at LEVEL (#{::Pupgrade::Compile::Recorder::ON_MOCK.join(', ')}; default: debug)") { |v| @options[:on_mock] = v }
+        o.on('--on-mock=RULE', "Log mocked execs at a level (#{::Pupgrade::Compile::OnMock::LEVELS.join(', ')}; default: debug): RULE is LEVEL,",
+             'or FILTER:LEVEL for the nodes FILTER matches (certname=GLOB[,…], facts.PATH=VALUE[,…], joined by ";");',
+             'repeatable, the last matching rule deciding (config: compile.on_mock)') { |v| accumulate(:on_mock, [v]) }
         o.on('--[no-]default-mocks', 'Apply pupgrade\'s built-in mocks for known exec leaks (config: compile.default_mocks)') { |v| @options[:default_mocks] = v }
         o.on('--on-leak=POLICY', ::Pupgrade::Compile::Session::ON_LEAK + ::Pupgrade::Compile::Session::ON_LEAK_ALIASES.keys,
              %q[Response to unmocked commands: 'fail' (default) or 'allow' (config: compile.on_leak)]) { |v| @options[:on_leak] = v }
@@ -97,7 +99,7 @@ module Pupgrade
         ::Pupgrade::Compile::Session.new(
           repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
           prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {}, settings: @options[:settings] || {},
-          mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || 'debug',
+          mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || ['debug'],
         ).start
       rescue ::Pupgrade::Compile::Session::Error, ::Pupgrade::Compile::Mocks::Error, ::Pupgrade::Compile::Enc::Error, Errno::ENOENT => e
         fatal!("#{command}: #{e.message}", 3)
@@ -149,6 +151,7 @@ module Pupgrade
           ruby:          cfg.dig('compile', 'ruby'),
           default_mocks: cfg.dig('compile', 'default_mocks'),
           on_leak:       cfg.dig('compile', 'on_leak') || 'fail',
+          on_mock:       cfg.dig('compile', 'on_mock'),
           vars:          cfg.dig('compile', 'vars'),
           server_facts:  cfg.dig('compile', 'server_facts'),
           settings:      cfg.dig('compile', 'settings'),

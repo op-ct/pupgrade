@@ -101,6 +101,10 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - `missing` counts fact reads with no value in the factset or the mocks
     - failures are displayed under the table
   * unmocked commands log at warning, mocked ones at `--on-mock LEVEL`;
+    `--on-mock 'certname=web*:notice'` or `'facts.os.family=RedHat:info'`
+    sets the level for the nodes matching, so one node or one OS can be
+    traced in a full run (filters joined by `;`, the flag repeatable;
+    `compile.on_mock` holds standing rules, the flag's coming after);
     Puppet's own warnings log at warning with the certname, one line
     each, deprecations at info
   * `pupgrade/compiler-mocks.yaml` is read by default when present

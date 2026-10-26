@@ -11,6 +11,7 @@ require 'pupgrade/logging'
 require 'pupgrade/compile/probes'
 require 'pupgrade/compile/enc'
 require 'pupgrade/compile/mocks'
+require 'pupgrade/compile/on_mock'
 
 module Pupgrade
   module Compile
@@ -37,6 +38,9 @@ module Pupgrade
       config_key 'compile.on_leak', type: :string, default: 'fail',
                  about: 'What happens to an unmocked command: fail (stop that node\'s compile) ' \
                         'or allow (run it, and record it)'
+      config_key 'compile.on_mock', type: :array, default: nil, example: ['silent', 'certname=web01*:info'],
+                 about: 'Rules for logging mocked execs, as --on-mock takes them: LEVEL, or FILTER:LEVEL for the nodes ' \
+                        'the filter matches; the flag\'s rules come after these'
       config_key 'compile.vars', type: :hash, default: nil, example: { 'role' => 'web' },
                  about: 'Top-scope variables set before the manifest, as an ENC would'
       config_key 'compile.server_facts', type: :hash, default: nil, example: { 'servername' => 'puppet.example.com' },
@@ -85,13 +89,19 @@ module Pupgrade
       # @param server_facts [Hash{String => Object}]
       # @param mocks [Mocks]
       # @param on_leak [String] one of {ON_LEAK}
+      # @param on_mock [OnMock, Array<String>, String] at what level each
+      #   node's mocked answers are logged; see {OnMock}
       # @param settings [Hash{String => Object}] Puppet settings by name,
       #   applied after pupgrade's own
       def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil,
                      server_facts: {}, mocks: Mocks.empty, on_leak: 'fail', on_mock: 'debug', settings: {})
         on_leak = ON_LEAK_ALIASES.fetch(on_leak, on_leak)
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
-        raise Error, "on_mock must be one of #{Recorder::ON_MOCK.join(', ')}, got #{on_mock.inspect}" unless Recorder::ON_MOCK.include?(on_mock.to_s)
+        begin
+          on_mock = on_mock.is_a?(OnMock) ? on_mock : OnMock.parse(on_mock)
+        rescue OnMock::Error => e
+          raise Error, e.message
+        end
         raise Error, 'give code or prepend, not both' if code && prepend
         raise Error, "environment name #{environment.inspect} must be lowercase letters, digits, and underscores" unless environment.match?(/\A[a-z0-9_]+\z/)
 
@@ -104,7 +114,7 @@ module Pupgrade
         @server_facts = DEFAULT_SERVER_FACTS.merge(server_facts.to_h { |k, v| [k.to_s, v] })
         @mocks        = mocks
         @on_leak      = on_leak
-        @on_mock      = on_mock.to_s
+        @on_mock      = on_mock
         @settings     = (settings || {}).to_h { |k, v| [k.to_s, v] }
       end
 
@@ -142,7 +152,7 @@ module Pupgrade
       def compile(factset)
         started  = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         resolved = @enc.resolve(factset)
-        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock, node: resolved)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock.level_for(factset), node: resolved)
         catalog  = nil
         error    = nil
         Probes.current = recorder
@@ -174,7 +184,7 @@ module Pupgrade
       # @yieldparam node [Enc::Node] what the ENC stand-in decided
       def scope(factset, compile: false)
         resolved = @enc.resolve(factset)
-        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock, node: resolved)
+        recorder = Recorder.new(factset: factset, mocks: @mocks, on_leak: @on_leak, repo_dir: @repo_dir, on_mock: @on_mock.level_for(factset), node: resolved)
         Probes.current = recorder
         Puppet.override(environments: @loader, current_environment: @env) do
           Puppet[:code] = compile ? code_for(@env) : 'undef'

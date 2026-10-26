@@ -540,6 +540,7 @@ jq '.leaks[] | select(.action == "allowed")' pupgrade/cache/catalogs/*/probes.js
 
 # 3. answer each one in pupgrade/compiler-mocks.yaml (see Mocks), then
 pupgrade catalog compile -vv          # each mocked answer logged, with its call site
+pupgrade catalog compile -v --on-mock 'certname=web01*:info'   # one node's answers, in a full run
 ```
 
 ### Comparing two control repo versions
