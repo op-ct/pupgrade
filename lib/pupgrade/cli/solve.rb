@@ -213,7 +213,7 @@ module Pupgrade
         text  = "solve: #{moved} of #{plan.choices.size} module(s) move"
         text += %w[nearest oldest].include?(@options[:order]) ? ', each to its nearest fit' : ", #{short} solved short of newest"
         text += ", #{open} unresolved"
-        text += "; #{prior} unresolvable constraint(s), not excluded (--write-exclusions-file writes them)" if prior.positive?
+        text += "; #{prior} unresolvable constraint(s), not excluded#{' (--write-exclusions-file writes them)' unless @options[:write_exclusions]}" if prior.positive?
         text += "; #{plan.pruned.size} pruned edge(s) violated" if @options[:prune_unused]
         text += "; evidence from #{evidence.nodes} node(s)" if evidence
         text
