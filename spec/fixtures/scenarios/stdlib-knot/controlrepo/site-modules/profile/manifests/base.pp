@@ -13,6 +13,7 @@ class profile::base (
   $host    = stdlib::run_hostname()
   $servers = lookup('profile::base::ntp_servers')
   $absent  = lookup('profile::base::absent', undef, undef, 'default')
+  $legacy_opt = lookup('apache::legacy_opt')
   $major   = $facts.dig('os', 'release', 'major')
   $known   = 'kernel' in $facts
   firewall { "100 allow ntp ${port}":

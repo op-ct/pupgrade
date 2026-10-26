@@ -2,3 +2,5 @@
 profile::base::ntp_servers:
   - time.example.com
 profile::base::banner: "%{facts.os.family} on %{facts.networking.fqdn}"
+apache::legacy_opt: from hiera
+apache::dead_opt: from hiera

@@ -8,7 +8,7 @@ module Pupgrade
     # evidence every change is a finding with its use unknown.
     class Analysis
       KINDS = %w[
-        class-removed class-param-removed class-param-added-required class-param-type-changed class-param-default-changed
+        class-removed class-param-removed class-param-hiera-only class-param-added-required class-param-type-changed class-param-default-changed
         define-removed define-param-removed define-param-added-required define-param-type-changed define-param-default-changed
         function-removed function-changed
         type-removed type-attribute-removed type-attribute-changed
@@ -43,12 +43,14 @@ module Pupgrade
       NAMED = 3
 
       # @param evidence [Evidence, nil]
-      # @param hiera [Hash{String => Array<String>}] "class::param" or class
-      #   name to the Hiera keys and lookups referring to it that the
-      #   proposed schema no longer answers, as "path:line"
-      def initialize(evidence: nil, hiera: {})
+      # @param hiera [Hash{String => Array<String>}] every top-level Hiera
+      #   key to the data files setting it, as "path:line"
+      # @param lookups [Hash{String => Array<String>}] every key some
+      #   lookup() reads to its call sites, as "path:line"
+      def initialize(evidence: nil, hiera: {}, lookups: {})
         @evidence = evidence
         @hiera    = hiera
+        @lookups  = lookups
       end
 
       # @param name [String] the module
@@ -78,14 +80,19 @@ module Pupgrade
         klass = change.name
         case change.kind
         when 'removed'
-          [make(name, 'class-removed', klass, nodes(@evidence&.including(klass)) + hiera(klass), change)]
+          [make(name, 'class-removed', klass, nodes(@evidence&.including(klass)) + hiera_under(klass), change)]
         when 'changed'
           param, what = param_change(change)
           return [] unless param
 
           case what
           when :removed
-            [make(name, 'class-param-removed', "#{klass}::#{param}", nodes(@evidence&.setting(klass, param)) + hiera("#{klass}::#{param}"), change)]
+            # a key some lookup() still reads lives on as plain Hiera data; one nothing reads is dead
+            key   = "#{klass}::#{param}"
+            sites = Array(@lookups[key])
+            kind  = sites.empty? ? 'class-param-removed' : 'class-param-hiera-only'
+            where = nodes(@evidence&.setting(klass, param)) + hiera(key) + (sites.empty? ? [] : [list('lookups', sites)])
+            [make(name, kind, key, where, change)]
           when :added
             return [] unless required?(to.dig('classes', klass, 'params', param))
 
@@ -215,9 +222,17 @@ module Pupgrade
         [list('resources', names)]
       end
 
+      # @return [Array<String>] one "hiera: ..." part naming the data files
+      #   setting the key, or none
       def hiera(key)
         refs = @hiera[key]
         (refs.nil? || refs.empty?) ? [] : [list('hiera', refs)]
+      end
+
+      # The data files setting any key of the class.
+      def hiera_under(klass)
+        refs = @hiera.select { |key, _| key.start_with?("#{klass}::") }.values.flatten
+        refs.empty? ? [] : [list('hiera', refs)]
       end
 
       def list(label, names)

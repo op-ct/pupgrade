@@ -254,6 +254,11 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   from the `compile` output.
   * a finding nothing is known to use reads `use unknown`; `--no-catalogs`
     reads no compile output at all
+  * a removed class parameter whose key some `lookup()` still reads is
+    `class-param-hiera-only` (the data lives on as plain Hiera data), with
+    the call sites; one nothing reads is `class-param-removed`, dead data;
+    Hiera keys and lookups come from the repo's data and code, not from
+    driftless's params validator and its role/profile exemptions
   * `--summary` gives one row per module; `--gitlog` and `--changelog` add
     each module's commits and CHANGELOG sections for the versions crossed
   * `--modules`, `--impacts`, `--all` filters

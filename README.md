@@ -350,7 +350,9 @@ For every module a proposal moves, the API changes between the deployed
 version and the proposed ref, each mapped to what uses it in the catalogs
 and data: a parameter removed to the nodes setting it and the Hiera keys
 naming it, a function removed to its call sites, a type attribute changed to
-the resources declaring it.
+the resources declaring it. A removed parameter whose key some `lookup()`
+still reads is `class-param-hiera-only`: the data lives on, the class no
+longer takes it; one nothing reads leaves dead data, `class-param-removed`.
 
 ```shell
 pupgrade impact Puppetfile.proposed

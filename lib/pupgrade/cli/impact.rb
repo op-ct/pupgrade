@@ -58,8 +58,8 @@ module Pupgrade
         ::Pupgrade.logger.notice("impact: reading the surfaces of #{changes.size} module(s) at both refs")
         surfaces  = surfaces_for(repo, inventory, proposal, changes)
         ::Pupgrade.logger.notice('impact: checking Hiera data against the proposed classes, then each module\'s history')
-        hiera     = hiera_references(repo, inventory, surfaces)
-        analysis  = ::Pupgrade::Impact::Analysis.new(evidence: evidence, hiera: hiera)
+        data, lookups = surfaces.empty? ? [{}, {}] : hiera_references(repo)
+        analysis = ::Pupgrade::Impact::Analysis.new(evidence: evidence, hiera: data, lookups: lookups)
 
         modules  = []
         findings = []
@@ -169,26 +169,27 @@ module Pupgrade
       # class or class::param they name: driftless's validator run against a
       # schema of the current repo with the moving modules' classes replaced
       # by their proposed surfaces.
-      def hiera_references(repo, _inventory, surfaces)
-        return {} if surfaces.empty?
-
+      # What the repo's data and code say about keys: every top-level Hiera
+      # key to the files setting it, and every key some lookup() reads to
+      # its call sites, each as "path:line".
+      #
+      # @return [Array(Hash, Hash)] data keys, lookups
+      def hiera_references(repo)
         code   = ::Driftless::Codebase.load(repo.dir)
         corpus = code.corpus(repo_dir: repo.dir)
-        schema = ::Driftless::ParamsSchema.assemble(corpus: corpus)
-        surfaces.each_value do |(from, to)|
-          (from['classes'].keys + from['defined_types'].keys).each { |c| schema['classes'].delete(c) }
-          to['classes'].merge(to['defined_types']).each do |name, entry|
-            schema['classes'][name] = { 'file' => entry['file'], 'params' => entry['params'].transform_values { |p| { 'type' => p['type'], 'default' => p['default'] } } }
-          end
+        data   = Hash.new { |h, k| h[k] = [] }
+        corpus.data_files.each do |df|
+          path = ::Driftless::ParamsSchema.relative(df.path, repo.dir)
+          df.top_level_keys.each { |key, line| data[key] << "#{path}:#{line}" }
         end
-        issues = ::Driftless::ParamsSchema::Validate.new(schema).call(corpus)
-        issues.each_with_object(Hash.new { |h, k| h[k] = [] }) do |issue, refs|
-          key = (issue.kind == 'missing-class') ? issue.key.split('::')[0..-2].join('::') : issue.key
-          refs[key] << "#{issue.path}:#{issue.line}"
+        lookups = Hash.new { |h, k| h[k] = [] }
+        (corpus.code_lookup_calls + corpus.data_lookup_calls).each do |lc|
+          lookups[lc.key] << "#{::Driftless::ParamsSchema.relative(lc.file, repo.dir)}:#{lc.line}"
         end
+        [data, lookups]
       rescue StandardError => e
         ::Pupgrade.logger.warn("impact: Hiera references not checked: #{e.message}")
-        {}
+        [{}, {}]
       end
 
       # How the verb of a change is coloured, as `module diff` colours it.

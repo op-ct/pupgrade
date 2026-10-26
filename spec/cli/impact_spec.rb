@@ -63,6 +63,10 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(status).to eq(1)
     rows = cells(out).drop(1).map { |r| r.first(4) }
     expect(rows).to eq([
+      # a removed param whose key nothing reads any more leaves dead data; one some lookup() still reads lives on as plain Hiera data
+      ['puppetlabs-apache', 'class-param-removed', 'apache::dead_opt', 'nodes: db01.example.com, web01.example.com; hiera: data/common.yaml:6'],
+      ['puppetlabs-apache', 'class-param-hiera-only', 'apache::legacy_opt',
+       'nodes: db01.example.com, web01.example.com; hiera: data/common.yaml:5; lookups: site-modules/profile/manifests/base.pp:16'],
       ['puppetlabs-apache', 'class-param-default-changed', 'apache::version', 'nodes: db01.example.com, web01.example.com'],
       ['puppetlabs-firewall', 'type-attribute-changed', 'firewall action',
        'resources: firewall[100 allow ntp 123] on db01.example.com, firewall[100 allow ntp 123] on web01.example.com'],
@@ -77,7 +81,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     _, out = run(['--compile-cache', catalogs, '--summary'])
     expect(cells(out)).to eq([
       %w[module from to commits findings used],
-      ['puppetlabs-apache', 'tag v10.1.1', 'tag v12.0.0', '2', '1', '1'],
+      ['puppetlabs-apache', 'tag v10.1.1', 'tag v12.0.0', '2', '3', '3'],
       ['puppetlabs-firewall', 'tag v5.0.0', 'tag v8.0.0', '3', '1', '1'],
       ['puppetlabs-stdlib', 'tag v8.6.0', 'tag v9.6.0', '3', '3', '3'],
     ])
@@ -88,8 +92,8 @@ RSpec.describe Pupgrade::CLI::Impact do
 
   it 'reports every change with its use unknown without evidence, and filters by kind' do
     status, out = run(['--no-catalogs'])
-    expect(status).to eq(0)
-    expect(cells(out).drop(1).map { |r| [r[1], r[3]] }).to all(match([a_string_matching(/\A(class|type|function)-/), 'use unknown']))
+    expect(status).to eq(1) # the Hiera references are known without catalogs
+    expect(cells(out).drop(1).map { |r| [r[1], r[3]] }).to all(match([a_string_matching(/\A(class|type|function)-/), a_string_matching(/\A(use unknown|hiera: )/)]))
     expect(cells(out).drop(1).map { |r| r[1] }).to include('type-alias-changed')
     _, out = run(['--compile-cache', catalogs, '--impacts', 'function-removed'])
     expect(cells(out).drop(1).map { |r| r[2] }).to eq(['legacy_shout'])
@@ -110,7 +114,7 @@ RSpec.describe Pupgrade::CLI::Impact do
       rescue SystemExit => e
         status = e.status
       end
-      expect(status).to eq(0)
+      expect(status).to eq(1) # the two apache keys have Hiera uses
     end
     expect(log).to include("debug: surface: #{File.join(fixture.dir, 'modules/stdlib')}:v9.6.0: cached at")
     expect(log).to include('info: impact: puppetlabs-stdlib: surfaces at v8.6.0 and v9.6.0')
