@@ -320,8 +320,8 @@ module Pupgrade
       #   kept from the solver as unresolvable
       # @param pinned [Hash{String => Array(Candidate, String)}] modules kept
       #   at a version whatever they need
-      # @param asked [Fact, nil] one more fact, for the second query
-      def build_source(ignored, pinned, asked = nil)
+      # @param asked [Array<Fact>] more facts, for the second query
+      def build_source(ignored, pinned, *asked)
         facts = @levers.map do |short, (kind, candidate)|
           v = version_of(candidate)
           PubGrub::Fact.new(package: short, range: PubGrub.except(v), text: "#{short} is #{(kind == :hold) ? 'held at' : 'bumped to'} #{v} (--#{kind})")
@@ -329,7 +329,7 @@ module Pupgrade
         facts += pinned.map do |short, (candidate, _)|
           PubGrub::Fact.new(package: short, range: PubGrub.except(version_of(candidate)), text: "#{short} is kept at #{version_of(candidate)} (no version fits)")
         end
-        facts << asked if asked
+        facts.concat(asked)
         dependencies = ->(short, version) do
           next {} if pinned.key?(short)
 
@@ -402,13 +402,13 @@ module Pupgrade
         broken  = violations(entry, chosen, decisions)
         prior, fresh = broken.partition { |v| ignored.include?([short, v.key]) }
         # a pinned module breaking nothing at the version kept is noted as chosen
-        note, why, derivation = note_for(short, chosen, fresh.empty? ? pinned.except(short) : pinned)
+        note, why, derivation = note_for(short, chosen, fresh.empty? ? pinned.except(short) : pinned, decisions)
         Choice.new(entry: entry, candidates: @lists[short], chosen: chosen, violations: fresh, prior: prior,
                    note: note, why: why, derivation: derivation)
       end
 
       # @return [Array(String, String|nil, String|nil)] note, why, derivation
-      def note_for(short, chosen, pinned)
+      def note_for(short, chosen, pinned, decisions)
         if @levers.key?(short)
           return [(@levers[short].first == :hold) ? 'held at current' : 'bumped', nil, pinned.dig(short, 1)]
         end
@@ -422,11 +422,11 @@ module Pupgrade
         if @order == 'nearest'
           # moved the least it could: what pushed it off its current version
           current = version_of(@current[short])
-          why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is asked to stay at #{current}"))
+          why, derivation = because(short, pinned, decisions, PubGrub::Fact.new(package: short, range: PubGrub.except(current), text: "#{short} is asked to stay at #{current}"))
           return ['nearest', why, derivation]
         end
 
-        why, derivation = because(short, pinned, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is asked past #{version_of(chosen)}"))
+        why, derivation = because(short, pinned, decisions, PubGrub::Fact.new(package: short, range: PubGrub.up_to(version_of(chosen)), text: "#{short} is asked past #{version_of(chosen)}"))
         ['solved', why, derivation]
       end
 
@@ -434,15 +434,22 @@ module Pupgrade
       # facts, for a set with the module elsewhere (past its chosen
       # version, or off its current one), and the leaves of its refusal are
       # the module's own constraint in the way and what stands against it.
+      # When such a set exists with the other modules free, it is asked
+      # again with them where the chosen set has them, so the refusal names
+      # what holds the module in this set.
       #
+      # @param decisions [Hash{String => SemanticPuppet::Version}] the set chosen
       # @param asked [PubGrub::Fact] the versions ruled out, with its words
       # @return [Array(String, String|nil)] why, and the whole derivation
-      def because(short, pinned, asked)
+      def because(short, pinned, decisions, asked)
         source = build_source(@ignored, pinned, asked)
         _decisions, failure = PubGrub.solve(source)
         unless failure
-          Pupgrade.logger.warn("solve: #{short}: a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}")
-          return ["a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}", nil]
+          Pupgrade.logger.info("solve: #{short}: a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}; the order chose this one")
+          held = decisions.except(short).map { |s, v| PubGrub::Fact.new(package: s, range: PubGrub.except(v), text: "#{s} is #{v} in this set") }
+          source = build_source(@ignored, pinned, asked, *held)
+          _decisions, failure = PubGrub.solve(source)
+          return ["a set exists where #{asked.text.sub("#{short} is asked ", 'it is ')}", nil] unless failure
         end
 
         texts   = PubGrub.leaves(failure.incompatibility).map { |inc| source.keys.fetch(inc) { [nil, nil, inc.to_s] } }.uniq
