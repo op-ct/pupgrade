@@ -66,8 +66,10 @@ module Pupgrade
         # Atomic registration — declare this class as a command with these names,
         # optionally as a child of a parent command class. Both pieces arrive
         # together, so there is no order-of-DSL question to reason about.
-        def register_command(name:, subcommand_of: nil)
-          @names = Array(name).flatten.map(&:to_s)
+        # A hidden command runs when named in full, and help does not list it.
+        def register_command(name:, subcommand_of: nil, hidden: false)
+          @names  = Array(name).flatten.map(&:to_s)
+          @hidden = hidden
           return if subcommand_of.nil?
           @parent_command = subcommand_of
           subcommand_of.add_subcommand(self)
@@ -93,14 +95,18 @@ module Pupgrade
           (@subcommands ||= {}).values.uniq
         end
 
+        def hidden?
+          @hidden ? true : false
+        end
+
         # Returns the child class matching name_str exactly, or as an unambiguous
-        # prefix. Returns nil for no match. Raises AmbiguousSubcommand for a prefix
-        # that matches more than one child.
+        # prefix of a child that is not hidden. Returns nil for no match. Raises
+        # AmbiguousSubcommand for a prefix that matches more than one child.
         def find_subcommand(name_str)
           table = (@subcommands ||= {})
           return table[name_str] if table.key?(name_str)
 
-          matches = table.keys.select { |k| k.start_with?(name_str) }
+          matches = table.select { |k, klass| k.start_with?(name_str) && !klass.hidden? }.keys
           case matches.size
           when 0 then nil
           when 1 then table[matches.first]
@@ -291,7 +297,7 @@ module Pupgrade
       end
 
       def add_subcommand_section(o)
-        subs = self.class.subcommands.sort_by(&:canonical_name)
+        subs = self.class.subcommands.reject(&:hidden?).sort_by(&:canonical_name)
         return if subs.empty?
         o.separator ''
         o.separator 'Subcommands:'

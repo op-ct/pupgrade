@@ -35,5 +35,14 @@ RSpec.describe Pupgrade::CLI::Root do
     expect(status).to eq(0)
     expect(out).to include('Usage: pupgrade [options] <subcommand>')
     expect(out.lines.grep(/^    (catalog|check|config|help|impact|module|solve|surface|version) /).size).to eq(9)
+    expect(out.lines.grep(/^    compile /)).to be_empty
+  end
+
+  it 'runs catalog compile as the hidden compile, which no prefix reaches' do
+    expect(described_class.find_subcommand('compile').superclass).to eq(Pupgrade::CLI::Catalog::Compile)
+    expect(described_class.find_subcommand('co')).to eq(Pupgrade::CLI::Config)
+    status, out = run(%w[compile --help])
+    expect(status).to eq(0)
+    expect(out).to include('Usage: pupgrade compile [options]', 'Compile factsets into catalogs')
   end
 end
