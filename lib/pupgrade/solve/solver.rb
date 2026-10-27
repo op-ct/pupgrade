@@ -31,6 +31,9 @@ module Pupgrade
 
       ZERO = SemanticPuppet::Version.parse('0.0.0')
 
+      # What a lever does to its module, in a fact and a finding.
+      LEVER_WORDS = { hold: 'held at', bump: 'bumped to' }.freeze
+
       # One constraint a candidate breaks: what it asks, and what stands in
       # the way.
       #
@@ -197,8 +200,12 @@ module Pupgrade
           short = misfit(failure, source, pinned)
           raise Error, "no set of versions fits, and nothing more can give:\n#{failure.explanation}" unless short
 
-          pinned[short] = [pin_for(short, state), refusal(failure, "no version of #{short} fits the rest")]
-          Pupgrade.logger.info("solve: #{short}: no version fits the rest; kept at #{pinned[short].first}, its constraints set aside")
+          # a lever kept where it puts the module is what does not fit
+          kind, candidate = @levers[short]
+          finding = kind ? "#{short} cannot be #{LEVER_WORDS[kind]} #{version_of(candidate)}" : "no version of #{short} fits the rest"
+          pinned[short] = [pin_for(short, state), refusal(failure, finding, lever_fact(short))]
+          Pupgrade.logger.info("solve: #{short}: #{kind ? "the --#{kind} does not fit the rest" : 'no version fits the rest'}; " \
+                               "kept at #{pinned[short].first}, its constraints set aside")
         end
 
         choices = ordered.map { |short| choice_for(short, decisions, ignored, pinned) }
@@ -322,10 +329,7 @@ module Pupgrade
       #   at a version whatever they need
       # @param asked [Array<Fact>] more facts, for the second query
       def build_source(ignored, pinned, *asked)
-        facts = @levers.map do |short, (kind, candidate)|
-          v = version_of(candidate)
-          PubGrub::Fact.new(package: short, range: PubGrub.except(v), text: "#{short} is #{(kind == :hold) ? 'held at' : 'bumped to'} #{v} (--#{kind})")
-        end
+        facts = @levers.keys.map { |short| lever_fact(short) }
         facts += pinned.map do |short, (candidate, _)|
           PubGrub::Fact.new(package: short, range: PubGrub.except(version_of(candidate)), text: "#{short} is kept at #{version_of(candidate)} (no version fits)")
         end
@@ -481,6 +485,17 @@ module Pupgrade
 
         leaves = PubGrub.leaves(incompatibility).map(&:to_s).uniq - [asked&.text]
         ["#{conclusion},", "   because #{leaves.first}", *leaves.drop(1).map { |l| "      and #{l}" }].join("\n")
+      end
+
+      # The fact a --hold or --bump states: the module at that version.
+      #
+      # @return [PubGrub::Fact, nil] nil for a module with no lever
+      def lever_fact(short)
+        kind, candidate = @levers[short]
+        return unless kind
+
+        v = version_of(candidate)
+        PubGrub::Fact.new(package: short, range: PubGrub.except(v), text: "#{short} is #{LEVER_WORDS[kind]} #{v} (--#{kind})")
       end
 
       # ---- constraints -----------------------------------------------------------

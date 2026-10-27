@@ -149,12 +149,16 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(rows(main)['puppetlabs-concat']).to eq(['tag v7.3.0', 'v9.1.0', '2', 'newest'])
     expect(explain).to eq("puppetlabs-stdlib: v9.4.0 (bumped)\n  nothing stood in the way\n\npuppetlabs-concat: v9.1.0 (newest)\n  nothing stood in the way\n")
 
-    _, out = run(['--hold', 'puppetlabs-stdlib', '--bump', 'puppetlabs-firewall=v8.0.0', '--explain', 'puppetdb'])
+    _, out = run(['--hold', 'puppetlabs-stdlib', '--bump', 'puppetlabs-firewall=v8.0.0', '--explain', 'puppetdb,firewall'])
     table = rows(out.split("\n\n", 2).first)
     expect(table['puppetlabs-firewall']).to eq(['tag v5.0.0', 'v8.0.0', '3', 'bumped: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0'])
     expect(table['puppetlabs-puppetdb'].last).to start_with('unresolved: needs puppetlabs/firewall >= 1.1.3 < 6.0.0, but firewall moves to 8.0.0')
     expect(out).to include("\n  no version of puppetdb fits the rest,\n     because puppetdb >= 8.0.0 depends on stdlib >= 9.0.0, < 10.0.0\n",
                            "\n        and firewall is bumped to 8.0.0 (--bump)\n        and stdlib is held at 8.6.0 (--hold)\n")
+    # a lever the rest cannot meet is named in the finding, which states its fact
+    firewall = out[/\npuppetlabs-firewall: .*?(?=\n\n|\z)/m]
+    expect(firewall).to include("\n  firewall cannot be bumped to 8.0.0,\n     because ", "stdlib is held at 8.6.0 (--hold)")
+    expect(firewall).not_to include('(--bump)', 'no version of')
   end
 
   it 'prunes dependency edges to and from modules the evidence shows unused, writes the exclusions the result relies on, and reads them back' do
