@@ -4,6 +4,7 @@ require 'yaml'
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/compile_options'
+require 'pupgrade/cli/catalog/resources'
 
 module Pupgrade
   module CLI
@@ -21,7 +22,8 @@ module Pupgrade
           Show a compiled catalog (or its probes) from the cache
 
           A key path walks into the document: dotted keys, [n] for an array index,
-          `.` for the whole: resources[0].title, classes, leaks[0]
+          [Type[title]] for a resource (a list when either is a glob), `.` for the
+          whole: resources[0].title, resources[File[/etc/motd]].parameters, leaks[0]
         DESC
 
         FORMATS = %w[json yaml].freeze
@@ -68,22 +70,72 @@ module Pupgrade
           Dir.children(dir).sort.select { |n| File.directory?(File.join(dir, n)) && globs.any? { |g| File.fnmatch?(g, n, File::FNM_CASEFOLD) } }
         end
 
-        # @param path [String] "a.b[0].c"; "." or "" for the document
+        # @param path [String] "a.b[0].c", "resources[File[/etc/motd]].tag"; "." or
+        #   "" for the document
         # @raise [KeyError] naming the part not there
         def walk(doc, path)
           return doc if path.strip.empty? || path == '.'
 
-          path.scan(/\[\d+\]|[^.\[\]]+/).reduce(doc) do |node, part|
+          steps(path).reduce(doc) do |node, part|
             if part.start_with?('[')
               raise KeyError, "#{path}: #{part} on something that is not a list" unless node.is_a?(Array)
 
-              node.fetch(part[1..-2].to_i) { raise KeyError, "#{path}: no #{part} (#{node.size} entries)" }
+              inner = part[1..-2]
+              if (ref = Resources::REFERENCE.match(inner))
+                resource(node, *ref.captures) { raise KeyError, "#{path}: no resource #{inner}" }
+              elsif inner.match?(/\A\d+\z/)
+                node.fetch(inner.to_i) { raise KeyError, "#{path}: no #{part} (#{node.size} entries)" }
+              else
+                raise KeyError, "#{path}: #{part} is neither an index nor a Type[title]"
+              end
             else
               raise KeyError, "#{path}: #{part} on something that is not a map" unless node.is_a?(Hash)
 
               node.fetch(part) { raise KeyError, "#{path}: no key #{part.inspect}" }
             end
           end
+        end
+
+        # The path's keys and bracketed steps, a bracket closing where its
+        # nesting does, so a title's dots and brackets stay in it.
+        #
+        # @return [Array<String>] "resources", "[File[/etc/a.conf]]", "[0]", ...
+        # @raise [KeyError] when a bracket is left open
+        def steps(path)
+          parts = []
+          depth = 0
+          part  = +''
+          path.each_char do |c|
+            if depth.zero? && ['.', '['].include?(c)
+              parts << part unless part.empty?
+              part = +''
+              next if c == '.'
+            end
+            part << c
+            depth += 1 if c == '['
+            depth -= 1 if c == ']'
+            next unless depth.zero? && c == ']'
+
+            parts << part
+            part = +''
+          end
+          raise KeyError, "#{path}: a [ is not closed" unless depth.zero?
+
+          parts << part unless part.empty?
+          parts
+        end
+
+        # The resource a reference names exactly, else the list it matches
+        # as globs; the type in any case, as `catalog resources` takes it.
+        #
+        # @yield when nothing matches
+        def resource(list, type, title)
+          list  = list.grep(Hash)
+          exact = list.find { |r| r['type'].to_s.casecmp?(type) && r['title'].to_s == title }
+          return exact if exact
+
+          found = list.select { |r| File.fnmatch?(type, r['type'].to_s, File::FNM_CASEFOLD) && File.fnmatch?(title, r['title'].to_s) }
+          found.empty? ? yield : found
         end
 
         def keys_of(value)

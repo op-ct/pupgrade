@@ -97,10 +97,26 @@ RSpec.describe Pupgrade::CLI::Catalog do
     expect(JSON.parse(out)).to eq('ok')
     _, out = run(['show', '--cache-dir', @catalogs, '-p', 'mocks[0].command', 'web01*'])
     expect(JSON.parse(out)).to eq('hostname -f')
+    _, out = run(['show', '--cache-dir', @catalogs, 'resources[concat::fragment[motd]].type', 'web01.example.com'])
+    expect(JSON.parse(out)).to eq('Concat::Fragment')
+    _, out = run(['show', '--cache-dir', @catalogs, 'resources[Class[*]]', 'web01.example.com'])
+    expect(JSON.parse(out).map { |r| r['type'] }.uniq).to eq(['Class'])
+    expect(run(['show', '--cache-dir', @catalogs, 'resources[File[/no/such]]', 'web01.example.com']).first).to eq(1)
+    expect(run(['show', '--cache-dir', @catalogs, 'resources[motd]', 'web01.example.com']).first).to eq(1)
 
     expect(run(['show', '--cache-dir', @catalogs, 'nothing.here', 'web01.example.com']).first).to eq(1)
     expect(run(['show', '--cache-dir', @catalogs, 'nobody']).first).to eq(3)
     expect(run(['show']).first).to eq(2)
+  end
+
+  it 'walks a key path whose resource titles hold dots and brackets' do
+    doc  = { 'resources' => [{ 'type' => 'File', 'title' => '/etc/modprobe.d/a.conf', 'tags' => ['x'] },
+                             { 'type' => 'File', 'title' => '/etc/x[1]', 'tags' => ['y'] }] }
+    show = described_class::Show.new
+    expect(show.send(:walk, doc, 'resources[File[/etc/modprobe.d/a.conf]].tags[0]')).to eq('x')
+    expect(show.send(:walk, doc, 'resources[File[/etc/x[1]]].tags')).to eq(['y'])
+    expect(show.send(:walk, doc, 'resources[File[*modprobe*]]').size).to eq(1)
+    expect { show.send(:walk, doc, 'resources[File[/etc') }.to raise_error(KeyError, /not closed/)
   end
 
   it 'lists resources by type and title glob across nodes, shows one whole, and exits 1 when none matches' do
