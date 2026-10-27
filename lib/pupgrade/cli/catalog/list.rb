@@ -20,7 +20,7 @@ module Pupgrade
         register_command name: %w[list ls], subcommand_of: Catalog
         desc 'List the compiled catalogs in the cache'
 
-        COLUMNS = %w[certname status resources classes warnings mocks leaks missing compiled].freeze
+        COLUMNS = %w[certname resources classes warnings mocks leaks missing status compiled].freeze
 
         def execute(argv)
           reject_extra_args!(argv)
@@ -28,7 +28,7 @@ module Pupgrade
           dir  = File.expand_path(@options[:cache_dir], repo.dir)
           fatal!("catalog list: #{dir} is not there; `catalog compile` writes it", 3) unless File.directory?(dir)
 
-          rows = nodes(dir).map { |name| row(dir, name) }
+          rows = nodes(dir).map { |name| row(dir, name) }.sort_by(&:first).map(&:last)
           print_table(COLUMNS, rows)
           ::Pupgrade.logger.notice("catalog list: #{rows.size} node(s) in #{dir}")
           exit 0
@@ -51,19 +51,24 @@ module Pupgrade
             .select { |n| globs.empty? || globs.any? { |g| File.fnmatch?(g, n, File::FNM_CASEFOLD) } }
         end
 
+        # One node's cells, with the key that puts the rows in the order
+        # `compile` ran them: by the factset's path, then certname.
+        #
+        # @return [Array(Array(String, String), Array<String>)] key, cells
         def row(dir, name)
           file    = File.join(dir, name, 'probes.json')
           probes  = ::Pupgrade::Compile::ProbeRecord.read(file)
           catalog = File.file?(File.join(dir, name, 'catalog.json')) ? JSON.parse(File.read(File.join(dir, name, 'catalog.json'))) : nil
           status  = (probes['status'] == 'ok') ? paint('ok', :green) : paint(probes['status'].to_s, :red)
-          [name, status,
-           catalog ? catalog['resources'].size.to_s : '-',
-           catalog ? catalog['classes'].size.to_s : '-',
-           (Array(probes['warnings']).size + Array(probes['deprecations']).size).to_s,
-           Array(probes['mocks']).size.to_s, Array(probes['leaks']).size.to_s, Array(probes['missing']).size.to_s,
-           File.mtime(file).strftime('%Y-%m-%d %H:%M')]
+          cells   = [name,
+                     catalog ? catalog['resources'].size.to_s : '-',
+                     catalog ? catalog['classes'].size.to_s : '-',
+                     (Array(probes['warnings']).size + Array(probes['deprecations']).size).to_s,
+                     Array(probes['mocks']).size.to_s, Array(probes['leaks']).size.to_s, Array(probes['missing']).size.to_s,
+                     status, File.mtime(file).strftime('%Y-%m-%d %H:%M')]
+          [[probes['factset'].to_s, name], cells]
         rescue ::Pupgrade::Compile::ProbeRecord::Error, JSON::ParserError => e
-          [name, paint('unreadable', :red), '-', '-', '-', '-', '-', '-', e.message.delete_prefix("#{file}: ")]
+          [['', name], [name, '-', '-', '-', '-', '-', '-', paint('unreadable', :red), e.message.delete_prefix("#{file}: ")]]
         end
 
         def config_defaults

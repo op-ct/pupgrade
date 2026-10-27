@@ -58,14 +58,24 @@ RSpec.describe Pupgrade::CLI::Catalog do
     status, out = run(['list', '--cache-dir', @catalogs])
     expect(status).to eq(0)
     table = cells(out)
-    expect(table.first).to eq(%w[certname status resources classes warnings mocks leaks missing compiled])
+    expect(table.first).to eq(%w[certname resources classes warnings mocks leaks missing status compiled])
     expect(table.drop(1).map(&:first)).to eq(%w[db01.example.com web01.example.com])
-    expect(table[1][1]).to eq('ok')
-    expect(table[1][2].to_i).to be > 0
-    expect(table.find { |r| r.first == 'web01.example.com' }.values_at(5, 6, 7)).to eq(%w[1 0 0])
+    expect(table[1][7]).to eq('ok')
+    expect(table[1][1].to_i).to be > 0
+    expect(table.find { |r| r.first == 'web01.example.com' }.values_at(4, 5, 6)).to eq(%w[1 0 0])
     _, out = run(['ls', '--cache-dir', @catalogs, '--certname', 'web*'])
     expect(cells(out).drop(1).map(&:first)).to eq(['web01.example.com'])
     expect(run(['list', '--cache-dir', File.join(@tmp, 'nope')]).first).to eq(3)
+  end
+
+  it 'lists the nodes in the order compile ran their factsets' do
+    cache = File.join(@tmp, 'ordered')
+    { 'a.example.com' => 'factsets/z/a.json', 'b.example.com' => 'factsets/m/b.json', 'c.example.com' => 'factsets/m/a.json' }.each do |name, factset|
+      FileUtils.mkdir_p(File.join(cache, name))
+      File.write(File.join(cache, name, 'probes.json'), JSON.generate('document' => 'probes', 'schema_version' => 2, 'status' => 'ok', 'factset' => factset))
+    end
+    _, out = run(['list', '--cache-dir', cache])
+    expect(cells(out).drop(1).map(&:first)).to eq(%w[c.example.com b.example.com a.example.com])
   end
 
   it 'shows a catalog, a part of it by key path, its keys, and the probes' do
