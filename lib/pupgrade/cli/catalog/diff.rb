@@ -31,6 +31,10 @@ module Pupgrade
           'edges'     => { 'edge-added' => '+', 'edge-removed' => '-' },
         }.freeze
 
+        # How the change cell is coloured, by its verb, as `module diff`
+        # colours its own; any other verb is yellow.
+        VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
+
         # How many node names a --group row lists before counting instead.
         NAMED_NODES = 3
 
@@ -47,7 +51,7 @@ module Pupgrade
           elsif @options[:group]
             print_table(GROUP_COLUMNS, group_rows(shown))
           else
-            print_table(COLUMNS, shown.map { |c| [c.certname, c.kind, c.resource.to_s, c.param.to_s, c.detail] })
+            print_table(COLUMNS, shown.map { |c| [c.certname, kind_cell(c.kind), c.resource.to_s, c.param.to_s, c.detail] })
           end
 
           nodes = changes.map(&:certname).uniq.size
@@ -110,8 +114,12 @@ module Pupgrade
           changes.group_by { |c| [c.kind, c.resource.to_s, c.param.to_s, c.detail] }.map do |(kind, resource, param, detail), rows|
             names = rows.map(&:certname).uniq.sort
             nodes = (names.size <= NAMED_NODES) ? names.join(', ') : "#{names.size} nodes"
-            [kind, resource, param, detail, nodes]
+            [kind_cell(kind), resource, param, detail, nodes]
           end
+        end
+
+        def kind_cell(kind)
+          paint(kind, *VERB_STYLE.fetch(kind.split('-', 2).last, [:yellow]))
         end
 
         def summary_rows(changes)

@@ -119,6 +119,16 @@ RSpec.describe Pupgrade::CLI::Catalog::Diff do
     expect(run([@before, File.join(@tmp, 'nope')]).first).to eq(3)
   end
 
+  it 'colours the change by its verb' do
+    color = Pupgrade::Ansi.preference
+    _, out = run(['--color', @before, @after])
+    expect(out).to include("\e[0;32mresource-added\e[0m", "\e[0;33mparam-changed\e[0m", "\e[0;33mnode-missing\e[0m")
+    _, out = run(['--color', '--group', @before, @after])
+    expect(out).to include("\e[0;32medge-added\e[0m")
+  ensure
+    Pupgrade::Ansi.preference = color
+  end
+
   it 'compares one node directory with another, and the same run with itself' do
     status, out = run([File.join(@before, 'web01.example.com'), File.join(@after, 'web01.example.com')])
     expect(status).to eq(1)
