@@ -205,11 +205,11 @@ The first entry whose `match` fits and whose `when` holds answers. pupgrade
 applies its own mocks after yours, for the probes package providers make as
 they load (`pupgrade catalog compile --show-default-mocks` prints them).
 
-Every interception is in the node's `probes.json` under `leaks`; the compile
-table counts mocked commands under `mocks`, unmocked commands under `leaks`,
-and fact reads with no value in the factset or the mocks under `missing`. A
-missing fact runs nothing: Puppet gets no value, and the catalog may differ
-for it.
+Every interception is in the node's `probes.json`, and the compile table
+counts each list: what was mocked under `mocks`, unmocked commands under
+`leaks`, and fact reads with no value in the factset or the mocks under
+`missing`. A missing fact runs nothing: Puppet gets no value, and the catalog
+may differ for it.
 
 ### ENC rules
 
@@ -297,6 +297,7 @@ pupgrade catalog list                                 # display catalogs in cach
 pupgrade catalog resources file '/etc/ssh/*' 'web*'   # resources by type and title
 pupgrade catalog resources 'File[/etc/ssh/sshd_config]' web01.example.com --full
 pupgrade catalog show -p leaks 'web*'      # display a catalog's compile-time leaks
+pupgrade catalog show -p mocks 'web*'      # what was mocked
 ```
 
 `--prepend CODE|@FILE` evaluates Puppet code before the manifest, for the
@@ -481,7 +482,7 @@ pupgrade impact Puppetfile.proposed --summary
 
 The facts in the factsets are whatever the exporting nodes reported, so
 facts that moved between Facter versions show up as missing fact reads in
-`probes.json` (`facts`, `legacy_facts`, and leaks of kind `fact`).
+`probes.json` (`facts`, `legacy_facts`, and `missing`).
 
 ### A stubborn dependency
 

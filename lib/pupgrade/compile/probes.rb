@@ -42,7 +42,9 @@ module Pupgrade
         @aliases   = Hash.new { |h, k| h[k] = { 'module' => nil, 'uses' => 0, 'sites' => [] } }
         @warnings  = []
         @deprecations = []
-        @leaks = []
+        @mocked  = []
+        @leaks   = []
+        @missing = []
         # Puppet reports each deprecation and each unique warning once per
         # process; reset so every node's compile reports its own.
         $deprecation_warnings = {} # rubocop:disable Style/GlobalVars -- Puppet's own
@@ -121,12 +123,12 @@ module Pupgrade
 
         found, value = @mocks.fact(name)
         if found
-          leak('fact', name, 'mocked', nil)
+          intercepted('fact', name, 'mocked', nil)
           log_mock("guard: #{@factset.certname}: fact #{name}: mocked")
           return [true, value]
         end
 
-        leak('fact', name, 'missing', nil)
+        intercepted('fact', name, 'missing', nil)
         Pupgrade.logger.info("guard: #{@factset.certname}: fact #{name}: neither the factset nor the mocks have it")
         [false, nil]
       end
@@ -219,17 +221,17 @@ module Pupgrade
         where = location
         if entry&.action == 'mock'
           action = entry.exit.zero? ? 'mocked' : "mocked (exit #{entry.exit})"
-          leak(kind, command, action, where)
+          intercepted(kind, command, action, where)
           log_mock("guard: #{@factset.certname}: #{kind}: #{command.inspect}: #{action}#{" at #{where}" if where}")
           return [:mock, entry]
         end
         if entry || @on_leak == 'allow'
-          leak(kind, command, 'allowed', where)
+          intercepted(kind, command, 'allowed', where)
           Pupgrade.logger.info("guard: #{@factset.certname}: #{kind}: #{command.inspect}: allowed to run#{" at #{where}" if where}")
           return [:run, nil]
         end
 
-        leak(kind, command, 'raised', where)
+        intercepted(kind, command, 'raised', where)
         Pupgrade.logger.warning("guard: #{@factset.certname}: #{kind}: #{command.inspect} is not answered by the mocks#{" at #{where}" if where}")
         raise Leak, "#{kind}: #{command.inspect} is not answered by the mocks (#{where})"
       end
@@ -251,15 +253,23 @@ module Pupgrade
           'type_aliases' => @aliases.sort.to_h,
           'warnings'     => @warnings,
           'deprecations' => @deprecations,
+          'mocks'        => @mocked,
           'leaks'        => @leaks,
+          'missing'      => @missing,
           'enc'          => { 'variables' => @node ? @node.vars : {}, 'classes' => @node ? @node.classes : [] },
         }
       end
 
       private
 
-      def leak(kind, what, action, where)
-        @leaks << { 'kind' => kind, 'command' => what, 'action' => action, 'location' => where }.compact
+      # One interception, filed by its outcome: mocked, a command run or
+      # stopped, or a fact read nothing answered.
+      def intercepted(kind, what, action, where)
+        list = if action.start_with?('mocked') then @mocked
+               elsif action == 'missing' then @missing
+               else @leaks
+               end
+        list << { 'kind' => kind, 'command' => what, 'action' => action, 'location' => where }.compact
       end
 
       # "file:line" of the innermost Puppet call in progress and the first

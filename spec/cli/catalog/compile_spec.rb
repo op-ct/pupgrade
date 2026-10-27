@@ -78,7 +78,7 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(firewall['parameters']).to include('provider' => 'iptables', 'action' => 'accept')
 
     probes = read('web01.example.com', 'probes.json')
-    expect(probes).to include('document' => 'probes', 'schema_version' => 1, 'certname' => 'web01.example.com', 'status' => 'ok', 'environment' => 'production')
+    expect(probes).to include('document' => 'probes', 'schema_version' => 2, 'certname' => 'web01.example.com', 'status' => 'ok', 'environment' => 'production')
     expect(probes['functions'].slice('stdlib::shout', 'legacy_shout', 'stdlib::whisper', 'stdlib::run_hostname').transform_values { |f| f['module'] })
       .to eq('stdlib::shout' => 'stdlib', 'legacy_shout' => 'stdlib', 'stdlib::whisper' => 'stdlib', 'stdlib::run_hostname' => 'stdlib')
     expect(probes['functions']['stdlib::shout']).to include('calls' => 1, 'sites' => ['site-modules/profile/manifests/base.pp:10'])
@@ -106,7 +106,8 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     log = capture_log(level: :warning) { run(code) }
     expect(log).to include('warning: puppet: web01.example.com: from the manifest')
     expect(log).not_to include('file & line not available')
-    expect(probes['leaks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'mocked',
+    expect(probes.values_at('leaks', 'missing')).to eq([[], []])
+    expect(probes['mocks']).to eq([{ 'kind' => 'execute', 'command' => 'hostname -f', 'action' => 'mocked',
                                      'location' => 'site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4' }])
     expect(probes['classes']).to include('apache' => { 'module' => 'apache' }, 'profile::base' => { 'module' => 'profile' })
     expect(probes['defined_types']).to eq('concat::fragment' => { 'module' => 'concat', 'resources' => 1 })
@@ -186,7 +187,7 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     probes = read('web01.example.com', 'probes.json')
     expect(probes['enc']).to eq('variables' => { 'site' => 'example', 'pkg_manager' => 'dnf', 'tenant' => 'blue' }, 'classes' => [])
     # the Ruby mock declines, so the YAML mock answers hostname
-    expect(probes['leaks'].map { |l| l['action'] }).to eq(['mocked'])
+    expect(probes['mocks'].map { |l| l['action'] }).to eq(['mocked'])
 
     File.write(File.join(@tmp, 'other.rb'), "variable(:tenant) { |_n| 'green' }\nclasses { |_n| ['stdlib'] }\nmock(/\\Ahostname/) { |_n, _m| \"ruby.example.com\\n\" }\n")
     _, _ = run(['--certname', 'web*', '--ruby', File.join(@tmp, 'other.rb'), '--prepend', 'notify { "${tenant}": }'])

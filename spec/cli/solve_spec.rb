@@ -161,7 +161,7 @@ RSpec.describe Pupgrade::CLI::Solve do
     evidence = File.join(@tmp, 'catalogs')
     FileUtils.mkdir_p(File.join(evidence, 'web01.example.com'))
     File.write(File.join(evidence, 'web01.example.com/probes.json'), JSON.generate(
-      'document'  => 'probes', 'schema_version' => 1,
+      'document'  => 'probes', 'schema_version' => 2,
       'classes'   => { 'redis' => { 'module' => 'redis' }, 'stdlib' => { 'module' => 'stdlib' }, 'yumrepo_core' => { 'module' => 'yumrepo_core' } },
       'functions' => { 'stdlib::shout' => { 'module' => 'stdlib', 'sites' => ['modules/yumrepo_core/manifests/init.pp:3'] } },
     ))

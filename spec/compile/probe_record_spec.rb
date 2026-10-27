@@ -17,9 +17,9 @@ RSpec.describe Pupgrade::Compile::ProbeRecord do
       expect(described_class.read(good)['certname']).to eq('a')
 
       newer = write(dir, 'document' => 'probes', 'schema_version' => described_class::SCHEMA_VERSION + 1)
-      expect { described_class.read(newer) }.to raise_error(described_class::Error, /schema 2 is newer than this pupgrade reads \(1\); compile again/)
-      older = write(dir, 'document' => 'probes', 'schema_version' => 0)
-      expect { described_class.read(older) }.to raise_error(described_class::Error, /schema 0 is older/)
+      expect { described_class.read(newer) }.to raise_error(described_class::Error, /schema 3 is newer than this pupgrade reads \(2\); compile again/)
+      older = write(dir, 'document' => 'probes', 'schema_version' => 1)
+      expect { described_class.read(older) }.to raise_error(described_class::Error, /schema 1 is older/)
       other = write(dir, 'document' => 'catalog', 'schema_version' => 1)
       expect { described_class.read(other) }.to raise_error(described_class::Error, /not a probe record \(document "catalog"\)/)
       broken = write(dir, '{')

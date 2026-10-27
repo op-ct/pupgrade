@@ -9,7 +9,7 @@ module Pupgrade
     # `solve` and `impact` read these across releases.
     module ProbeRecord
       DOCUMENT       = 'probes'.freeze
-      SCHEMA_VERSION = 1
+      SCHEMA_VERSION = 2
 
       class Error < StandardError; end
 

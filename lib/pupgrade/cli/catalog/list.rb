@@ -4,6 +4,7 @@ require 'pupgrade/cli/base'
 require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
 require 'pupgrade/cli/compile_options'
+require 'pupgrade/compile/probe_record'
 
 module Pupgrade
   module CLI
@@ -19,7 +20,7 @@ module Pupgrade
         register_command name: %w[list ls], subcommand_of: Catalog
         desc 'List the compiled catalogs in the cache'
 
-        COLUMNS = %w[certname status resources classes warnings leaks missing compiled].freeze
+        COLUMNS = %w[certname status resources classes warnings mocks leaks missing compiled].freeze
 
         def execute(argv)
           reject_extra_args!(argv)
@@ -51,20 +52,18 @@ module Pupgrade
         end
 
         def row(dir, name)
-          probes  = JSON.parse(File.read(File.join(dir, name, 'probes.json')))
+          file    = File.join(dir, name, 'probes.json')
+          probes  = ::Pupgrade::Compile::ProbeRecord.read(file)
           catalog = File.file?(File.join(dir, name, 'catalog.json')) ? JSON.parse(File.read(File.join(dir, name, 'catalog.json'))) : nil
-          actions = Array(probes['leaks']).map { |l| l['action'].to_s }
-          leaks   = actions.count { |a| !a.start_with?('mocked') && a != 'missing' }
-          missing = actions.count('missing')
           status  = (probes['status'] == 'ok') ? paint('ok', :green) : paint(probes['status'].to_s, :red)
           [name, status,
            catalog ? catalog['resources'].size.to_s : '-',
            catalog ? catalog['classes'].size.to_s : '-',
            (Array(probes['warnings']).size + Array(probes['deprecations']).size).to_s,
-           leaks.to_s, missing.to_s,
-           File.mtime(File.join(dir, name, 'probes.json')).strftime('%Y-%m-%d %H:%M')]
-        rescue JSON::ParserError => e
-          [name, paint('unreadable', :red), '-', '-', '-', '-', '-', e.message[0, 40]]
+           Array(probes['mocks']).size.to_s, Array(probes['leaks']).size.to_s, Array(probes['missing']).size.to_s,
+           File.mtime(file).strftime('%Y-%m-%d %H:%M')]
+        rescue ::Pupgrade::Compile::ProbeRecord::Error, JSON::ParserError => e
+          [name, paint('unreadable', :red), '-', '-', '-', '-', '-', '-', e.message.delete_prefix("#{file}: ")]
         end
 
         def config_defaults

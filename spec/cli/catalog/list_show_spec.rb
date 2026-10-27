@@ -58,10 +58,11 @@ RSpec.describe Pupgrade::CLI::Catalog do
     status, out = run(['list', '--cache-dir', @catalogs])
     expect(status).to eq(0)
     table = cells(out)
-    expect(table.first).to eq(%w[certname status resources classes warnings leaks missing compiled])
+    expect(table.first).to eq(%w[certname status resources classes warnings mocks leaks missing compiled])
     expect(table.drop(1).map(&:first)).to eq(%w[db01.example.com web01.example.com])
     expect(table[1][1]).to eq('ok')
     expect(table[1][2].to_i).to be > 0
+    expect(table.find { |r| r.first == 'web01.example.com' }.values_at(5, 6, 7)).to eq(%w[1 0 0])
     _, out = run(['ls', '--cache-dir', @catalogs, '--certname', 'web*'])
     expect(cells(out).drop(1).map(&:first)).to eq(['web01.example.com'])
     expect(run(['list', '--cache-dir', File.join(@tmp, 'nope')]).first).to eq(3)
@@ -84,6 +85,8 @@ RSpec.describe Pupgrade::CLI::Catalog do
     expect(both.keys).to eq(%w[db01.example.com web01.example.com])
     _, out = run(['show', '--cache-dir', @catalogs, '-p', 'status', 'web01*'])
     expect(JSON.parse(out)).to eq('ok')
+    _, out = run(['show', '--cache-dir', @catalogs, '-p', 'mocks[0].command', 'web01*'])
+    expect(JSON.parse(out)).to eq('hostname -f')
 
     expect(run(['show', '--cache-dir', @catalogs, 'nothing.here', 'web01.example.com']).first).to eq(1)
     expect(run(['show', '--cache-dir', @catalogs, 'nobody']).first).to eq(3)

@@ -139,7 +139,7 @@ module Pupgrade
         end
 
         def probe_counts(probes)
-          %w[classes defined_types functions facts lookups warnings leaks].filter_map { |k| "#{probes[k].size} #{k.tr('_', ' ')}" if probes[k].respond_to?(:size) }.join(', ')
+          %w[classes defined_types functions facts lookups warnings mocks leaks missing].filter_map { |k| "#{probes[k].size} #{k.tr('_', ' ')}" if probes[k].respond_to?(:size) }.join(', ')
         end
 
         def probes_document(result)
@@ -160,11 +160,8 @@ module Pupgrade
         # with no value in the factset or the mocks, which run nothing.
         def row(result)
           p = result.probes
-          actions = p['leaks'].map { |l| l['action'].to_s }
-          mocked  = actions.count { |a| a.start_with?('mocked') }
-          raised  = actions.count('raised')
-          missing = actions.count('missing')
-          leaked  = actions.size - mocked - missing
+          raised  = p['leaks'].count { |l| l['action'] == 'raised' }
+          leaked  = p['leaks'].size
           leaks   = if raised.positive? then paint(leaked.to_s, :red)
                     elsif leaked.positive? then paint(leaked.to_s, :yellow)
                     else leaked.to_s
@@ -173,7 +170,7 @@ module Pupgrade
            result.catalog ? result.catalog['resources'].size.to_s : '-',
            result.catalog ? result.catalog['classes'].size.to_s : '-',
            (p['warnings'].size + p['deprecations'].size).to_s,
-           mocked.to_s, leaks, missing.positive? ? paint(missing.to_s, :yellow) : '0',
+           p['mocks'].size.to_s, leaks, p['missing'].any? ? paint(p['missing'].size.to_s, :yellow) : '0',
            result.ok? ? paint('ok', :green) : paint('failed', :red)]
         end
 
