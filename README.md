@@ -561,6 +561,7 @@ pupgrade catalog diff /tmp/cat-now /tmp/cat-next            # per node
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next --group    # identical changes folded across nodes
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next --changes param-changed --resources 'File*'
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next --resources 'Class[profile::base]' --params ntp_servers --full
+pupgrade module diff -d . --other ../control-next stdlib    # one module's API across the two
 ```
 
 Catalog documents are sorted and carry repo-relative paths, so two checkouts

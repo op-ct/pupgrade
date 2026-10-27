@@ -13,14 +13,15 @@ module Pupgrade
       #
       # What changed between two versions of a module: its metadata
       # (dependencies, requirements, operating systems) and its API surfaces,
-      # one row per difference, from the documents `surface` keeps. Exit 1
-      # when anything differs.
+      # one row per difference, from the documents `surface` keeps. The two
+      # may be one module in two control repos, each read under its own
+      # modulepath. Exit 1 when anything differs.
       class Diff < Base
         include Table
         include Surface::Shared
 
         register_command name: 'diff', subcommand_of: ModuleCommand
-        positional '<from>', '<to>'
+        positional '<from>', '<to> | --other <dir> <module>'
         desc 'Compare two versions of a module: metadata and API surfaces (documents, directories, or modules at refs)'
 
         COLUMNS         = %w[item difference detail].freeze
@@ -31,13 +32,11 @@ module Pupgrade
         STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
         def execute(argv)
-          fatal!('module diff takes two sides: documents, module directories, or modules at refs', help: true) unless argv.size == 2
           check_filters!
-          reader = targets
-          ::Pupgrade.logger.notice("module diff: reading #{argv[0]}")
-          from, = reader.document(reader.resolve(argv[0]))
-          ::Pupgrade.logger.notice("module diff: reading #{argv[1]}")
-          to,   = reader.document(reader.resolve(argv[1]))
+          from, to = sides(argv).map do |reader, spec, where|
+            ::Pupgrade.logger.notice("module diff: reading #{spec}#{" in #{where}" if where}")
+            reader.document(reader.resolve(spec)).first
+          end
           changes = ::Pupgrade::Surface::Diff.documents(from, to)
           shown   = changes.select { |c| shown?(c) }
 
@@ -69,6 +68,7 @@ module Pupgrade
           o.on('--summary', 'One row per surface with a count per change kind') { @options[:summary] = true }
           o.on('--full', 'Every change as a block with its values in full, however long, instead of a table') { @options[:full] = true }
           repo_option(o)
+          o.on('--other=DIR', 'Compare <module> in the control repo with <module> in DIR, another one') { |v| @options[:other] = v }
           o.separator ''
           o.separator 'Each side is a document `surface` wrote, a module directory, or a module of the'
           o.separator 'control repo by name, with `:REF` to read it at a ref of its clone: `stdlib:v9.6.0`.'
@@ -79,6 +79,29 @@ module Pupgrade
         end
 
         private
+
+        # [reader, spec, repo dir or nil] for each side: two specs on the
+        # control repo, or with --other one module in it and in DIR, each
+        # read on its own repo's modulepath and kept in one cache.
+        def sides(argv)
+          unless @options[:other]
+            fatal!('module diff takes two sides: documents, module directories, or modules at refs', help: true) unless argv.size == 2
+            reader = targets
+            return argv.map { |spec| [reader, spec, nil] }
+          end
+
+          fatal!('module diff --other takes one module', help: true) unless argv.size == 1
+          here  = control_repo
+          other = ::Driftless::ControlRepo.new(@options[:other])
+          fatal!("module diff: --other #{other.dir} is not a readable control repo", 3) unless other.readable?
+
+          cache = File.expand_path(@options[:cache_dir], here&.dir || Dir.pwd)
+          [here&.dir, other.dir].map do |dir|
+            reader = ::Pupgrade::Surface::Targets.new(repo_dir: dir, cache_dir: cache, fetch: @options[:fetch],
+                                                      refresh: @options[:refresh], logger: ::Pupgrade.logger)
+            [reader, argv.first, dir]
+          end
+        end
 
         def row(change)
           phrase = ::Pupgrade::Surface::Render.difference(change)

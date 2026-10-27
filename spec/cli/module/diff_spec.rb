@@ -69,6 +69,18 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Diff do
     expect(run(['stdlib', 'nope']).first).to eq(3)
   end
 
+  it 'diffs one module across two control repos with --other' do
+    other = Pupgrade::FixtureRepo.build(File.join(@tmp, 'other'))
+    system('git', '-C', File.join(other.dir, 'modules/stdlib'), 'checkout', '-q', '--detach', 'v9.6.0', exception: true)
+    status, out = run(['--other', other.dir, 'stdlib'])
+    expect(status).to eq(1)
+    rows = cells(out).drop(1)
+    expect(rows.first).to eq(['module version', 'changed major release', '8.6.0 -> 9.6.0'])
+    expect(rows).to include(['function stdlib::shout', 'changed signatures', '(text) -> (text, times)'])
+    expect(run(['--other', other.dir, 'stdlib', 'concat']).first).to eq(2)
+    expect(run(['--other', File.join(@tmp, 'nope'), 'stdlib']).first).to eq(3)
+  end
+
   it 'shows every value whole as blocks with --full' do
     _, out = run(['--full', '--surfaces', 'functions,type_aliases', 'stdlib', 'stdlib:v9.6.0'])
     expect(out).to eq(<<~TEXT)
