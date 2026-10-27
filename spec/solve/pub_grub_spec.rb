@@ -47,4 +47,26 @@ RSpec.describe Pupgrade::Solve::PubGrub do
     _decisions, failure = described_class.solve(source.call([bump]))
     expect(failure.explanation).to include('app 2.0.0 supports Debian, but not RedHat 9', 'app is bumped to 2.0.0 (--bump)')
   end
+
+  # app past 1.0.0 is refused one way through a and b, and another through
+  # x and y: a derivation that joins two derived lines
+  it 'tells a linear derivation from a branching one' do
+    listed   = { 'app' => %w[2.0.0 1.1.0 1.0.0], 'a' => %w[1.0.0], 'b' => %w[2.0.0 1.0.0], 'x' => %w[1.0.0], 'y' => %w[2.0.0 1.0.0] }
+    versions = listed.transform_values { |list| list.map { |v| version(v) } }
+    range    = ->(text) { SemanticPuppet::VersionRange.parse(text) }
+    deps     = { ['app', '1.1.0'] => { 'a' => range.call('>= 1.0.0 < 2.0.0'), 'b' => range.call('>= 1.0.0 < 2.0.0') },
+                 ['app', '2.0.0'] => { 'x' => range.call('>= 1.0.0 < 2.0.0'), 'y' => range.call('>= 1.0.0 < 2.0.0') },
+                 ['a', '1.0.0'] => { 'b' => range.call('>= 2.0.0 < 3.0.0') }, ['x', '1.0.0'] => { 'y' => range.call('>= 2.0.0 < 3.0.0') } }
+    source = ->(facts) do
+      described_class::Source.new(versions: versions, dependencies: ->(p, v) { deps.fetch([p, v.to_s]) { {} } }, reasons: ->(_p, _v) { [] }, facts: facts)
+    end
+    past = described_class::Fact.new(package: 'app', range: described_class.up_to(version('1.0.0')), text: 'app is held above 1.0.0 (--explain)')
+    _decisions, failure = described_class.solve(source.call([past]))
+    expect(described_class.linear?(failure.incompatibility)).to be(false)
+    expect(failure.explanation).to include('because a is on the modulepath')
+
+    two = described_class::Fact.new(package: 'app', range: described_class.except(version('2.0.0')), text: 'app is bumped to 2.0.0 (--bump)')
+    _decisions, failure = described_class.solve(source.call([two]))
+    expect(described_class.linear?(failure.incompatibility)).to be(true)
+  end
 end

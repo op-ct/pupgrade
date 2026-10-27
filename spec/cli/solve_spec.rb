@@ -22,13 +22,13 @@ RSpec.describe Pupgrade::CLI::Solve do
   let(:fixture) { @fixture }
 
   # [exit status, stdout]
-  def run(argv, config: ['-c', fixture.config])
+  def run(argv, config: ['-c', fixture.config], dir: fixture.dir)
     captured = StringIO.new
     original = $stdout
     $stdout  = captured
     status   = nil
     begin
-      described_class.new.run(config + ['-d', fixture.dir] + argv)
+      described_class.new.run(config + ['-d', dir] + argv)
     rescue SystemExit => e
       status = e.status
     ensure
@@ -64,9 +64,12 @@ RSpec.describe Pupgrade::CLI::Solve do
                                                                               'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
     expect(table).not_to have_key('puppetlabs-facts')
     _, out = run(['--explain', 'stdlib'], config: ['--no-config'])
+    # a derivation whose every step adds one leaf reads as the finding and its leaves
     expect(out).to include("\npuppetlabs-stdlib: v8.6.0 (solved: every version of baseline depends on stdlib >= 4.13.1, < 9.0.0)\n" \
-                           "  Because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n")
-    expect(out).to include("stdlib is held above 8.6.0 (--explain)", "    stdlib cannot go past 8.6.0.\n")
+                           "  stdlib cannot go past 8.6.0,\n" \
+                           "     because every version of baseline depends on stdlib >= 4.13.1, < 9.0.0\n" \
+                           "        and no versions satisfy stdlib > 8.6.0, < 9.0.0\n" \
+                           "        and baseline is on the modulepath\n")
 
     # the config asks for RedHat 9, which the old releases do not claim and the new ones do: a constraint a
     # module can meet by moving stays in force, so the set moves past baseline, which fits nowhere
@@ -108,7 +111,8 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(table['puppetlabs-apache']).to match(['tag v10.1.1', 'v11.0.0', '2', a_string_starting_with('nearest: ')])
     expect(table['puppetlabs-firewall']).to match(['tag v5.0.0', 'v7.0.0', '3', a_string_starting_with('nearest: ')])
     _, out = run(['--order', 'nearest', '--bump', 'puppetlabs-stdlib', '--explain', 'apache'], config: ['--no-config'])
-    expect(out).to include("\n  Because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n    and apache is held at 10.1.1 (--explain),")
+    expect(out).to include("\n  apache cannot stay at 10.1.1,\n     because apache < 11.0.0 depends on stdlib >= 4.13.1, < 9.0.0\n" \
+                           "        and stdlib is bumped to 9.6.0 (--bump)\n")
     expect(table['puppetlabs-facts']).to eq(['1.4.0 (forge)', '(current)', '0', 'Forge module'])
 
     # a hold and a bump are facts; what fits neither is unresolved
@@ -149,8 +153,8 @@ RSpec.describe Pupgrade::CLI::Solve do
     table = rows(out.split("\n\n", 2).first)
     expect(table['puppetlabs-firewall']).to eq(['tag v5.0.0', 'v8.0.0', '3', 'bumped: needs puppetlabs/stdlib >= 9.0.0 < 10.0.0, but stdlib is 8.6.0'])
     expect(table['puppetlabs-puppetdb'].last).to start_with('unresolved: needs puppetlabs/firewall >= 1.1.3 < 6.0.0, but firewall moves to 8.0.0')
-    expect(out).to include("\n  Because puppetdb >= 8.0.0 depends on stdlib >= 9.0.0, < 10.0.0\n")
-    expect(out).to include("  So, because firewall is bumped to 8.0.0 (--bump)\n    and stdlib is held at 8.6.0 (--hold),\n    no version of puppetdb fits the rest.")
+    expect(out).to include("\n  no version of puppetdb fits the rest,\n     because puppetdb >= 8.0.0 depends on stdlib >= 9.0.0, < 10.0.0\n",
+                           "\n        and firewall is bumped to 8.0.0 (--bump)\n        and stdlib is held at 8.6.0 (--hold)\n")
   end
 
   it 'prunes dependency edges to and from modules the evidence shows unused, writes the exclusions the result relies on, and reads them back' do
@@ -195,5 +199,17 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(run(['--prune-unused']).first).to eq(2)
     expect(run(['--compile-cache', File.join(@tmp, 'nope')]).first).to eq(3)
     expect(run(['--order', 'sideways']).first).to eq(2)
+  end
+
+  # app 1.1.0 and 2.0.0 are each refused for their own reason, so the
+  # derivation joins two derived lines and keeps the solver's steps
+  it 'explains a branching refusal in the solver\'s steps, closed by the finding' do
+    dir = File.join(@tmp, 'two-branches')
+    Pupgrade::ScenarioBuilder.new(File.expand_path('../fixtures/scenarios/two-branches', __dir__)).build(dir)
+    _, out = run(['--explain', 'app'], config: ['--no-config'], dir: dir)
+    expect(out).to include("\nacme-app: v1.0.0 (solved: ")
+    expect(out).to include("\n  Thus, if x >= 0 and app > 1.0.0 then b >= 1.0.0, < 2.0.0.\n",
+                           "    and app is held above 1.0.0 (--explain),\n",
+                           "  So, because a is on the modulepath\n    and x is on the modulepath,\n    app cannot go past 1.0.0.\n")
   end
 end

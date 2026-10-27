@@ -197,7 +197,7 @@ module Pupgrade
           short = misfit(failure, source, pinned)
           raise Error, "no set of versions fits, and nothing more can give:\n#{failure.explanation}" unless short
 
-          pinned[short] = [pin_for(short, state), refusal(failure, "no version of #{short} fits the rest.")]
+          pinned[short] = [pin_for(short, state), refusal(failure, "no version of #{short} fits the rest")]
           Pupgrade.logger.info("solve: #{short}: no version fits the rest; kept at #{pinned[short].first}, its constraints set aside")
         end
 
@@ -459,17 +459,28 @@ module Pupgrade
         # the constraint nearest the module: its own, else another module's on it
         own     = texts.select { |depender, _, _| depender == short }.map(&:last)
         own     = texts.select { |_, key, _| key == short }.map(&:last) if own.empty?
-        noise   = ->(depender, text) { depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ", 'root depends on') || own.include?(text) }
+        noise   = ->(depender, text) { depender == short || text == asked.text || text.start_with?("no versions satisfy #{short} ") || text.end_with?(' is on the modulepath') || own.include?(text) }
         others  = texts.reject { |depender, _key, text| noise.call(depender, text) }.map(&:last)
         lever   = others.find { |t| t.include?('(--hold)') || t.include?('(--bump)') || t.include?('(no version fits)') }
         why     = [own.first, lever || others.first].compact.join('; ')
         Pupgrade.logger.debug("solve: #{short}: #{asked.text}:\n#{failure.explanation}")
-        [why.empty? ? failure.explanation.lines.first.to_s.strip : why, refusal(failure, "#{short} cannot #{move}.")]
+        [why.empty? ? failure.explanation.lines.first.to_s.strip : why, refusal(failure, "#{short} cannot #{move}", asked)]
       end
 
-      # The solver's derivation, closing with what it means here.
-      def refusal(failure, conclusion)
-        failure.explanation.sub(/version solving has failed\.\z/, conclusion)
+      # The solver's derivation, as the finding and the leaves it rests on
+      # when each step adds one leaf, else in the solver's own steps closed
+      # by the finding.
+      #
+      # @param conclusion [String] "apache cannot stay at 10.1.1"
+      # @param asked [PubGrub::Fact, nil] the version under test, which the
+      #   finding already states
+      # @return [String]
+      def refusal(failure, conclusion, asked = nil)
+        incompatibility = failure.incompatibility
+        return failure.explanation.sub(/version solving has failed\.\z/, "#{conclusion}.") unless PubGrub.linear?(incompatibility)
+
+        leaves = PubGrub.leaves(incompatibility).map(&:to_s).uniq - [asked&.text]
+        ["#{conclusion},", "   because #{leaves.first}", *leaves.drop(1).map { |l| "      and #{l}" }].join("\n")
       end
 
       # ---- constraints -----------------------------------------------------------

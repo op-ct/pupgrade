@@ -56,6 +56,18 @@ module Pupgrade
         leaves(incompatibility.cause.conflict) + leaves(incompatibility.cause.other)
       end
 
+      # Whether each step of a derivation joins one leaf to the step
+      # before, so its leaves in order are the reasons for its conclusion.
+      #
+      # @param incompatibility [LIB::Incompatibility]
+      # @return [Boolean] false when a step joins two derived lines
+      def linear?(incompatibility)
+        return true unless incompatibility.conflict?
+
+        causes = [incompatibility.cause.conflict, incompatibility.cause.other]
+        causes.count(&:conflict?) <= 1 && causes.all? { |c| linear?(c) }
+      end
+
       # One thing pupgrade tells the solver outright: a version a package
       # must not be, or must be, with the words that explain it.
       #
@@ -118,10 +130,16 @@ module Pupgrade
         end
 
         # The dependency incompatibilities PubGrub derives, keyed; at the
-        # root the facts; for a version the reasons it cannot be used.
+        # root each module's presence and the facts; for a version the
+        # reasons it cannot be used.
         def incompatibilities_for(package, version)
           list = super
           if LIB::Package.root?(package)
+            list = list.map do |inc|
+              next inc unless inc.cause == :dependency
+
+              LIB::Incompatibility.new(inc.terms, cause: :dependency, custom_explanation: "#{inc.terms[1].package} is on the modulepath")
+            end
             @facts.each do |fact|
               list << LIB::Incompatibility.new([LIB::Term.new(LIB::VersionConstraint.new(fact.package, range: fact.range), true)],
                                                cause: LIB::Incompatibility::NoVersions.new(nil), custom_explanation: fact.text)

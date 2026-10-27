@@ -1,0 +1,41 @@
+# Two ways past app 1.0.0, each refused for its own reason: app 1.1.0 needs
+# b < 2 while a needs b >= 2, and app 2.0.0 needs y < 2 while x needs
+# y >= 2. The solver's derivation for "app past 1.0.0" branches, joining two
+# derived lines. Built by spec/support/scenario_builder.rb; see the format
+# notes there.
+
+forge: 'https://forge.example.com'
+
+release_defaults:
+  puppet: '>= 7.0.0 < 9.0.0'
+  operatingsystems: { RedHat: ['8', '9'] }
+
+modules:
+  - name: acme-b
+    deployed: '1.0.0'
+    releases:
+      - version: '1.0.0'
+      - version: '2.0.0'
+  - name: acme-a
+    deployed: '1.0.0'
+    releases:
+      - version: '1.0.0'
+        dependencies: { acme/b: '>= 2.0.0 < 3.0.0' }
+  - name: acme-y
+    deployed: '1.0.0'
+    releases:
+      - version: '1.0.0'
+      - version: '2.0.0'
+  - name: acme-x
+    deployed: '1.0.0'
+    releases:
+      - version: '1.0.0'
+        dependencies: { acme/y: '>= 2.0.0 < 3.0.0' }
+  - name: acme-app
+    deployed: '1.0.0'
+    releases:
+      - version: '1.0.0'
+      - version: '1.1.0'
+        dependencies: { acme/a: '>= 1.0.0 < 2.0.0', acme/b: '>= 1.0.0 < 2.0.0' }
+      - version: '2.0.0'
+        dependencies: { acme/x: '>= 1.0.0 < 2.0.0', acme/y: '>= 1.0.0 < 2.0.0' }
