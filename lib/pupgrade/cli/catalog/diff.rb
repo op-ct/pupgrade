@@ -1,6 +1,7 @@
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
+require 'pupgrade/cli/catalog/resources'
 require 'pupgrade/compile/catalog_diff'
 
 module Pupgrade
@@ -65,6 +66,7 @@ module Pupgrade
           o.separator 'do not count for the exit status:'
           o.on('--certname=GLOBS', Array, 'Only nodes whose certname matches') { |v| accumulate(:certnames, v) }
           o.on('--resources=GLOBS', Array, 'Only rows whose resource (Type[title]) matches') { |v| accumulate(:resources, v) }
+          o.on('--params=GLOBS', Array, 'Only rows whose parameter matches') { |v| accumulate(:params, v) }
           o.on('--changes=KINDS', Array, "Only these kinds (#{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')}), " \
                                          'globs of them, or entities: `param` is param-*') { |v| accumulate(:changes, v) }
           o.on('--skip-changes=KINDS', Array, 'Drop these kinds, as --changes takes them') { |v| accumulate(:skip_changes, v) }
@@ -85,9 +87,17 @@ module Pupgrade
 
         def shown?(change)
           glob_any?(@options[:certnames], change.certname) &&
-            glob_any?(@options[:resources], change.resource.to_s) &&
+            glob_any?(Array(@options[:resources]).map { |g| reference_glob(g) }, change.resource.to_s) &&
+            (Array(@options[:params]).empty? || (change.param && glob_any?(@options[:params], change.param))) &&
             (Array(@options[:changes]).empty? || @options[:changes].include?(change.kind)) &&
             !Array(@options[:skip_changes]).include?(change.kind)
+        end
+
+        # A Type[title] glob with its brackets taken as written, so
+        # `Class[profile::*]` is a class and not a character set.
+        def reference_glob(glob)
+          ref = Resources::REFERENCE.match(glob)
+          ref ? "#{ref[1]}\\[#{ref[2]}\\]" : glob
         end
 
         def glob_any?(globs, value)

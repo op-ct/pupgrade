@@ -108,6 +108,11 @@ RSpec.describe Pupgrade::CLI::Catalog::Diff do
     expect(out).to eq("(nothing matches)\n")
     _, out = run(['--changes', 'resource,edge-*', @before, @after])
     expect(cells(out).drop(1).map { |r| r[1] }).to eq(%w[resource-added edge-added])
+    # a class parameter, by its class and its name
+    _, out = run(['--resources', 'Class[profile::*]', '--params', 'ntp_*', @before, @after])
+    expect(cells(out).drop(1).map { |r| r[2, 2] }).to eq([['Class[Profile::Base]', 'ntp_servers']])
+    _, out = run(['--params', 'content,action', @before, @after])
+    expect(cells(out).drop(1).map { |r| r[3] }).to eq(%w[content action])
     expect(run(['--changes', 'bogus', @before, @after]).first).to eq(2)
     expect(run(['--skip-changes', 'nothing-*', @before, @after]).first).to eq(2)
     expect(run([@before]).first).to eq(2)
