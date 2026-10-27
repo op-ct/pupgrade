@@ -65,8 +65,9 @@ module Pupgrade
           o.separator 'do not count for the exit status:'
           o.on('--certname=GLOBS', Array, 'Only nodes whose certname matches') { |v| accumulate(:certnames, v) }
           o.on('--resources=GLOBS', Array, 'Only rows whose resource (Type[title]) matches') { |v| accumulate(:resources, v) }
-          o.on('--changes=KINDS', Array, "Only these kinds (#{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')})") { |v| accumulate(:changes, v) }
-          o.on('--skip-changes=KINDS', Array, 'Drop these kinds') { |v| accumulate(:skip_changes, v) }
+          o.on('--changes=KINDS', Array, "Only these kinds (#{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')}), " \
+                                         'globs of them, or entities: `param` is param-*') { |v| accumulate(:changes, v) }
+          o.on('--skip-changes=KINDS', Array, 'Drop these kinds, as --changes takes them') { |v| accumulate(:skip_changes, v) }
           o.on('--ignore-params=NAMES', Array, 'Parameters never compared') { |v| accumulate(:ignore_params, v) }
 
           o.separator ''
@@ -116,12 +117,30 @@ module Pupgrade
           end
         end
 
+        # Replaces each --changes and --skip-changes argument with the kinds
+        # it names: itself, those an entity (`param`) prefixes, or those a
+        # glob matches. One naming no kind is fatal.
         def check_kinds!
-          unknown = (Array(@options[:changes]) + Array(@options[:skip_changes])) - ::Pupgrade::Compile::CatalogDiff::KINDS
-          return if unknown.empty?
+          %i[changes skip_changes].each do |key|
+            next unless @options[key]
 
-          fatal!("catalog diff: unknown change kind #{unknown.first.inspect} " \
-                 "(known: #{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')})", help: true)
+            kinds = @options[key].flat_map do |arg|
+              named = kinds_for(arg)
+              next named unless named.empty?
+
+              fatal!("catalog diff: unknown change kind #{arg.inspect} " \
+                     "(known: #{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')})", help: true)
+            end
+            @options[key] = kinds.uniq
+          end
+        end
+
+        def kinds_for(arg)
+          all = ::Pupgrade::Compile::CatalogDiff::KINDS
+          return [arg] if all.include?(arg)
+
+          by_entity = all.select { |k| k.start_with?("#{arg}-") }
+          by_entity.empty? ? all.select { |k| File.fnmatch?(arg, k, File::FNM_CASEFOLD) } : by_entity
         end
 
         def accumulate(key, values)

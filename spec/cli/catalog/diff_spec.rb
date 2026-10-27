@@ -103,7 +103,13 @@ RSpec.describe Pupgrade::CLI::Catalog::Diff do
     expect(cells(out).size).to eq(2)
     status, out = run(['--ignore-params', 'action,message,content,ntp_servers', '--skip-changes', 'node-missing,resource-added,edge-added', @before, @after])
     expect([status, out]).to eq([0, "(nothing matches)\n"])
+    # an entity stands for its kinds, a glob for those it matches
+    _, out = run(['--changes', 'param', '--skip-changes', '*-changed', @before, @after])
+    expect(out).to eq("(nothing matches)\n")
+    _, out = run(['--changes', 'resource,edge-*', @before, @after])
+    expect(cells(out).drop(1).map { |r| r[1] }).to eq(%w[resource-added edge-added])
     expect(run(['--changes', 'bogus', @before, @after]).first).to eq(2)
+    expect(run(['--skip-changes', 'nothing-*', @before, @after]).first).to eq(2)
     expect(run([@before]).first).to eq(2)
     expect(run([@before, File.join(@tmp, 'nope')]).first).to eq(3)
   end
