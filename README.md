@@ -560,6 +560,7 @@ pupgrade catalog compile -d ../control-next --factsets ../control/pupgrade/facts
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next            # per node
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next --group    # identical changes folded across nodes
 pupgrade catalog diff /tmp/cat-now /tmp/cat-next --changes param-changed --resources 'File*'
+pupgrade catalog diff /tmp/cat-now /tmp/cat-next --resources 'Class[profile::base]' --params ntp_servers --full
 ```
 
 Catalog documents are sorted and carry repo-relative paths, so two checkouts

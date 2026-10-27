@@ -119,6 +119,21 @@ RSpec.describe Pupgrade::CLI::Catalog::Diff do
     expect(run([@before, File.join(@tmp, 'nope')]).first).to eq(3)
   end
 
+  it 'shows each changed resource whole as a unified diff with --full' do
+    status, out = run(['--full', @before, @after])
+    expect(status).to eq(1)
+    expect(out).to include("db01.example.com node-missing only in #{@before}\n",
+                           "web01.example.com Firewall[100 allow ntp 123]\n--- #{@before}/web01.example.com\n+++ #{@after}/web01.example.com\n",
+                           %(-    "action": "accept",\n+    "action": "drop",\n),
+                           %(web01.example.com File[/etc/motd]\n), %(+  "type": "File"),
+                           "web01.example.com edge-added Class[Profile::Base] -> File[/etc/motd] relationship\n")
+    # the whole resource shows, not three lines either side
+    expect(out[/Firewall\[100 allow ntp 123\]\n.*?(?=\nweb01|\z)/m]).to include('"type": "Firewall"', '"title": "100 allow ntp 123"')
+    _, out = run(['--full', '--params', 'action', @before, @after])
+    expect(out.lines.first).to eq("web01.example.com Firewall[100 allow ntp 123]\n")
+    expect(run(['--full', '--group', @before, @after]).first).to eq(2)
+  end
+
   it 'colours the change by its verb' do
     color = Pupgrade::Ansi.preference
     _, out = run(['--color', @before, @after])

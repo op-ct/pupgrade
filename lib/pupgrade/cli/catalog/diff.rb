@@ -1,3 +1,7 @@
+require 'json'
+require 'open3'
+require 'tmpdir'
+
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
@@ -41,12 +45,14 @@ module Pupgrade
         def execute(argv)
           fatal!('catalog diff takes two directories', help: true) unless argv.size == 2
           check_kinds!
-          fatal!('catalog diff: --group and --summary are one or the other', help: true) if @options[:group] && @options[:summary]
+          fatal!('catalog diff: --full, --group, and --summary are one of them at most', help: true) if @options.values_at(:full, :group, :summary).count(&:itself) > 1
           from, to = argv.map { |p| File.expand_path(p) }
           changes  = ::Pupgrade::Compile::CatalogDiff.directories(from, to, ignore_params: Array(@options[:ignore_params]))
           shown    = changes.select { |c| shown?(c) }
 
-          if @options[:summary]
+          if @options[:full]
+            print_full(from, to, shown)
+          elsif @options[:summary]
             print_table(SUMMARY_COLUMNS, summary_rows(shown))
           elsif @options[:group]
             print_table(GROUP_COLUMNS, group_rows(shown))
@@ -80,6 +86,7 @@ module Pupgrade
           o.separator 'Layout:'
           o.on('--group', 'One row per distinct change, with the nodes it appears on') { @options[:group] = true }
           o.on('--summary', 'One row per node with counts: +added -removed ~changed') { @options[:summary] = true }
+          o.on('--full', 'Each changed resource whole, as a unified diff of its JSON') { @options[:full] = true }
 
           o.separator ''
           o.separator 'Each directory is what `compile -o DIR` wrote (DIR/<certname>/catalog.json), or one'
@@ -120,6 +127,53 @@ module Pupgrade
 
         def kind_cell(kind)
           paint(kind, *VERB_STYLE.fetch(kind.split('-', 2).last, [:yellow]))
+        end
+
+        # Each changed resource whole, as a unified diff of it before and
+        # after; a change to no resource (a node, class, or edge) as its row.
+        def print_full(from, to, changes)
+          certnames = changes.map(&:certname).uniq
+          before    = resources_in(from, certnames)
+          after     = resources_in(to, certnames)
+          changes.group_by { |c| [c.certname, c.kind.start_with?('resource-', 'param-') ? c.resource : nil] }.each do |(certname, name), rows|
+            if name.nil?
+              rows.each { |c| puts [certname, kind_cell(c.kind), c.resource, c.detail].compact.join(' ') }
+              next
+            end
+
+            puts paint("#{certname} #{name}", :bold)
+            puts unified(before.dig(certname, name), after.dig(certname, name), File.join(from, certname), File.join(to, certname))
+          end
+        end
+
+        # @return [Hash{String => Hash{String => Hash}}] certname to Type[title] to resource
+        def resources_in(dir, certnames)
+          ::Pupgrade::Compile::CatalogDiff.catalogs_in(dir).slice(*certnames).transform_values do |path|
+            ::Pupgrade::Compile::CatalogDiff.read(path)['resources'].to_h { |r| [::Pupgrade::Compile::CatalogDiff.key(r), r] }
+          end
+        end
+
+        # `diff -u` of two resources as JSON, with context enough to show
+        # each whole; nil for a side the resource is not on.
+        def unified(before, after, from_label, to_label)
+          texts = [before, after].map { |r| r ? "#{JSON.pretty_generate(r)}\n" : '' }
+          out = Dir.mktmpdir do |dir|
+            files = texts.each_with_index.map { |text, i| File.join(dir, i.to_s).tap { |f| File.write(f, text) } }
+            context = texts.map { |t| t.lines.size }.max
+            Open3.capture2('diff', "-U#{context}", '--label', from_label, '--label', to_label, *files).first
+          end
+          out.lines.map { |line| paint(line.chomp, *diff_style(line)) }.join("\n")
+        rescue Errno::ENOENT
+          fatal!('catalog diff: --full needs the `diff` command, which is not on the PATH', 3)
+        end
+
+        def diff_style(line)
+          if line.start_with?('+++', '---') then [:bold]
+          elsif line.start_with?('+') then [:green]
+          elsif line.start_with?('-') then [:red]
+          elsif line.start_with?('@@') then [:cyan]
+          else []
+          end
         end
 
         def summary_rows(changes)
