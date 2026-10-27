@@ -38,6 +38,13 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
 
   before(:each) { silence_logger }
 
+  around(:each) do |ex|
+    color = Pupgrade::Ansi.preference
+    ex.run
+  ensure
+    Pupgrade::Ansi.preference = color
+  end
+
   it 'lists every module as declared and as deployed, narrowed by any spelling of a name' do
     status, out = run([])
     expect(status).to eq(0)
@@ -50,10 +57,17 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
 
     _, out = run(['puppetlabs/std*,concat'])
     expect(cells(out).drop(1).map(&:first)).to eq(%w[modules/concat modules/stdlib])
+    _, out = run(['modules/stdlib/'])
+    expect(cells(out).drop(1).map(&:first)).to eq(%w[modules/stdlib])
 
     system('git', '-C', File.join(fixture.dir, 'modules/concat'), 'checkout', '-q', '--detach', 'v9.0.0')
     _, out = run(['concat'])
     expect(cells(out).drop(1)).to eq([['modules/concat', 'puppetlabs-concat', 'tag v7.3.0', 'differ (v9.0.0)', '9.0.0']])
     expect(run(%w[a b]).first).to eq(2)
+  end
+
+  it 'colours the declared cell by kind and the deployed cell by state' do
+    _, out = run(['--color', 'stdlib,profile'])
+    expect(out).to include("\e[0;36mtag v8.6.0\e[0m", "\e[0;32mmatch\e[0m", "\e[0;33m(not in the Puppetfile)\e[0m", "\e[0;33munknown\e[0m")
   end
 end
