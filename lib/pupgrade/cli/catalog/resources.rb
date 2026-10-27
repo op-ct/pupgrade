@@ -12,9 +12,9 @@ module Pupgrade
       # `pupgrade catalog resources`
       #
       # The resources of compiled catalogs, as `puppet resource` names
-      # them: every one, one type's, or one by type and title (a glob),
-      # across the nodes a certname glob matches; `File[/etc/motd]` as
-      # Puppet prints a reference is taken too. Exit 1 when none matches.
+      # them: every one, or those of a type and title (each a glob), across
+      # the nodes a certname glob matches; `File[/etc/motd]` as Puppet
+      # prints a reference is taken too. Exit 1 when none matches.
       class Resources < Base
         include Table
         include CompileOptions
@@ -23,7 +23,7 @@ module Pupgrade
         positional '[<type> [<title>] | <Type[title]>]', '<certglob>[,…]'
         desc 'List the resources of compiled catalogs, or show one by type and title'
 
-        REFERENCE = /\A([A-Za-z][\w:]*)\[(.+)\]\z/.freeze
+        REFERENCE = /\A([A-Za-z*?][\w:*?]*)\[(.+)\]\z/.freeze
 
         FORMATS = %w[json yaml].freeze
         COLUMNS = %w[certname type title source].freeze
@@ -88,9 +88,10 @@ module Pupgrade
           Dir.children(dir).sort.select { |n| File.file?(File.join(dir, n, 'catalog.json')) && globs.any? { |g| File.fnmatch?(g, n, File::FNM_CASEFOLD) } }
         end
 
-        # Type as `puppet resource` takes it (any case); the title a glob.
+        # Type as `puppet resource` takes it, a glob in any case; the title
+        # a glob.
         def wanted?(resource, type, title)
-          return false if type && !resource['type'].to_s.casecmp?(type)
+          return false if type && !File.fnmatch?(type, resource['type'].to_s, File::FNM_CASEFOLD)
 
           title.nil? || File.fnmatch?(title, resource['title'].to_s)
         end
