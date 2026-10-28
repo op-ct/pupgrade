@@ -87,6 +87,11 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Info do
     expect(info['branch']).to eq('main')
     expect(run(['facts']).last['candidates']).to eq('none (Forge module)')
     expect(run(['profile']).last).to include('declared' => 'not in the Puppetfile', 'candidates' => 'none (not in the Puppetfile)')
+    puppetfile = File.join(fixture.dir, 'Puppetfile')
+    original   = File.read(puppetfile)
+    File.write(puppetfile, "#{original}mod 'profile', :local => true, :install_path => 'site-modules'\n")
+    expect(run(['profile']).last).to include('declared' => '(no version) (local)', 'deployed' => 'match', 'candidates' => 'none (local module)')
+    File.write(puppetfile, original)
     expect(run(['nope']).first).to eq(3)
     expect(run([]).first).to eq(2)
   end

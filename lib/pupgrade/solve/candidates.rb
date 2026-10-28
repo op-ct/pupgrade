@@ -17,7 +17,7 @@ module Pupgrade
       # @!attribute [r] ref
       #   @return [String] the tag, or the branch for its tip
       # @!attribute [r] ref_type
-      #   @return [String] "tag" or "branch", as a Puppetfile would declare it
+      #   @return [String] "tag" or "branch": the Puppetfile option naming it
       # @!attribute [r] version
       #   @return [SemanticPuppet::Version, nil] from the tag name for a tag,
       #     else from the metadata
@@ -59,6 +59,7 @@ module Pupgrade
       def for(entry, branch: nil)
         declared = entry.declared
         return Unsolvable.new(reason: 'not in the Puppetfile') unless declared
+        return Unsolvable.new(reason: 'local module') if declared.local
         return Unsolvable.new(reason: 'Forge module') unless declared.git
 
         dir = File.join(@repo_dir, entry.path)

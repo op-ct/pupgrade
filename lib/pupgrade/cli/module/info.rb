@@ -76,8 +76,8 @@ module Pupgrade
           out
         end
 
-        # The module's metadata at a ref of its clone, the ref as `gitlog`
-        # takes it.
+        # The module's metadata at a ref of its clone. The ref resolves
+        # through {#ref_candidate}: `origin/<ref>` first.
         #
         # @return [Array(String, String, Driftless::Inputs::ModuleMetadata::Result)]
         #   the ref, its sha, and the metadata
@@ -98,6 +98,7 @@ module Pupgrade
 
         def declaration(repo, entry)
           declared = entry.declared
+          return '(no version) (local)' if declared.local
           return "#{declared.version || '(no version)'} (forge)" unless declared.git
 
           kind, name, why = declared_ref(repo, entry)

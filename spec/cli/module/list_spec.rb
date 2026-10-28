@@ -91,6 +91,15 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     system('git', '-C', clone, 'branch', '-q', '-D', 'production', err: File::NULL)
   end
 
+  it 'shows a :local entry as local, deployed while its directory is there' do
+    puppetfile = File.join(fixture.dir, 'Puppetfile')
+    original   = File.read(puppetfile)
+    File.write(puppetfile, "#{original}mod 'profile', :local => true, :install_path => 'site-modules'\n")
+    expect(cells(run(['profile']).last)[1]).to eq(['site-modules/profile', 'profile', '(no version) (local)', 'match', ''])
+  ensure
+    File.write(puppetfile, original)
+  end
+
   it 'colours the declared cell by kind and the deployed cell by state' do
     _, out = run(['--color', 'stdlib,profile'])
     expect(out).to include("\e[0;36mtag v8.6.0\e[0m", "\e[0;32mmatch\e[0m", "\e[0;33m(not in the Puppetfile)\e[0m", "\e[0;33munknown\e[0m")

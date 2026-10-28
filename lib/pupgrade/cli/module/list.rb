@@ -18,7 +18,7 @@ module Pupgrade
 
         register_command name: %w[list ls], subcommand_of: ModuleCommand
         positional '[<globs>]'
-        desc 'List the modules the control repo deploys, as declared and as found'
+        desc 'List the modules the control repo deploys: what the Puppetfile declares, and what is on disk'
 
         COLUMNS = %w[path name declared deployed version].freeze
         STATE_COLORS = { match: :green, differ: :red, unknown: :yellow }.freeze
@@ -61,6 +61,7 @@ module Pupgrade
             elsif declared.git
               kind, name, why = declared_ref(@repo, entry)
               "#{paint("#{kind} #{name}", *{ 'tag' => :cyan, 'branch' => :magenta }[kind])}#{" (#{why})" if why}"
+            elsif declared.local then "#{paint('(no version)', :yellow)} (local)"
             elsif declared.version then "#{declared.version} (forge)"
             else "#{paint('(no version)', :yellow)} (forge)"
             end
