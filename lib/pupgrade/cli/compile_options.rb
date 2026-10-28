@@ -26,6 +26,7 @@ module Pupgrade
         o.separator "#{label||'Compiler options'}:"
         o.on('--environment=NAME', 'Environment name (config: compile.environment)') { |v| @options[:environment] = v }
         o.on('--manifest=PATH', 'Override Puppet manifest (config: compile.manifest)') { |v| @options[:manifest] = v }
+        o.on('--hiera=FILE', 'Environment-layer hiera.yaml in place of the control repo\'s (config: compile.hiera)') { |v| @options[:hiera] = v }
         o.on('--code=CODE', 'Puppet code to compile (replaces manifest)') { |v| @options[:code] = v }
         o.on('--prepend=CODE', 'Puppet code evaluated before manifest; @FILE reads it from a file (config: compile.prepend_file)') { |v| @options[:prepend] = v }
         o.on('--var=NAME=VALUE[,…]', 'Set top-scope variable (for every node) (config: compile.vars)') { |v| pair(:vars, v) }
@@ -97,7 +98,7 @@ module Pupgrade
           prepend = File.file?(path) ? File.read(path) : missing(command, 'prepend file', path)
         end
         ::Pupgrade::Compile::Session.new(
-          repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], code: @options[:code],
+          repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], hiera: @options[:hiera], code: @options[:code],
           prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {}, settings: @options[:settings] || {},
           mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || ['debug'],
         ).start
@@ -145,6 +146,7 @@ module Pupgrade
           cache_dir:     cfg.dig('compile', 'cache_dir') || 'pupgrade/cache/catalogs',
           environment:   cfg.dig('compile', 'environment') || 'production',
           manifest:      cfg.dig('compile', 'manifest'),
+          hiera:         cfg.dig('compile', 'hiera'),
           prepend_file:  cfg.dig('compile', 'prepend_file'),
           mocks:         cfg.dig('compile', 'mocks'),
           enc:           cfg.dig('compile', 'enc'),

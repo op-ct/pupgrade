@@ -26,6 +26,9 @@ module Pupgrade
                  about: 'The environment name the catalogs are compiled in; it names the repo dir for Puppet'
       config_key 'compile.manifest', type: :string, default: nil, example: 'manifests/site.pp',
                  about: 'A manifest file or directory compiled in place of environment.conf\'s, relative to the control repo'
+      config_key 'compile.hiera', type: :string, default: nil, example: 'pupgrade/hiera.yaml',
+                 about: 'The environment layer\'s hiera.yaml, read in place of the control repo\'s, relative to it; ' \
+                        'its datadir is relative to its own directory'
       config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
                  about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
                         'relative to the control repo'
@@ -93,7 +96,9 @@ module Pupgrade
       #   node's mocked answers are logged; see {OnMock}
       # @param settings [Hash{String => Object}] Puppet settings by name,
       #   applied after pupgrade's own
-      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil,
+      # @param hiera [String, nil] the environment layer's hiera.yaml, in
+      #   place of the repo's
+      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil, hiera: nil,
                      server_facts: {}, mocks: Mocks.empty, on_leak: 'fail', on_mock: 'debug', settings: {})
         on_leak = ON_LEAK_ALIASES.fetch(on_leak, on_leak)
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
@@ -108,6 +113,7 @@ module Pupgrade
         @repo_dir     = File.expand_path(repo_dir)
         @environment  = environment
         @manifest     = manifest && File.expand_path(manifest, @repo_dir)
+        @hiera        = hiera && File.expand_path(hiera, @repo_dir)
         @code         = code
         @prepend      = prepend
         @enc          = enc || Enc.new(vars: vars)
@@ -130,6 +136,7 @@ module Pupgrade
       # @raise [Error] when the directory is not an environment
       def start
         raise Error, "#{@repo_dir}: no environment.conf" unless File.file?(File.join(@repo_dir, 'environment.conf'))
+        raise Error, "#{@hiera}: no such hiera.yaml" if @hiera && !File.file?(@hiera)
 
         @scratch = Dir.mktmpdir('pupgrade-compile')
         self.class.boot!
@@ -142,7 +149,10 @@ module Pupgrade
         @version = catalog_version
         Probes.install!
         Probes.attach_log
+        EnvHiera.install!
+        EnvHiera.path = @hiera
         Pupgrade.logger.info("compile: environment #{@environment} at #{@repo_dir}; manifest #{@manifest || conf.manifest}; " \
+                             "hiera #{@hiera || File.join(@repo_dir, 'hiera.yaml')}; " \
                              "modulepath #{@modulepath.join(':')}; #{@mocks.commands.size} mock(s); on leak: #{@on_leak}")
         self
       end
@@ -199,6 +209,7 @@ module Pupgrade
       end
 
       def close
+        EnvHiera.path = nil
         (@restore || {}).each { |name, value| Puppet[name.to_sym] = value }
         FileUtils.rm_rf(@scratch) if @scratch
       end
@@ -315,6 +326,47 @@ module Pupgrade
         when Hash  then obj.to_h { |k, v| [k, deep_dup(v)] }
         when Array then obj.map { |v| deep_dup(v) }
         else obj
+        end
+      end
+
+      # The environment layer read from another hiera.yaml. Puppet finds it
+      # as `<env>/hiera.yaml` in two places: the lookup adapter checks the
+      # file is there, and the environment's data provider reads it. While
+      # {path} is set both use it instead. Installed once per process.
+      module EnvHiera
+        class << self
+          # @return [String, nil] the hiera.yaml a session reads, absolute
+          attr_accessor :path
+
+          def install!
+            return if @installed
+
+            @installed = true
+            Puppet::Pops::Lookup::LookupAdapter.prepend(AdapterHook)
+            Puppet::Pops::Lookup::EnvironmentDataProvider.prepend(ProviderHook)
+          end
+        end
+
+        # The adapter's environment provider, made whether or not the
+        # environment has a hiera.yaml of its own.
+        module AdapterHook
+          private
+
+          def initialize_env_provider(lookup_invocation)
+            return super unless EnvHiera.path
+
+            provider = Puppet::Pops::Lookup::EnvironmentDataProvider.new
+            provider.config(lookup_invocation) && provider
+          end
+        end
+
+        # The environment provider's hiera.yaml, as {EnvHiera.path}.
+        module ProviderHook
+          protected
+
+          def configuration_path(lookup_invocation)
+            EnvHiera.path ? Pathname(EnvHiera.path) : super
+          end
         end
       end
     end

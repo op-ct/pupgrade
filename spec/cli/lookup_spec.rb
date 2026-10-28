@@ -109,6 +109,19 @@ RSpec.describe Pupgrade::CLI::Lookup do
     expect(log).to include("FATAL: lookup: Undefined variable '::nope'")
   end
 
+  it 'reads the environment layer from another hiera.yaml with --hiera, its datadir beside it' do
+    alt = File.join(@tmp, 'alt')
+    FileUtils.mkdir_p(File.join(alt, 'altdata'))
+    File.write(File.join(alt, 'hiera.yaml'), "---\nversion: 5\ndefaults:\n  datadir: altdata\n  data_hash: yaml_data\nhierarchy:\n  - name: alt\n    path: common.yaml\n")
+    File.write(File.join(alt, 'altdata/common.yaml'), "---\nprofile::base::ntp_servers: [alt.example.com]\n")
+    status, out = run(['--node', 'web01.example.com', '--hiera', File.join(alt, 'hiera.yaml'), 'profile::base::ntp_servers'])
+    expect([status, YAML.safe_load(out)]).to eq([0, ['alt.example.com']])
+    # the next session reads the repo's own hiera.yaml again
+    _, out = run(['--node', 'web01.example.com', 'profile::base::ntp_servers'])
+    expect(YAML.safe_load(out)).to eq(['time.example.com'])
+    expect(run(['--node', 'web01.example.com', '--hiera', 'nope.yaml', 'profile::base::ntp_servers']).first).to eq(3)
+  end
+
   it 'lists the nodes with the facts and variables that place them' do
     status, out = run(['--list'])
     expect(status).to eq(0)

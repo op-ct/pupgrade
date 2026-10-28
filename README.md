@@ -301,7 +301,9 @@ pupgrade catalog show -p mocks 'web*'      # what was mocked
 ```
 
 `--prepend CODE|@FILE` evaluates Puppet code before the manifest, for the
-resources only production has.
+resources only production has. `--hiera FILE` reads the environment's Hiera
+layer from FILE in place of the repo's `hiera.yaml`, its `datadir` relative to
+FILE's directory.
 
 ### solve
 
