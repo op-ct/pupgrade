@@ -29,6 +29,8 @@ module Pupgrade
       config_key 'compile.hiera', type: :string, default: nil, example: 'pupgrade/hiera.yaml',
                  about: 'The environment layer\'s hiera.yaml, read in place of the control repo\'s, relative to it; ' \
                         'its datadir is relative to its own directory'
+      config_key 'compile.pson', type: :boolean, default: false,
+                 about: 'Whether to load the puppet-pson gem, so code written before Puppet 8 that calls PSON compiles'
       config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
                  about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
                         'relative to the control repo'
@@ -42,10 +44,10 @@ module Pupgrade
                  about: 'What happens to an unmocked command: fail (stop that node\'s compile) ' \
                         'or allow (run it, and record it)'
       config_key 'compile.on_mock', type: :array, default: nil, example: ['silent', 'certname=web01*:info'],
-                 about: 'Rules for logging mocked execs, as --on-mock takes them: LEVEL, or FILTER:LEVEL for the nodes ' \
+                 about: 'Rules for logging mocked execs, in --on-mock\'s form: LEVEL, or FILTER:LEVEL for the nodes ' \
                         'the filter matches; the flag\'s rules come after these'
       config_key 'compile.vars', type: :hash, default: nil, example: { 'role' => 'web' },
-                 about: 'Top-scope variables set before the manifest, as an ENC would'
+                 about: 'Top-scope variables set on every node before the manifest'
       config_key 'compile.server_facts', type: :hash, default: nil, example: { 'servername' => 'puppet.example.com' },
                  about: 'Entries of $server_facts to set or override; servername, serverip, and serverversion have defaults'
       config_key 'compile.settings', type: :hash, default: nil, example: { 'strict' => 'error', 'strict_variables' => true },
@@ -98,7 +100,9 @@ module Pupgrade
       #   applied after pupgrade's own
       # @param hiera [String, nil] the environment layer's hiera.yaml, in
       #   place of the repo's
-      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil, hiera: nil,
+      # @param pson [Boolean] whether to load the puppet-pson gem, which
+      #   defines the `PSON` Puppet 8 dropped
+      def initialize(repo_dir:, environment: 'production', manifest: nil, code: nil, prepend: nil, vars: {}, enc: nil, hiera: nil, pson: false,
                      server_facts: {}, mocks: Mocks.empty, on_leak: 'fail', on_mock: 'debug', settings: {})
         on_leak = ON_LEAK_ALIASES.fetch(on_leak, on_leak)
         raise Error, "on_leak must be one of #{ON_LEAK.join(', ')}, got #{on_leak.inspect}" unless ON_LEAK.include?(on_leak)
@@ -114,6 +118,7 @@ module Pupgrade
         @environment  = environment
         @manifest     = manifest && File.expand_path(manifest, @repo_dir)
         @hiera        = hiera && File.expand_path(hiera, @repo_dir)
+        @pson         = pson
         @code         = code
         @prepend      = prepend
         @enc          = enc || Enc.new(vars: vars)
@@ -140,6 +145,7 @@ module Pupgrade
 
         @scratch = Dir.mktmpdir('pupgrade-compile')
         self.class.boot!
+        load_pson! if @pson
         settings!
         conf = Puppet::Settings::EnvironmentConf.load_from(@repo_dir, [])
         @modulepath = conf.modulepath.to_s.split(File::PATH_SEPARATOR).reject(&:empty?)
@@ -152,7 +158,7 @@ module Pupgrade
         EnvHiera.install!
         EnvHiera.path = @hiera
         Pupgrade.logger.info("compile: environment #{@environment} at #{@repo_dir}; manifest #{@manifest || conf.manifest}; " \
-                             "hiera #{@hiera || File.join(@repo_dir, 'hiera.yaml')}; " \
+                             "hiera #{@hiera || File.join(@repo_dir, 'hiera.yaml')}; #{'PSON loaded; ' if @pson}" \
                              "modulepath #{@modulepath.join(':')}; #{@mocks.commands.size} mock(s); on leak: #{@on_leak}")
         self
       end
@@ -184,9 +190,9 @@ module Pupgrade
                    seconds: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       end
 
-      # The top scope of a compile of the node, for a lookup: no manifest
-      # unless asked, as `puppet lookup` does it, the mocks and guard in
-      # force either way.
+      # The top scope of a compile of the node, for a lookup. The manifest
+      # is evaluated only when asked; `puppet lookup` skips it too. The
+      # mocks and guard are in force either way.
       #
       # @param factset [Factset]
       # @param compile [Boolean] whether to evaluate the manifests first
@@ -222,6 +228,16 @@ module Pupgrade
       end
 
       private
+
+      # `PSON`, from the puppet-pson gem. Once loaded it stays for the
+      # process.
+      #
+      # @raise [Error] when the gem is not installed
+      def load_pson!
+        require 'puppet/external/pson'
+      rescue LoadError
+        raise Error, 'PSON needs the puppet-pson gem (gem install puppet-pson, or add it to the bundle)'
+      end
 
       # Every path setting under the scratch directory, and a global
       # hiera.yaml with nothing in it, so the host's Puppet configuration
@@ -360,7 +376,7 @@ module Pupgrade
           end
         end
 
-        # The environment provider's hiera.yaml, as {EnvHiera.path}.
+        # The environment provider's hiera.yaml: {EnvHiera.path} when set.
         module ProviderHook
           protected
 

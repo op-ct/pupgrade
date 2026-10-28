@@ -205,6 +205,21 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(log).to include("warning: compile: ruby #{File.join(@tmp, 'nope.rb')} is not there; going on without it")
   end
 
+  it 'loads PSON for code written before Puppet 8 with --pson, and fails without it' do
+    functions = File.join(fixture.dir, 'site-modules/psonfix/lib/puppet/parser/functions')
+    FileUtils.mkdir_p(functions)
+    File.write(File.join(functions, 'pson_name.rb'),
+               "module Puppet::Parser::Functions\n  newfunction(:pson_name, type: :rvalue) { |args| PSON.load(args[0])['name'] }\nend\n")
+    code = ['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', %q(notify { pson_name('{"name":"from pson"}'): })]
+    # without it first: once loaded, PSON stays for the process
+    expect(run(code).first).to eq(1) unless defined?(::PSON)
+    expect(File.read(File.join(out, 'web01.example.com/error.txt'))).to include('uninitialized constant Puppet::Parser::Functions::PSON') unless defined?(::PSON)
+    expect(run(code + ['--pson']).first).to eq(0)
+    expect(read('web01.example.com', 'catalog.json')['resources'].map { |r| r['title'] }).to include('from pson')
+  ensure
+    FileUtils.rm_rf(File.join(fixture.dir, 'site-modules/psonfix'))
+  end
+
   it 'compiles code in place of the manifest, with top-scope variables and a certname filter' do
     status, text = run(['--mocks', 'pupgrade/compiler-mocks.yaml', '--certname', 'web*', '--code', 'notify { "hello ${role}": }', '--var', 'role=db'])
     expect(status).to eq(0)

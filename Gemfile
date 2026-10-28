@@ -7,6 +7,9 @@ gem 'driftless', path: '../driftless'
 
 gem 'rake'
 
+# PSON for modules written before Puppet 8; loaded only by `--pson`.
+gem 'puppet-pson', require: false
+
 group :test do
   gem 'rspec',     '~> 3.12'
   gem 'rspec-its', '~> 2.0'

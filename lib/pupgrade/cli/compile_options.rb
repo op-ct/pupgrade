@@ -34,6 +34,7 @@ module Pupgrade
         o.on('--ruby=FILE', "Rules for per-node ENC variables + classes, exec guard mocks (config: compile.ruby; default: #{DEFAULT_RUBY_FILE}") { |v| @options[:ruby] = v }
         o.on('--server-fact=NAME=VALUE[,…]', 'Set $server_facts (config: compile.server_facts)') { |v| pair(:server_facts, v) }
         o.on('--setting=NAME=VALUE', 'Set a Puppet setting, e.g. strict=error (config: compile.settings)') { |v| pair(:settings, v) }
+        o.on('--[no-]pson', 'Load the puppet-pson gem, for code written before Puppet 8 that calls PSON (config: compile.pson)') { |v| @options[:pson] = v }
       end
 
       def declare_guard(o)
@@ -98,7 +99,8 @@ module Pupgrade
           prepend = File.file?(path) ? File.read(path) : missing(command, 'prepend file', path)
         end
         ::Pupgrade::Compile::Session.new(
-          repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], hiera: @options[:hiera], code: @options[:code],
+          repo_dir: repo.dir, environment: @options[:environment], manifest: @options[:manifest], hiera: @options[:hiera], pson: @options[:pson],
+          code: @options[:code],
           prepend: prepend, enc: enc, server_facts: @options[:server_facts] || {}, settings: @options[:settings] || {},
           mocks: mocks, on_leak: @options[:on_leak], on_mock: @options[:on_mock] || ['debug'],
         ).start
@@ -147,6 +149,7 @@ module Pupgrade
           environment:   cfg.dig('compile', 'environment') || 'production',
           manifest:      cfg.dig('compile', 'manifest'),
           hiera:         cfg.dig('compile', 'hiera'),
+          pson:          cfg.dig('compile', 'pson'),
           prepend_file:  cfg.dig('compile', 'prepend_file'),
           mocks:         cfg.dig('compile', 'mocks'),
           enc:           cfg.dig('compile', 'enc'),
