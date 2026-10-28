@@ -61,7 +61,7 @@ module Pupgrade
           out = []
           out << ['name', [metadata.name, declared&.name].compact.uniq.join(', ')]
           out << ['path', entry.path]
-          out << ['declared', declared ? declaration(declared) : 'not in the Puppetfile']
+          out << ['declared', declared ? declaration(repo, entry) : 'not in the Puppetfile']
           out << ['remote', declared.git] if declared&.git
           out.concat(clone_lines(repo, entry))
           out << ['deployed', entry.found ? "#{entry.deployed} (#{entry.found})" : entry.deployed.to_s]
@@ -96,10 +96,12 @@ module Pupgrade
           [ref, sha, metadata]
         end
 
-        def declaration(declared)
+        def declaration(repo, entry)
+          declared = entry.declared
           return "#{declared.version || '(no version)'} (forge)" unless declared.git
 
-          "#{declared.ref_type || 'ref'} #{declared.ref || 'HEAD'}"
+          kind, name, why = declared_ref(repo, entry)
+          "#{kind} #{name}#{" (#{why})" if why}"
         end
 
         def clone_lines(repo, entry)

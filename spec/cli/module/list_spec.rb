@@ -72,6 +72,25 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     expect(run(['--names-only']).last.lines.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size + 2)
   end
 
+  it 'shows a :control_branch as the branch the clone is on, and which declaration chose it' do
+    puppetfile = File.join(fixture.dir, 'Puppetfile')
+    original   = File.read(puppetfile)
+    File.write(puppetfile, original.sub(/(mod 'acme-baseline',\n  git: '[^']+',\n)  branch: 'main'/, "\\1  branch: :control_branch,\n  default_branch: 'main'"))
+    clone = File.join(fixture.dir, 'modules/baseline')
+    # the control repo's branch unknown: the clone is on the default_branch
+    expect(cells(run(['baseline']).last)[1][2]).to eq('branch main (default_branch)')
+
+    git = ->(dir, *args) { system('git', '-C', dir, *args, exception: true, out: File::NULL, err: File::NULL) }
+    git.call(fixture.dir, 'init', '-q', '-b', 'production')
+    git.call(fixture.dir, '-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'x')
+    git.call(clone, 'branch', 'production')
+    expect(cells(run(['baseline']).last)[1][2]).to eq('branch production (control_branch)')
+  ensure
+    File.write(puppetfile, original)
+    FileUtils.rm_rf(File.join(fixture.dir, '.git'))
+    system('git', '-C', clone, 'branch', '-q', '-D', 'production', err: File::NULL)
+  end
+
   it 'colours the declared cell by kind and the deployed cell by state' do
     _, out = run(['--color', 'stdlib,profile'])
     expect(out).to include("\e[0;36mtag v8.6.0\e[0m", "\e[0;32mmatch\e[0m", "\e[0;33m(not in the Puppetfile)\e[0m", "\e[0;33munknown\e[0m")

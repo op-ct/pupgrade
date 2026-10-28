@@ -31,6 +31,7 @@ module Pupgrade
           inventory.warnings.each { |w| ::Pupgrade.logger.warn(w) }
           globs = argv.first.to_s.split(',').map { |g| g.chomp('/') }.reject(&:empty?)
           rows  = inventory.entries.select { |e| globs.empty? || ::Pupgrade::ModuleName.any?(globs, e.metadata.name, e.declared&.name, File.basename(e.path)) }
+          @repo = repo
           if @options[:names_only]
             rows.each { |e| puts e.metadata.name || e.declared&.name || File.basename(e.path) }
           else
@@ -57,7 +58,9 @@ module Pupgrade
           declared = entry.declared
           what =
             if declared.nil? then paint('(not in the Puppetfile)', :yellow)
-            elsif declared.git then paint("#{declared.ref_type || 'ref'} #{declared.ref || 'HEAD'}", *{ 'tag' => :cyan, 'branch' => :magenta }[declared.ref_type])
+            elsif declared.git
+              kind, name, why = declared_ref(@repo, entry)
+              "#{paint("#{kind} #{name}", *{ 'tag' => :cyan, 'branch' => :magenta }[kind])}#{" (#{why})" if why}"
             elsif declared.version then "#{declared.version} (forge)"
             else "#{paint('(no version)', :yellow)} (forge)"
             end

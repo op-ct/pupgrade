@@ -1,5 +1,6 @@
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/root'
+require 'driftless/git_clone'
 require 'pupgrade/inputs/branchfile'
 
 module Pupgrade
@@ -67,6 +68,30 @@ module Pupgrade
           ::Pupgrade.logger.notice("#{command}: recorded #{name}: #{branch} in #{path}")
         rescue ::Pupgrade::Inputs::Branchfile::Error => e
           fatal!("#{command}: branchfile #{e.message}", 3)
+        end
+
+        # A git module's declared ref as [kind, name, why]. A
+        # `:control_branch` is the branch its clone is on, as r10k deployed
+        # it: the control repo's branch under `deploy environment`, the
+        # `default_branch` under `puppetfile install`. `why` names which
+        # (`default_branch` when the clone is on it and the control repo is
+        # not); nil for any other ref, and for a clone that cannot say.
+        #
+        # @return [Array(String, String, String), Array(String, String, nil)]
+        def declared_ref(repo, entry)
+          declared = entry.declared
+          return [declared.ref_type || 'ref', (declared.ref || 'HEAD').to_s, nil] unless declared.ref == :control_branch
+
+          clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
+          return ['branch', 'control_branch', nil] unless clone.own?
+
+          control = ::Driftless::GitClone.new(repo.dir)
+          control = control.own? ? control.current_branch : nil
+          control = nil if control == 'HEAD'
+          branch  = [control, declared.default_branch].compact.find { |b| clone.branch_at_head(prefer: b) == b } || clone.branch_at_head
+          return ['branch', 'control_branch', nil] unless branch
+
+          ['branch', branch, (branch == declared.default_branch && branch != control) ? 'default_branch' : 'control_branch']
         end
 
         # Git's own rev syntax: a suffix, a reflog or range operator.
