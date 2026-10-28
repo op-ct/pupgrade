@@ -252,7 +252,13 @@ module Pupgrade
         (@order == 'newest') ? versions.sort.reverse : versions.sort
       end
 
+      # The module's candidate at a version: the one its lever names when
+      # that is at the version (a bump to a branch tip whose version a tag
+      # also has), else the first of that version in candidate order.
       def candidate_at(short, version)
+        lever = @levers&.dig(short, 1)
+        return lever if lever && version_of(lever) == version
+
         @lists[short].find { |c| version_of(c) == version }
       end
 

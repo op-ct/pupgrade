@@ -132,6 +132,22 @@ RSpec.describe Pupgrade::CLI::Solve do
                                                                               'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
   end
 
+  # apache's main is one commit past v12.0.0, its metadata still 12.0.0
+  it 'takes the ref a bump names, a branch tip over a tag of its version, and writes it as a branch' do
+    branchfile = File.join(@tmp, 'apache-branch.yaml')
+    File.write(branchfile, "puppetlabs-apache: main\n")
+    overlay = File.join(@tmp, 'apache.pf')
+    args    = ['--branchfile', branchfile, '--include-heads', '-o', overlay]
+    _, out = run(args + ['--bump', 'puppetlabs-apache=main'], config: ['--no-config'])
+    expect(rows(out)['puppetlabs-apache'].first(2)).to eq(['tag v10.1.1', 'main'])
+    apache = Driftless::Inputs::Puppetfile.load_file(overlay).modules.find { |m| m.name == 'puppetlabs-apache' }
+    expect([apache.ref, apache.ref_type]).to eq(%w[main branch])
+
+    # unbumped, with what holds it back bumped, the tag of that version comes first
+    _, out = run(args + ['--bump', 'puppetlabs-stdlib', '--bump', 'puppetlabs-concat'], config: ['--no-config'])
+    expect(rows(out)['puppetlabs-apache'][1]).to eq('v12.0.0')
+  end
+
   it 'logs each module\'s choice at info once: the ref, or a Forge module\'s version, and the note' do
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log(level: :info) { run(['-v'], config: ['--no-config']) }
