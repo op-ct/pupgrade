@@ -34,6 +34,10 @@ module Pupgrade
       # Why a module has no candidates besides its current version.
       Unsolvable = Data.define(:reason)
 
+      # The version at the end of a tag name, after any prefix (`v1.2.0`,
+      # `release-1.2.0`), and not part of a longer number (`v1.2.0.1`).
+      TAG_VERSION = /(?<![\d.])\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\z/.freeze
+
       # @param repo_dir [String] the control repo
       # @param branchfile [String, nil] the branchfile naming tracking
       #   branches, relative to the repo
@@ -107,7 +111,7 @@ module Pupgrade
         return [] unless out
 
         out.split("\n").filter_map { |tag|
-          version = parse(tag.sub(/\Av/, ''))
+          version = parse(tag[TAG_VERSION])
           if version.nil? || (current_version && version <= current_version)
             Pupgrade.logger.debug("candidates: #{entry.path}: tag #{tag} skipped: #{version.nil? ? 'not a version' : "not past #{current_version}"}")
             next

@@ -81,6 +81,15 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Info do
     expect(run(['facts', '--branch', 'main']).first).to eq(3)
   end
 
+  it 'reads a tag\'s version after any prefix, and not from inside a longer number' do
+    clone = File.join(fixture.dir, 'modules/stdlib')
+    system('git', '-C', clone, 'tag', 'release-9.7.0', 'v9.6.0', exception: true)
+    system('git', '-C', clone, 'tag', 'v9.6.0.1', 'v9.6.0', exception: true)
+    expect(run(['stdlib']).last['candidates']).to eq('v9.0.0, v9.4.0, v9.6.0, release-9.7.0')
+  ensure
+    system('git', '-C', clone, 'tag', '-d', 'release-9.7.0', 'v9.6.0.1', out: File::NULL, err: File::NULL)
+  end
+
   it 'names the branch followed, and says why a module has no candidates' do
     File.write(File.join(fixture.dir, 'branches.yaml'), YAML.dump('puppetlabs-stdlib' => 'main'))
     _, info = run(['stdlib', '--branchfile', 'branches.yaml'])
