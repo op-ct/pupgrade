@@ -17,6 +17,17 @@ RSpec.describe Pupgrade::Compile::Factset do
     end
   end
 
+  it 'names the node from the facts\' trusted certname, else their clientcert, before the file name' do
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, 'one.json'), JSON.generate('trusted' => { 'certname' => 'a.example.com' }, 'clientcert' => 'b.example.com'))
+      File.write(File.join(dir, 'two.json'), JSON.generate('clientcert' => 'b.example.com'))
+      File.write(File.join(dir, 'three.json'), JSON.generate('values' => { 'clientcert' => 'c.example.com' }))
+      File.write(File.join(dir, 'four.json'), JSON.generate('name' => 'd.example.com', 'values' => { 'clientcert' => 'c.example.com' }))
+      expect(%w[one two three four].map { |n| described_class.load(File.join(dir, "#{n}.json")).certname })
+        .to eq(%w[a.example.com b.example.com c.example.com d.example.com])
+    end
+  end
+
   it 'loads every factset under a directory tree, sorted, and names what it cannot read' do
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'role::web'))

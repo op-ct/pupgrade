@@ -5,11 +5,11 @@ module Pupgrade
   module Compile
     # One node's facts to compile with, read from a factset file in either
     # layout: onceover's (`name`, `values`, optional `trusted` and
-    # `trusted_external`) or driftless's export (the facts hash alone, the
-    # certname from the file name).
+    # `trusted_external`) or driftless's export (the facts hash alone).
     #
     # @!attribute [r] certname
-    #   @return [String]
+    #   @return [String] onceover's `name` or `trusted.certname`, else the
+    #     facts' `trusted.certname` or `clientcert`, else the file name
     # @!attribute [r] values
     #   @return [Hash] the facts
     # @!attribute [r] trusted
@@ -58,9 +58,18 @@ module Pupgrade
           values = data
           name   = nil
         end
-        name ||= File.basename(path, File.extname(path))
+        name ||= certname_in(values) || File.basename(path, File.extname(path))
         new(certname: name.to_s, values: values, trusted: data['values'].is_a?(Hash) ? data['trusted'] : nil,
             trusted_external: (data['values'].is_a?(Hash) && data['trusted_external']) || {}, path: path)
+      end
+
+      # The certname the facts report: the verified one in a `trusted`
+      # fact, else the node's own `clientcert`.
+      #
+      # @return [String, nil]
+      def self.certname_in(values)
+        trusted = values['trusted']
+        (trusted.is_a?(Hash) && trusted['certname']) || values['clientcert']
       end
 
       def self.parse(path)
