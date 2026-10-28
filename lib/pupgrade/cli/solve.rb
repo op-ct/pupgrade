@@ -65,6 +65,7 @@ module Pupgrade
                                                    exclude: exclusions, order: @options[:order], bumps: @options[:bumps] || {},
                                                    holds: @options[:holds] || [], evidence: evidence, prune_unused: @options[:prune_unused])
         entries = ::Pupgrade::ModuleProposal.new(inventory, nil, ignore: @options[:ignore] || []).entries
+        warn_drift(entries)
         ::Pupgrade.logger.notice("solve: reading the candidates of #{entries.size} module(s) from their clones#{' after fetching' if @options[:fetch]}")
         lists = entries.to_h { |e| [e.path, candidates.for(e)] }
         ::Pupgrade.logger.notice("solve: solving, #{@options[:order]} first#{'; pruning edges the catalogs show unused' if @options[:prune_unused]}")
@@ -139,7 +140,7 @@ module Pupgrade
       end
 
       # The status word coloured by outcome; a solved row says what stands in
-      # its way; the part of each violation in the way is red, as is the
+      # its way. The part of each violation in the way is red, and so is the
       # label of an unresolvable constraint.
       def note(choice)
         style = if choice.unresolved? then :unresolved
@@ -157,8 +158,8 @@ module Pupgrade
         violations.map { |v| "#{v.text}, but #{paint(v.fault, :red)}" }.join('; ')
       end
 
-      # The solver's reasoning for the modules asked about, as it wrote
-      # it: why a solved module stopped short, or why nothing fits an
+      # The solver's reasoning for the modules asked about, in its own
+      # words: why a solved module stopped short, or why nothing fits an
       # unresolved one.
       def print_explanations(plan)
         globs  = @options[:explain]
@@ -195,7 +196,7 @@ module Pupgrade
       end
 
       # The pruned edges the result violates, and the constraints broken
-      # before the solve that are still broken, as the config's lists.
+      # before the solve that are still broken, in the config's lists.
       def write_exclusions(plan)
         lists = { 'dependencies' => plan.pruned.dup }
         plan.choices.flat_map(&:prior).each { |v| (lists[v.list] ||= []) << v.exclusion }
@@ -243,6 +244,17 @@ module Pupgrade
       def exclusions
         files = Array(@options[:exclusion_files]).map { |f| ::Pupgrade::Exclusions.read(File.expand_path(f)) }
         ::Pupgrade::Exclusions.merge(@options[:exclude] || {}, *files)
+      end
+
+      # A module whose clone is not at its declaration: the solve starts
+      # from the clone, and the Puppetfile it writes holds only the moves,
+      # so a deploy from that Puppetfile starts somewhere else.
+      def warn_drift(entries)
+        entries.select { |e| e.deployed == :differ && e.declared }.each do |e|
+          declared = e.declared.git ? e.declared.ref : e.declared.version
+          ::Pupgrade.logger.warn("solve: #{e.declared.name}: clone at #{e.found}, Puppetfile declares #{declared}; " \
+                                 'the solve starts from the clone')
+        end
       end
 
       def log_warnings(warnings)

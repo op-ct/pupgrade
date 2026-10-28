@@ -148,6 +148,17 @@ RSpec.describe Pupgrade::CLI::Solve do
     expect(rows(out)['puppetlabs-apache'][1]).to eq('v12.0.0')
   end
 
+  it 'warns for each clone not at its declaration, naming both refs' do
+    clone = File.join(fixture.dir, 'modules/concat')
+    system('git', '-C', clone, 'checkout', '-q', '--detach', 'v9.0.0', exception: true)
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log(level: :warning) { run([], config: ['--no-config']) }
+    expect(log).to include("warning: solve: puppetlabs-concat: clone at v9.0.0, Puppetfile declares v7.3.0; the solve starts from the clone\n")
+    expect(log).not_to include('puppetlabs-stdlib: clone at')
+  ensure
+    system('git', '-C', clone, 'checkout', '-q', '--detach', 'v7.3.0', exception: true)
+  end
+
   it 'logs each module\'s choice at info once: the ref, or a Forge module\'s version, and the note' do
     allow(Driftless).to receive(:logger).and_call_original
     log = capture_log(level: :info) { run(['-v'], config: ['--no-config']) }
