@@ -204,6 +204,9 @@ module Pupgrade
           added = Array(block.call(node)).compact.map(&:to_s)
           node = node.with(classes: (node.classes + added).uniq) unless added.empty?
         end
+        unless node.vars.empty? && node.classes.empty?
+          Pupgrade.logger.info("enc: #{node.certname}: variables #{node.vars.inspect}#{"; classes #{node.classes.join(', ')}" unless node.classes.empty?}")
+        end
         node
       end
 

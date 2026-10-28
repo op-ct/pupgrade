@@ -48,7 +48,10 @@ RSpec.describe Pupgrade::Compile::Enc do
     expect(node.fact('os.family')).to eq('RedHat')
     expect(node['site']).to eq('b')
 
-    node = enc.resolve(factset('web01.example.com', 'os' => { 'family' => 'Debian' }))
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log(level: :info) { node = enc.resolve(factset('web01.example.com', 'os' => { 'family' => 'Debian' })) }
+    expect(log).to include("info: enc: web01.example.com: variables #{{ 'tenant' => 'blue', 'role' => 'role::base', 'family' => 'Debian' }.inspect}\n")
+    expect(log).not_to include('; classes')
     expect(node.vars).to eq('tenant' => 'blue', 'role' => 'role::base', 'family' => 'Debian')
     expect(node.classes).to eq([])
     expect(enc.empty?).to be(false)

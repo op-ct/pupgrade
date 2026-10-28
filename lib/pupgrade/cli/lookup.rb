@@ -53,8 +53,7 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         ::Pupgrade.logger.notice("lookup: #{keys.join(', ')} as #{factset.certname}#{', after compiling the manifests' if @options[:compile]}")
         found = false
         begin
-          session.scope(factset, compile: @options[:compile]) do |top, node|
-            ::Pupgrade.logger.info("lookup: #{factset.certname}: variables #{node.vars.inspect}")
+          session.scope(factset, compile: @options[:compile]) do |top, _node|
             # the first key with a value answers, each in its own module's scope
             keys.each do |key|
               mod   = module_name_for(key)
