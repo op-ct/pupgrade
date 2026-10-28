@@ -33,9 +33,10 @@ module Pupgrade
   #   modules:                   in build order; commit dates count up across
   #     - name: owner-module     the build, so the order is part of every sha
   #       deployed: VERSION      the tag the Puppetfile pins and the clone sits at
-  #       branch: main           the branch releases are tagged on
+  #       branch: main           the default branch: releases are tagged on it
+  #                              unless they name another
   #       tag_prefix: v          'v' for v1.2.3, '' for 1.2.3
-  #       unreleased: false      one commit past the last tag
+  #       unreleased: false      one commit past the last tag on the branch
   #       track: false           the Puppetfile follows the branch, not a tag
   #       forge: false           a directory with metadata.json, no remote;
   #                              its one release is the deployed version
@@ -45,7 +46,11 @@ module Pupgrade
   #           puppet: RANGE
   #           operatingsystems: { OS: [releases] }
   #           remove: [path]     files gone from this version on
-  #   proposals:                 Puppetfiles written beside the deployed one
+  #           branch: NAME       commit and tag this release on NAME, made
+  #                              from the default branch's tip the first time
+  #           tag_prefix: v      this release's tag prefix, in place of the
+  #                              module's
+  #   proposals:                Puppetfiles written beside the deployed one
   #     Puppetfile.proposed:     the versions listed modules move to
   #       owner-module: VERSION
   #
@@ -67,8 +72,13 @@ module Pupgrade
     #   @return [Hash{String => Array<String>}] OS name to releases
     # @!attribute [r] remove
     #   @return [Array<String>] files gone from this version on
-    Release = Data.define(:version, :dependencies, :puppet, :operatingsystems, :remove) do
-      def initialize(remove: [], **rest)
+    # @!attribute [r] branch
+    #   @return [String, nil] the branch it is tagged on, when not the
+    #     module's
+    # @!attribute [r] tag_prefix
+    #   @return [String, nil] its tag prefix, when not the module's
+    Release = Data.define(:version, :dependencies, :puppet, :operatingsystems, :remove, :branch, :tag_prefix) do
+      def initialize(remove: [], branch: nil, tag_prefix: nil, **rest)
         super
       end
     end
@@ -107,7 +117,7 @@ module Pupgrade
       end
 
       def tag(version)
-        "#{tag_prefix}#{version}"
+        "#{releases.find { |r| r.version == version }&.tag_prefix || tag_prefix}#{version}"
       end
 
       def release(version)
@@ -155,7 +165,7 @@ module Pupgrade
     DEFAULT_EPOCH = Time.utc(2024, 1, 1)
     DEFAULT_FORGE = 'https://forge.example.com'.freeze
     MOD_KEYS      = %w[name deployed branch tag_prefix unreleased track forge releases].freeze
-    RELEASE_KEYS  = %w[version dependencies puppet operatingsystems remove].freeze
+    RELEASE_KEYS  = %w[version dependencies puppet operatingsystems remove branch tag_prefix].freeze
 
     # @return [String] the scenario directory
     attr_reader :scenario_dir
@@ -243,7 +253,9 @@ module Pupgrade
                   puppet: (raw['puppet'] || defaults['puppet']).to_s,
                   operatingsystems: (raw['operatingsystems'] || defaults['operatingsystems'] || {})
                     .to_h { |os, rels| [os.to_s, Array(rels).map(&:to_s)] },
-                  remove: Array(raw['remove']).map(&:to_s))
+                  remove: Array(raw['remove']).map(&:to_s),
+                  branch: raw['branch']&.to_s,
+                  tag_prefix: raw.key?('tag_prefix') ? raw['tag_prefix'].to_s : nil)
     end
 
     def remote_url(mod)
@@ -342,12 +354,22 @@ module Pupgrade
     end
 
     # A bare remote with one commit and tag per release on the module's
-    # branch, and one more commit when the module has unreleased work.
+    # branch, or on the branch a release names, and one more commit on the
+    # module's branch when it has unreleased work.
     def build_remote(mod)
       work = File.join(@dir, '.build', mod.name)
       FileUtils.mkdir_p(work)
       git(work, 'init', '-q', '-b', mod.branch)
+      branches = [mod.branch]
+      on = mod.branch
       mod.releases.each do |release|
+        target = release.branch || mod.branch
+        if target != on
+          # a branch named for the first time starts at the module branch's tip
+          git(work, 'checkout', '-q', *(branches.include?(target) ? [target] : ['-b', target, mod.branch]))
+          branches |= [target]
+          on = target
+        end
         write_release(work, mod, release)
         stamp = commit(work, "Release #{release.version}")
         # The tagger date, like the commit dates, is fixed, so the tag
@@ -355,6 +377,7 @@ module Pupgrade
         git(work, 'tag', '-a', '-m', "Release #{release.version}", mod.tag(release.version),
             env: { 'GIT_COMMITTER_DATE' => stamp })
       end
+      git(work, 'checkout', '-q', mod.branch) unless on == mod.branch
       if mod.unreleased
         File.write(File.join(work, 'README.md'), "# #{mod.name}\n\nUnreleased fix.\n")
         commit(work, 'Fix a thing after the last release')
