@@ -56,6 +56,17 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Info do
     expect(info['dependencies']).to eq('puppetlabs/stdlib >= 4.13.1 < 9.0.0')
   end
 
+  it 'reads the metadata at a ref of the clone with MODULE:REF, the deployment as it is' do
+    status, info = run(['stdlib:v9.6.0'])
+    expect(status).to eq(0)
+    expect(info).to include('declared' => 'tag v8.6.0', 'deployed' => 'match', 'version' => '9.6.0')
+    expect(info['read at']).to match(/\Av9\.6\.0 \([0-9a-f]{12}\)\z/)
+    expect(info['clone']).to start_with('tag v8.6.0')
+    expect(run(['stdlib']).last).not_to have_key('read at')
+    expect(run(['stdlib:v99.0.0']).first).to eq(3)
+    expect(run(['facts:v1.0.0']).first).to eq(3)
+  end
+
   it 'names the branch followed, and says why a module has no candidates' do
     File.write(File.join(fixture.dir, 'branches.yaml'), YAML.dump('puppetlabs-stdlib' => 'main'))
     _, info = run(['stdlib', '--branchfile', 'branches.yaml'])

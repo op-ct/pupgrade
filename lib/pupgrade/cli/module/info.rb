@@ -1,3 +1,5 @@
+require 'open3'
+
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/module_command'
 require 'driftless/control_repo'
@@ -12,13 +14,14 @@ module Pupgrade
       # `pupgrade module info`
       #
       # One module in full: its names, where it is, what the Puppetfile
-      # declares, what the clone sits at, what its metadata claims, the
-      # branch it follows, and the versions it could move to.
+      # declares, what the clone sits at, what its metadata claims (at a ref
+      # of the clone, when one is named), the branch it follows, and the
+      # versions it could move to.
       class Info < Base
         include ModuleCommand::Shared
 
         register_command name: 'info', subcommand_of: ModuleCommand
-        positional '<module>'
+        positional '<module>[:<ref>]'
         desc 'Show one module: names, declaration, deployment, metadata, branch, and candidates'
 
         def execute(argv)
@@ -26,10 +29,15 @@ module Pupgrade
           repo = control_repo!('module info')
           require 'driftless/module_inventory'
           inventory = ::Driftless::ModuleInventory.new(repo.dir)
-          entry     = inventory.find(argv.first)
-          fatal!("module info: no module #{argv.first.inspect} on the modulepath or in the Puppetfile", 3) unless entry
+          name, sep, ref = argv.first.rpartition(':')
+          if sep.empty? || ref.empty?
+            name = argv.first
+            ref  = nil
+          end
+          entry = inventory.find(name)
+          fatal!("module info: no module #{name.inspect} on the modulepath or in the Puppetfile", 3) unless entry
 
-          lines(repo, entry).each { |label, value| puts "#{label}:".ljust(15) + value.to_s }
+          lines(repo, entry, ref && at_ref(repo, entry, ref)).each { |label, value| puts "#{label}:".ljust(15) + value.to_s }
           exit 0
         end
 
@@ -43,9 +51,11 @@ module Pupgrade
 
         private
 
-        def lines(repo, entry)
+        # @param at [Array(String, String, Driftless::Inputs::ModuleMetadata::Result), nil]
+        #   the ref, its sha, and the metadata there, from {#at_ref}
+        def lines(repo, entry, at)
           declared = entry.declared
-          metadata = entry.metadata
+          metadata = at ? at.last : entry.metadata
           out = []
           out << ['name', [metadata.name, declared&.name].compact.uniq.join(', ')]
           out << ['path', entry.path]
@@ -53,6 +63,7 @@ module Pupgrade
           out << ['remote', declared.git] if declared&.git
           out.concat(clone_lines(repo, entry))
           out << ['deployed', entry.found ? "#{entry.deployed} (#{entry.found})" : entry.deployed.to_s]
+          out << ['read at', "#{at[0]} (#{at[1][0, 12]})"] if at
           out << ['version', metadata.version.to_s]
           out << ['dependencies', metadata.dependencies.map { |n, r| [n, r].compact.join(' ') }.join('; ')] unless metadata.dependencies.empty?
           out << ['requirements', metadata.requirements.map { |n, r| "#{n} #{r}" }.join('; ')] unless metadata.requirements.empty?
@@ -61,6 +72,26 @@ module Pupgrade
           end
           out.concat(candidate_lines(repo, entry))
           out
+        end
+
+        # The module's metadata at a ref of its clone, the ref as `gitlog`
+        # takes it.
+        #
+        # @return [Array(String, String, Driftless::Inputs::ModuleMetadata::Result)]
+        #   the ref, its sha, and the metadata
+        def at_ref(repo, entry, ref)
+          clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
+          fatal!("module info: #{entry.path} is not a git clone, so has no ref #{ref.inspect}", 3) unless clone.own?
+          name = ref_candidate(clone, ref)
+          fatal!("module info: #{entry.path} has no ref #{ref.inspect}", 3) unless name
+
+          sha = clone.resolve(name)
+          text, status = Open3.capture2('git', '-C', clone.dir, 'show', "#{sha}:#{::Driftless::Inputs::ModuleMetadata::FILENAME}", err: File::NULL)
+          fatal!("module info: #{entry.path} has no metadata.json at #{ref}", 3) unless status.success?
+
+          metadata = ::Driftless::Inputs::ModuleMetadata.parse(text, path: "#{entry.path}@#{ref}:metadata.json")
+          fatal!("module info: #{metadata.error}", 3) if metadata.error
+          [ref, sha, metadata]
         end
 
         def declaration(declared)
