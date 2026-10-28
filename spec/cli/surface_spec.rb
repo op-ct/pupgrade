@@ -100,6 +100,21 @@ RSpec.describe Pupgrade::CLI::Surface do
     expect(run(described_class, ['concat', '--refresh=sideways']).first).to eq(2)
   end
 
+  it 'reads each module at its future tags with --future-tags, on the branch it follows' do
+    FileUtils.rm_rf(cache)
+    expect(run(described_class, ['-F', 'stdlib']).first).to eq(0)
+    expect(Dir.children(cache).sort).to eq([fixture.surface_file('stdlib', '8.6.0'), fixture.surface_file('stdlib', '9.0.0', 'v9.0.0'),
+                                            fixture.surface_file('stdlib', '9.4.0', 'v9.4.0'), fixture.surface_file('stdlib', '9.6.0', 'v9.6.0')].sort)
+
+    # a branch ending at the deployed tag has no tags past it
+    FileUtils.rm_rf(cache)
+    system('git', '-C', File.join(fixture.dir, 'modules/stdlib'), 'branch', '-q', 'old', 'v8.6.0', exception: true)
+    expect(run(described_class, ['--future-tags', '--branch', 'nope,old', 'stdlib']).first).to eq(0)
+    expect(Dir.children(cache)).to eq([fixture.surface_file('stdlib', '8.6.0')])
+    expect(run(described_class, ['-F', 'facts']).first).to eq(0)
+    expect(run(described_class, ['--branch', 'old', 'stdlib']).first).to eq(2)
+  end
+
   it 'reads every module with --all, one to a file or stdout, and a remote at a ref' do
     expect(run(described_class, ['--all'])).to eq([0, ''])
     # a clone is keyed on its commit; a Forge install on its version alone

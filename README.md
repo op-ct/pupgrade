@@ -392,6 +392,7 @@ Extracts a module's API into a JSON document under
 ```shell
 pupgrade surface stdlib -o -                   # the document, to stdout
 pupgrade surface --all                         # every module, into the cache
+pupgrade surface --all --future-tags --fetch   # and every tag past each deployed version
 pupgrade surface --git https://git.example.com/puppetlabs-stdlib.git --ref v9.6.0
 ```
 
