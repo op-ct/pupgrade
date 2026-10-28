@@ -209,7 +209,8 @@ module Pupgrade
         end
 
         choices = ordered.map { |short| choice_for(short, decisions, ignored, pinned) }
-        choices.each { |c| Pupgrade.logger.info("solve: #{c.name}: #{c.chosen} (#{c.note})") }
+        # the ref alone (a Forge module's version), since the note says when it is current
+        choices.each { |c| Pupgrade.logger.info("solve: #{c.name}: #{c.chosen.ref.to_s.empty? ? c.chosen.version : c.chosen.ref} (#{c.note})") }
         pruned = @by_name.flat_map { |short, entry| pruned_edges(entry, @lists[short].find { |c| version_of(c) == decisions[short] }, decisions) }
         Plan.new(choices: choices, pruned: pruned.uniq, implicit: implicit(entries), warnings: @warnings)
       end
@@ -471,9 +472,9 @@ module Pupgrade
         [why.empty? ? failure.explanation.lines.first.to_s.strip : why, refusal(failure, "#{short} cannot #{move}", asked)]
       end
 
-      # The solver's derivation, as the finding and the leaves it rests on
-      # when each step adds one leaf, else in the solver's own steps closed
-      # by the finding.
+      # The solver's derivation. When each step adds one leaf, it is the
+      # finding and the leaves it rests on; else it is the solver's own
+      # steps, closed by the finding.
       #
       # @param conclusion [String] "apache cannot stay at 10.1.1"
       # @param asked [PubGrub::Fact, nil] the version under test, which the

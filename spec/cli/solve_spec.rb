@@ -132,6 +132,13 @@ RSpec.describe Pupgrade::CLI::Solve do
                                                                               'needs puppetlabs/concat >= 9.0.0 < 10.0.0, but concat is 7.3.0'])
   end
 
+  it 'logs each module\'s choice at info once: the ref, or a Forge module\'s version, and the note' do
+    allow(Driftless).to receive(:logger).and_call_original
+    log = capture_log(level: :info) { run(['-v'], config: ['--no-config']) }
+    expect(log).to include("info: solve: puppetlabs-stdlib: v8.6.0 (solved)\n", "info: solve: puppetlabs-facts: 1.4.0 (Forge module)\n")
+    expect(log).not_to include('(current) (')
+  end
+
   it 'takes bumps and holds by any spelling, warns about the ones that name nothing, and explains' do
     allow(Driftless).to receive(:logger).and_call_original
     out = nil
