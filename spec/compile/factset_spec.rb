@@ -28,6 +28,19 @@ RSpec.describe Pupgrade::Compile::Factset do
     end
   end
 
+  it 'takes a trusted fact as $trusted when it has Puppet\'s keys, and keeps it out of the facts' do
+    Dir.mktmpdir do |dir|
+      trusted = { 'authenticated' => 'remote', 'certname' => 'a.example.com', 'extensions' => { 'pp_role' => 'web' } }
+      File.write(File.join(dir, 'a.json'), JSON.generate('kernel' => 'Linux', 'trusted' => trusted))
+      File.write(File.join(dir, 'b.json'), JSON.generate('kernel' => 'Linux', 'trusted' => { 'certname' => 'b.example.com' }))
+      File.write(File.join(dir, 'c.json'), JSON.generate('values' => { 'trusted' => trusted }, 'trusted' => { 'certname' => 'c.example.com' }))
+      a, b, c = %w[a b c].map { |n| described_class.load(File.join(dir, "#{n}.json")) }
+      expect([a.trusted, a.values]).to eq([trusted, { 'kernel' => 'Linux' }])
+      expect([b.certname, b.trusted, b.values]).to eq(['b.example.com', nil, { 'kernel' => 'Linux' }])
+      expect([c.trusted, c.values]).to eq([{ 'certname' => 'c.example.com' }, {}])
+    end
+  end
+
   it 'loads every factset under a directory tree, sorted, and names what it cannot read' do
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, 'role::web'))

@@ -11,9 +11,10 @@ module Pupgrade
     #   @return [String] onceover's `name` or `trusted.certname`, else the
     #     facts' `trusted.certname` or `clientcert`, else the file name
     # @!attribute [r] values
-    #   @return [Hash] the facts
+    #   @return [Hash] the facts, less any `trusted` fact
     # @!attribute [r] trusted
-    #   @return [Hash, nil] `$trusted` as given; nil to synthesise one
+    #   @return [Hash, nil] `$trusted` as onceover's `trusted` gives it, else
+    #     as the `trusted` fact does; nil to synthesise one
     # @!attribute [r] trusted_external
     #   @return [Hash] `$trusted['external']`
     # @!attribute [r] path
@@ -59,8 +60,19 @@ module Pupgrade
           name   = nil
         end
         name ||= certname_in(values) || File.basename(path, File.extname(path))
-        new(certname: name.to_s, values: values, trusted: data['values'].is_a?(Hash) ? data['trusted'] : nil,
+        trusted = (data['values'].is_a?(Hash) && data['trusted']) || trusted_fact(values)
+        new(certname: name.to_s, values: values.except('trusted'), trusted: trusted,
             trusted_external: (data['values'].is_a?(Hash) && data['trusted_external']) || {}, path: path)
+      end
+
+      # A `trusted` fact, as PuppetDB stores `$trusted` among the facts,
+      # taken as Puppet's `Node#sanitize` takes it: only a hash with
+      # `authenticated`, `certname`, and `extensions`.
+      #
+      # @return [Hash, nil]
+      def self.trusted_fact(values)
+        trusted = values['trusted']
+        trusted if trusted.is_a?(Hash) && %w[authenticated certname extensions].all? { |k| trusted.key?(k) }
       end
 
       # The certname the facts report: the verified one in a `trusted`
