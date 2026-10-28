@@ -31,7 +31,11 @@ module Pupgrade
           inventory.warnings.each { |w| ::Pupgrade.logger.warn(w) }
           globs = argv.first.to_s.split(',').map { |g| g.chomp('/') }.reject(&:empty?)
           rows  = inventory.entries.select { |e| globs.empty? || ::Pupgrade::ModuleName.any?(globs, e.metadata.name, e.declared&.name, File.basename(e.path)) }
-          print_table(COLUMNS, rows.map { |e| row(e) })
+          if @options[:names_only]
+            rows.each { |e| puts e.metadata.name || e.declared&.name || File.basename(e.path) }
+          else
+            print_table(COLUMNS, rows.map { |e| row(e) })
+          end
           ::Pupgrade.logger.notice("module list: #{rows.size} module(s)")
           exit 0
         end
@@ -40,6 +44,7 @@ module Pupgrade
 
         def configure_parser(o)
           declare_repo_option(o)
+          o.on('-1', '--names-only', 'One module name per line, the directory name when it has none, instead of the table') { @options[:names_only] = true }
           o.separator ''
           o.separator '<globs> narrow by any spelling of a module\'s name, comma-separated. "deployed" is how the'
           o.separator 'directory compares with the Puppetfile: match, differ (with what is there), absent, or'

@@ -66,6 +66,12 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     expect(run(%w[a b]).first).to eq(2)
   end
 
+  it 'prints one name per line with -1, the directory name for a module with none' do
+    status, out = run(['-1', 'stdlib,profile'])
+    expect([status, out]).to eq([0, "puppetlabs-stdlib\nprofile\n"])
+    expect(run(['--names-only']).last.lines.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size + 2)
+  end
+
   it 'colours the declared cell by kind and the deployed cell by state' do
     _, out = run(['--color', 'stdlib,profile'])
     expect(out).to include("\e[0;36mtag v8.6.0\e[0m", "\e[0;32mmatch\e[0m", "\e[0;33m(not in the Puppetfile)\e[0m", "\e[0;33munknown\e[0m")
