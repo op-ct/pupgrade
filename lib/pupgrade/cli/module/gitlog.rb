@@ -24,9 +24,9 @@ module Pupgrade
           fatal!('module gitlog: give a ref or --branch, not both', help: true) if ref && @options[:branch]
           repo = control_repo!('module gitlog')
           entry, clone = git_module!('module gitlog', repo, selector)
-          branch = @options[:branch] && pick_branch(clone, @options[:branch])
+          branch = @options[:branch] && pick_branch('module gitlog', clone, @options[:branch])
           ref ||= branch || branch_from_file(repo, entry)
-          record_branch(repo, entry, branch) if branch && @options[:branchfile]
+          record_branch('module gitlog', repo, entry, branch) if branch && @options[:branchfile]
 
           if @options[:fetch]
             fatal!("module gitlog: fetch from #{clone.remote || 'origin'} failed", 3) unless clone.fetch
@@ -108,14 +108,6 @@ module Pupgrade
           branch
         end
 
-        # The first of the branches the clone knows, as origin/<branch> or
-        # as given.
-        def pick_branch(clone, branches)
-          found = branches.find { |b| clone.resolve("origin/#{b}") || clone.resolve(b) }
-          fatal!("module gitlog: none of #{branches.join(', ')} is a branch the clone knows (try --fetch)", 3) unless found
-          found
-        end
-
         # Only the lines of tagged commits, and the tip's line with
         # --include-heads.
         def tagged_lines(out, ref)
@@ -123,18 +115,6 @@ module Pupgrade
           kept  = lines.select { |l| l.match?(/\(.*tag: /) }
           kept.unshift(lines.first) if @options[:include_heads] && ref && lines.first && !kept.include?(lines.first)
           kept.join
-        end
-
-        # Writes the branch for the module into the branchfile, the one on
-        # the command line or the configured one, under the Puppetfile's
-        # name for it.
-        def record_branch(repo, entry, branch)
-          path = File.expand_path(@options[:branchfile], repo.dir)
-          name = entry.declared&.name || entry.metadata.name || File.basename(entry.path)
-          ::Pupgrade::Inputs::Branchfile.record(path, name, branch)
-          ::Pupgrade.logger.notice("module gitlog: recorded #{name}: #{branch} in #{path}")
-        rescue ::Pupgrade::Inputs::Branchfile::Error => e
-          fatal!("module gitlog: branchfile #{e.message}", 3)
         end
 
         def config_defaults

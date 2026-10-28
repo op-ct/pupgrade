@@ -67,6 +67,20 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Info do
     expect(run(['facts:v1.0.0']).first).to eq(3)
   end
 
+  it 'follows the first --branch the clone has, its tags the candidates, and records it in a branchfile' do
+    system('git', '-C', File.join(fixture.dir, 'modules/stdlib'), 'branch', '-q', 'old', 'v8.6.0', exception: true)
+    # old ends at the current tag: no tag past it, only the branch tip
+    _, info = run(['stdlib', '--branch', 'nope,old'])
+    expect(info).to include('branch' => 'old', 'candidates' => 'old')
+    expect(run(['stdlib', '--branch', 'main']).last).to include('branch' => 'main', 'candidates' => 'v9.0.0, v9.4.0, v9.6.0, main')
+
+    branchfile = File.join(@tmp, 'recorded.yaml')
+    run(['stdlib', '--branch', 'old', '--branchfile', branchfile])
+    expect(YAML.safe_load(File.read(branchfile))).to eq('puppetlabs-stdlib' => 'old')
+    expect(run(['stdlib', '--branch', 'nope']).first).to eq(3)
+    expect(run(['facts', '--branch', 'main']).first).to eq(3)
+  end
+
   it 'names the branch followed, and says why a module has no candidates' do
     File.write(File.join(fixture.dir, 'branches.yaml'), YAML.dump('puppetlabs-stdlib' => 'main'))
     _, info = run(['stdlib', '--branchfile', 'branches.yaml'])

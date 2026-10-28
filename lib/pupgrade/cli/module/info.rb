@@ -37,6 +37,7 @@ module Pupgrade
           entry = inventory.find(name)
           fatal!("module info: no module #{name.inspect} on the modulepath or in the Puppetfile", 3) unless entry
 
+          @branch = @options[:branch] && given_branch(repo, entry)
           lines(repo, entry, ref && at_ref(repo, entry, ref)).each { |label, value| puts "#{label}:".ljust(15) + value.to_s }
           exit 0
         end
@@ -45,6 +46,7 @@ module Pupgrade
 
         def configure_parser(o)
           declare_repo_option(o)
+          o.on('--branch=BRANCHES', Array, 'Follow the first of these branches the clone has; with a branchfile, record it there') { |v| @options[:branch] = v }
           o.on('--branchfile=FILE', 'The branchfile naming the branch the module follows (config: modules.branchfile)') { |v| @options[:branchfile] = v }
           o.on('--fetch', 'Fetch the clone\'s origin before listing candidates') { @options[:fetch] = true }
         end
@@ -113,9 +115,9 @@ module Pupgrade
 
         def candidate_lines(repo, entry)
           candidates = ::Pupgrade::Solve::Candidates.new(repo.dir, branchfile: @options[:branchfile], include_heads: true, fetch: @options[:fetch])
-          list = candidates.for(entry)
+          list = candidates.for(entry, branch: @branch)
           candidates.warnings.each { |w| ::Pupgrade.logger.warn(w) }
-          branch = branch_for(repo, entry)
+          branch = @branch || branch_for(repo, entry)
           out = []
           out << ['branch', branch] if branch
           if list.is_a?(::Pupgrade::Solve::Candidates::Unsolvable)
@@ -125,6 +127,17 @@ module Pupgrade
             out << ['candidates', newer.empty? ? 'none past the current version' : newer.map(&:ref).join(', ')]
           end
           out
+        end
+
+        # The --branch the clone knows, recorded in the branchfile when
+        # there is one.
+        def given_branch(repo, entry)
+          clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
+          fatal!("module info: #{entry.path} is not a git clone, so follows no branch", 3) unless clone.own?
+
+          branch = pick_branch('module info', clone, @options[:branch])
+          record_branch('module info', repo, entry, branch) if @options[:branchfile]
+          branch
         end
 
         def branch_for(repo, entry)

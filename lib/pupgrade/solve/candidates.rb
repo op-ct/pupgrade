@@ -52,9 +52,11 @@ module Pupgrade
       attr_reader :warnings
 
       # @param entry [Driftless::ModuleInventory::Entry]
+      # @param branch [String, nil] the branch the module follows, in place
+      #   of the one the branchfile names
       # @return [Array<Candidate>, Unsolvable] oldest first, the current
       #   version first of all
-      def for(entry)
+      def for(entry, branch: nil)
         declared = entry.declared
         return Unsolvable.new(reason: 'not in the Puppetfile') unless declared
         return Unsolvable.new(reason: 'Forge module') unless declared.git
@@ -66,7 +68,7 @@ module Pupgrade
         fetch(dir, entry) if @fetch
         current = Candidate.new(ref: declared.ref.to_s, ref_type: declared.ref_type || 'ref', version: parse(entry.metadata.version),
                                 metadata: entry.metadata, current: true)
-        branch  = tracking_branch(entry)
+        branch ||= tracking_branch(entry)
         if declared.ref_type == 'branch'
           tip = tip_of(dir, declared.ref.to_s, entry)
           return [current] if tip.nil? || at_head?(dir, declared.ref.to_s)

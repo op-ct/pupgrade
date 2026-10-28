@@ -1,5 +1,6 @@
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/root'
+require 'pupgrade/inputs/branchfile'
 
 module Pupgrade
   module CLI
@@ -44,6 +45,28 @@ module Pupgrade
           clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
           fatal!("#{command}: #{entry.path} is not a git clone", 3) unless clone.own?
           [entry, clone]
+        end
+
+        # The first of the branches the clone knows, as origin/<branch> or
+        # as given.
+        #
+        # @return [String]
+        def pick_branch(command, clone, branches)
+          found = branches.find { |b| clone.resolve("origin/#{b}") || clone.resolve(b) }
+          fatal!("#{command}: none of #{branches.join(', ')} is a branch the clone knows (try --fetch)", 3) unless found
+          found
+        end
+
+        # Writes the branch for the module into the branchfile, the one on
+        # the command line or the configured one, under the Puppetfile's
+        # name for it.
+        def record_branch(command, repo, entry, branch)
+          path = File.expand_path(@options[:branchfile], repo.dir)
+          name = entry.declared&.name || entry.metadata.name || File.basename(entry.path)
+          ::Pupgrade::Inputs::Branchfile.record(path, name, branch)
+          ::Pupgrade.logger.notice("#{command}: recorded #{name}: #{branch} in #{path}")
+        rescue ::Pupgrade::Inputs::Branchfile::Error => e
+          fatal!("#{command}: branchfile #{e.message}", 3)
         end
 
         # Git's own rev syntax: a suffix, a reflog or range operator.
