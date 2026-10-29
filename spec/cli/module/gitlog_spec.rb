@@ -82,6 +82,22 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
     end
   end
 
+  it 'logs what the clone has past a ref behind HEAD, and says when the ref is HEAD' do
+    Dir.mktmpdir do |dir|
+      control_repo(dir)
+      git(File.join(dir, 'modules/stdlib'), 'checkout', '-q', '--detach', 'v2')
+      allow(Driftless).to receive(:logger).and_call_original
+      out = nil
+      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib', 'v1']) }
+      expect(subjects(out)).to match([a_string_matching(/\A\(HEAD, tag: v2, .*\) two\z/)])
+      expect(log).to include('notice: module gitlog: v1 is behind HEAD in modules/stdlib; logging the commits since v1 (v1..HEAD)')
+
+      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib', 'v2']) }
+      expect(out).to eq('')
+      expect(log).to include("notice: module gitlog: v2 is HEAD in modules/stdlib; there's nothing past it")
+    end
+  end
+
   it 'passes a rev expression to git as written, and logs a ref from its start on request' do
     Dir.mktmpdir do |dir|
       control_repo(dir)

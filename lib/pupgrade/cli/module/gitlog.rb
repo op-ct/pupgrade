@@ -38,7 +38,12 @@ module Pupgrade
           args.push('-n', @options[:count].to_s) if @options[:count]
           args << '--name-status' if @options[:name_status]
           args << '--simplify-by-decoration' if @options[:tags_only]
-          args << range_for(clone, ref)
+          range = range_for(clone, ref, entry.path)
+          unless range
+            ::Pupgrade.logger.notice("module gitlog: #{ref} is HEAD in #{entry.path}; there's nothing past it")
+            exit 0
+          end
+          args << range
           out = clone.log(*args)
           fatal!("module gitlog: git log failed in #{entry.path}", 3) if out.nil?
 
@@ -60,7 +65,7 @@ module Pupgrade
           o.on('-f', '--name-status', 'List the files each commit changed') { @options[:name_status] = true }
           o.on('--[no-]date', 'Show each commit\'s date after its hash (default: on)') { |v| @options[:date] = v }
           o.on('--fetch', 'Fetch origin first, so a branch or tag the clone has not seen shows') { @options[:fetch] = true }
-          o.on('--branch=BRANCHES', Array, 'Follow the first of these branches the clone has, as <ref> would;',
+          o.on('--branch=BRANCHES', Array, 'Follow the first of these branches the clone has, in place of <ref>;',
                'with a branchfile (flag or config), record it there') { |v| @options[:branch] = v }
           o.on('-t', '--tags-only', 'Show only tagged commits (and the branch tip with --include-heads)') { @options[:tags_only] = true }
           o.on('--include-heads', 'With --tags-only, keep the tip of the ref as well') { @options[:include_heads] = true }
@@ -76,8 +81,8 @@ module Pupgrade
           o.separator '<ref> is a branch, tag, or sha, tried as origin/<ref> first (a deployed clone\'s own'
           o.separator 'branches are stale) and then as given; a rev expression such as HEAD~3 or'
           o.separator 'main@{2.weeks.ago} goes to git as written. The log then covers HEAD..<ref>, what'
-          o.separator 'the ref has that the clone does not, or all of <ref> with --from-start. Without'
-          o.separator 'a ref, the log is the clone\'s history.'
+          o.separator 'the ref has that the clone does not, or all of <ref> with --from-start. For a ref'
+          o.separator 'behind HEAD it covers <ref>..HEAD. Without a ref, the log is the clone\'s history.'
           o.separator 'Lines are coloured when --[no-]color, output.color, or a terminal says so.'
         end
 
@@ -121,13 +126,21 @@ module Pupgrade
           { branchfile: ::Pupgrade.config.dig('modules', 'branchfile') }.compact
         end
 
-        # @return [String] the `git log` revision argument
-        def range_for(clone, ref)
+        # @param path [String] the module's directory, for the notice
+        # @return [String, nil] the `git log` revision argument; nil when
+        #   the ref is HEAD
+        def range_for(clone, ref, path)
           return 'HEAD' if ref.nil?
 
           candidate = ref_candidate(clone, ref)
           fatal!("module gitlog: #{ref.inspect} is not a ref the clone resolves (try --fetch)", 3) unless candidate
-          @options[:from_start] ? candidate : "HEAD..#{candidate}"
+          return candidate if @options[:from_start]
+          return "HEAD..#{candidate}" unless clone.log('--format=%h', "HEAD..#{candidate}").to_s.empty?
+          return nil if clone.log('--format=%h', "#{candidate}..HEAD").to_s.empty?
+
+          # a ref behind HEAD: the commits since it, up to HEAD
+          ::Pupgrade.logger.notice("module gitlog: #{ref} is behind HEAD in #{path}; logging the commits since #{ref} (#{ref}..HEAD)")
+          "#{candidate}..HEAD"
         end
       end
     end
