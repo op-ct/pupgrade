@@ -205,6 +205,31 @@ RSpec.describe Pupgrade::CLI::Catalog::Compile do
     expect(log).to include("warning: compile: ruby #{File.join(@tmp, 'nope.rb')} is not there; going on without it")
   end
 
+  it 'answers function calls from the mocks, from Puppet code and from Ruby, and records them' do
+    mocks = File.join(@tmp, 'function-mocks.yaml')
+    File.write(mocks, "functions:\n  - name: stdlib::run_hostname\n    returns: from-the-mock\n")
+    ruby = File.join(@tmp, 'function-mocks.rb')
+    File.write(ruby, "function('stdlib::shout') { |node, text| \"\#{text} to \#{node.certname}\" }\n")
+    functions = File.join(fixture.dir, 'site-modules/fmock/lib/puppet/functions/fmock')
+    FileUtils.mkdir_p(functions)
+    File.write(File.join(functions, 'outer.rb'),
+               "Puppet::Functions.create_function(:'fmock::outer') do\n  def outer\n    call_function('stdlib::run_hostname')\n  end\nend\n")
+
+    # no command mock answers hostname -f: the compile passes only if the function never runs
+    status, = run(['--mocks', mocks, '--no-default-mocks', '--ruby', ruby, '--certname', 'web*'])
+    expect(status).to eq(0)
+    fragment = read('web01.example.com', 'catalog.json')['resources'].find { |r| r['type'] == 'Concat::Fragment' }
+    expect(fragment['parameters']['content']).to include('hi to web01.example.com', 'from-the-mock')
+    expect(read('web01.example.com', 'probes.json')['mocks'].map { |m| m.values_at('kind', 'command', 'location') })
+      .to include(%w[function stdlib::run_hostname site-modules/profile/manifests/base.pp:13], %w[function stdlib::shout site-modules/profile/manifests/base.pp:10])
+
+    status, = run(['--mocks', mocks, '--no-default-mocks', '--certname', 'web*', '--code', 'notify { fmock::outer(): }'])
+    expect(status).to eq(0)
+    expect(read('web01.example.com', 'catalog.json')['resources'].map { |r| r['title'] }).to include('from-the-mock')
+  ensure
+    FileUtils.rm_rf(File.join(fixture.dir, 'site-modules/fmock'))
+  end
+
   it 'loads PSON for code written before Puppet 8 with --pson, and fails without it' do
     functions = File.join(fixture.dir, 'site-modules/psonfix/lib/puppet/parser/functions')
     FileUtils.mkdir_p(functions)

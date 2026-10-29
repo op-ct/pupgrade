@@ -68,12 +68,13 @@ module Pupgrade
 
       # The Ruby file's definitions.
       class Rules
-        attr_reader :variables, :class_blocks, :mocks
+        attr_reader :variables, :class_blocks, :mocks, :functions
 
         def initialize
           @variables    = []
           @class_blocks = []
           @mocks        = []
+          @functions    = []
         end
 
         # @param name [String, Symbol]
@@ -102,6 +103,17 @@ module Pupgrade
           raise Error, "mock #{pattern.inspect} needs a Regexp and a block" unless pattern.is_a?(Regexp) && block
 
           @mocks << [pattern, block]
+        end
+
+        # @param name [String, Symbol] the Puppet function, "puppetdb_query"
+        # @yieldparam node [Node]
+        # @yieldparam args [Array] the call's arguments
+        # @yieldreturn [Object, nil] what the call returns, or nil to let the
+        #   function run
+        def function(name, &block)
+          raise Error, "function #{name.inspect} needs a block" unless block
+
+          @functions << [name.to_s.delete_prefix('::'), block]
         end
 
         # @param path [String]

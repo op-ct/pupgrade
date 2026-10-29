@@ -92,6 +92,7 @@ module Pupgrade
         ::Pupgrade.logger.info("#{command}: mocks from #{path || 'nowhere'}#{' plus the defaults' if defaults}")
         enc = build_enc(repo)
         mocks.blocks = enc.ruby.mocks
+        mocks.function_blocks = enc.ruby.functions
         prepend = @options[:prepend]
         prepend = "@#{@options[:prepend_file]}" if prepend.nil? && @options[:prepend_file]
         if prepend&.start_with?('@')

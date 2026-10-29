@@ -19,11 +19,16 @@ module Pupgrade
     #         action: allow                          # run it for real, and record it
     #     facts:                                     # Facter.value reads the factset lacks
     #       fips_enabled: false
+    #     functions:                                 # Puppet functions answered without running
+    #       - name: puppetdb_query
+    #         returns: []
+    #         when:
+    #           os.family: RedHat
     #
     # The first entry whose `match` fits the command line and whose `when`
     # fits the node's facts answers. A command no entry answers gets the
     # run's `on_leak` policy: `fail` stops the node's compile, `allow` runs
-    # it and records it.
+    # it and records it. A function no entry answers runs.
     class Mocks
       class Error < StandardError; end
 
@@ -59,7 +64,27 @@ module Pupgrade
         end
 
         def dig(facts, path)
+          Command.dig(facts, path)
+        end
+
+        def self.dig(facts, path)
           path.split('.').reduce(facts) { |v, k| v.is_a?(Hash) ? v[k] : nil }
+        end
+      end
+
+      # One `functions` entry.
+      #
+      # @!attribute [r] name
+      #   @return [String] the function, "puppetdb_query" or "profile::lookup_ip"
+      # @!attribute [r] returns
+      #   @return [Object] what a call returns, whatever its arguments
+      # @!attribute [r] conditions
+      #   @return [Hash{String => Array<String>}] dotted fact path to the
+      #     values any of which the node must report; empty for any node
+      Function = Data.define(:name, :returns, :conditions) do
+        # @param facts [Hash] the node's facts
+        def for?(function_name, facts)
+          name == function_name && conditions.all? { |path, values| values.include?(Command.dig(facts, path).to_s) }
         end
       end
 
@@ -84,18 +109,24 @@ module Pupgrade
         new({}, path: nil, defaults: defaults)
       end
 
-      attr_reader :path, :commands, :facts
+      attr_reader :path, :commands, :facts, :functions
 
       # @return [Array<Array(Regexp, Proc)>] the Ruby file's `mock` blocks,
       #   asked before the entries
       attr_accessor :blocks
+
+      # @return [Array<Array(String, Proc)>] the Ruby file's `function`
+      #   blocks, asked before the `functions` entries
+      attr_accessor :function_blocks
 
       # @param data [Hash] the parsed mock file
       def initialize(data, path:, defaults: true)
         @path     = path
         @commands = Array(data['commands']).map { |c| command(c) }
         @facts    = (data['facts'] || {}).to_h { |k, v| [k.to_s, v] }
-        @blocks   = []
+        @functions = Array(data['functions']).map { |f| function(f) }
+        @blocks    = []
+        @function_blocks = []
         return unless defaults
 
         shipped = YAML.safe_load(File.read(DEFAULTS_FILE)) || {}
@@ -121,6 +152,24 @@ module Pupgrade
         @commands.find { |c| c.for?(command_line, facts) }&.for_node(node)
       end
 
+      # @param name [String] the function called
+      # @param args [Array] its arguments, for a block
+      # @param node [Enc::Node, Hash] the node, or its facts alone
+      # @return [Array(Boolean, Object)] whether a block or entry answers,
+      #   and with what
+      def for_function(name, args, node = {})
+        name  = name.to_s.delete_prefix('::')
+        facts = node.is_a?(Enc::Node) ? node.facts : node
+        @function_blocks.each do |wanted, block|
+          next unless wanted == name
+
+          answer = block.call(node, *args)
+          return [true, answer] unless answer.nil?
+        end
+        entry = @functions.find { |f| f.for?(name, facts) }
+        entry ? [true, entry.returns] : [false, nil]
+      end
+
       # @param name [String] a fact, dotted for a path into a structured one
       # @return [Array(Boolean, Object)] whether the mocks answer, and with what
       def fact(name)
@@ -139,6 +188,13 @@ module Pupgrade
       end
 
       private
+
+      def function(entry, source = @path)
+        raise Error, "#{source}: each function needs a name and what it returns, got #{entry.inspect}" unless entry.is_a?(Hash) && entry['name'] && entry.key?('returns')
+
+        conditions = (entry['when'] || {}).to_h { |k, v| [k.to_s, Array(v).map(&:to_s)] }
+        Function.new(name: entry['name'].to_s.delete_prefix('::'), returns: entry['returns'], conditions: conditions)
+      end
 
       def command(entry, source = @path)
         raise Error, "#{source}: each command needs a match, got #{entry.inspect}" unless entry.is_a?(Hash) && entry['match']

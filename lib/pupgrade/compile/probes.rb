@@ -10,7 +10,7 @@ module Pupgrade
     # mocks do not answer and the run's policy is to stop.
     class Leak < StandardError; end
 
-    # What one node's compile used, as the hooks in {Probes} report it:
+    # What one node's compile used, from the hooks in {Probes}:
     # functions called, facts read, lookups made, providers loaded, warnings
     # and deprecations logged, and commands or facts that reached the
     # execution guard. One per compile; {Probes.current} points at it while
@@ -92,8 +92,8 @@ module Pupgrade
         @facts[[prefix, key].reject(&:empty?).join('.')] += 1
       end
 
-      # A dotted path walked from a value, as Hiera interpolation and the
-      # `get`-style functions do.
+      # A dotted path walked from a value: Hiera interpolation and the
+      # `get`-style functions walk them.
       def sub_lookup(value, segments)
         prefix = @prefixes[value.object_id]
         return if prefix.nil?
@@ -142,6 +142,23 @@ module Pupgrade
         entry['calls'] += 1
         site = site(file, line)
         entry['sites'] << site if site && entry['sites'].size < 20 && !entry['sites'].include?(site)
+      end
+
+      # A function call the mocks answer, recorded under `mocks` and logged
+      # at the `--on-mock` level; nothing for a call they leave to run.
+      #
+      # @param file [String, nil] the call site's file, when the caller
+      #   knows it; else the site is where the Puppet stack is
+      # @param line [Integer, nil]
+      # @return [Array(Boolean, Object)] whether the mocks answer, and with what
+      def mocked_function(name, args, file: nil, line: nil)
+        found, value = @mocks.for_function(name, args, @node || @factset.values)
+        return [false, nil] unless found
+
+        where = site(file, line) || location
+        intercepted('function', name.to_s, 'mocked', where)
+        log_mock("guard: #{@factset.certname}: function #{name}: mocked#{" at #{where}" if where}")
+        [true, value]
       end
 
       # A value checked against a type alias: a parameter typed with it, a
@@ -344,6 +361,7 @@ module Pupgrade
           Puppet::Pops::Evaluator::AccessOperator.prepend(AccessHooks)
           Puppet::Pops::Lookup::SubLookup.prepend(SubLookupHooks)
           Puppet::Pops::Evaluator::EvaluatorImpl.prepend(CallHooks)
+          Puppet::Pops::Functions::Function.prepend(FunctionCallHooks)
           Puppet::Functions.singleton_class.prepend(FunctionFactoryHooks)
           Puppet::Pops::Lookup.singleton_class.prepend(LookupHooks)
           Puppet::Pops::Types::TypeParser.prepend(TypeParserHooks)
@@ -417,6 +435,18 @@ module Pupgrade
         end
       end
 
+      # A Ruby function calling another (`call_function`). The mocks answer
+      # this call the same way they answer one from Puppet code.
+      module FunctionCallHooks
+        def call_function(function_name, *args, &block)
+          if (rec = Probes.current)
+            found, value = rec.mocked_function(function_name, args)
+            return value if found
+          end
+          super
+        end
+      end
+
       module CallHooks
         # `key in $hash` hands the hash to the evaluator whole.
         def eval_InExpression(o, scope) # rubocop:disable Naming/MethodName -- Puppet's name
@@ -433,6 +463,8 @@ module Pupgrade
             loader = Puppet::Pops::Adapters::LoaderAdapter.loader_for_model_object(o, file)
             func   = loader.load(:function, name) if loader
             rec.function_call(name, func, file, line)
+            found, value = rec.mocked_function(name, args, file: file, line: line)
+            return value if found
           end
           super
         end

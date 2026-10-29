@@ -199,11 +199,18 @@ commands:
     action: allow                       # run it for real, but record it
 facts:                                  # Facter.value reads the factset lacks
   fips_enabled: false
+functions:                              # Puppet functions answered without running
+  - name: puppetdb_query
+    returns: []
+    when:
+      os.family: RedHat
 ```
 
 The first entry whose `match` fits and whose `when` holds answers. pupgrade
 applies its own mocks after yours, for the probes package providers make as
 they load (`pupgrade catalog compile --show-default-mocks` prints them).
+A function mock answers every call to that function, from manifests and
+templates and from Ruby functions calling it, whatever the arguments.
 
 Every interception is in the node's `probes.json`, and the compile table
 counts each list: what was mocked under `mocks`, unmocked commands under
@@ -243,10 +250,12 @@ the rules; each block gets the node as resolved so far:
 variable(:tenant) { |node| node['site'] == 'b' ? 'blue' : 'green' }
 classes  { |node| ['profile::el'] if node.fact('os.family') == 'RedHat' }
 mock(/\Arpm -q (\S+)\z/) { |node, m| "#{m[1]}-1.0-1.el9\n" }   # a mock answer, too
+function('puppetdb_query') { |node, query| [] if node.certname.start_with?('db') }
 ```
 
-A `variable` block returning nil leaves what the rules set; a `mock` block
-returning nil declines, and the YAML mocks are tried. `--var NAME=VALUE`
+A `variable` block returning nil leaves what the rules set; a `mock` or
+`function` block returning nil declines, and the YAML mocks are tried, then
+the function itself. `--var NAME=VALUE`
 sets a variable on every node from the command line. What each node was
 given is in its `probes.json` under `enc`, and `pupgrade lookup --list`
 shows it for every node at once.
