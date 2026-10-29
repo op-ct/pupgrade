@@ -92,6 +92,8 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(described_class.new.send(:where_cell, finding.with(uses: nil))).to eq("\e[0;31muse unknown\e[0m")
     kinds = %w[class-param-removed class-param-added-required function-changed class-param-hiera-only]
     expect(kinds.map { |k| described_class.new.send(:kind_cell, k)[/\A\e\[0;3(\d)m/, 1] }).to eq(%w[1 1 3 3])
+    expect(%w[apache::dead_opt legacy_shout].push('concat::fragment target').map { |s| described_class.new.send(:subject_cell, s) })
+      .to eq(["\e[0;36mapache::\e[0mdead_opt", 'legacy_shout', "\e[0;36mconcat::fragment \e[0mtarget"])
   ensure
     Pupgrade::Ansi.preference = color
   end

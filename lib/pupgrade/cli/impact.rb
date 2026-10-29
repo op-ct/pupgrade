@@ -79,7 +79,7 @@ module Pupgrade
         if @options[:summary]
           print_table(SUMMARY_COLUMNS, modules.map { |c, h, f| summary_row(c, h, f.select { |x| shown?(x) }) })
         else
-          print_table(COLUMNS, shown.map { |f| [f.module, kind_cell(f.kind), f.subject, where_cell(f), detail_cell(f)] })
+          print_table(COLUMNS, shown.map { |f| [f.module, kind_cell(f.kind), subject_cell(f.subject), where_cell(f), detail_cell(f)] })
           print_history(modules) if @options[:changelog] || @options[:gitlog]
         end
         ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
@@ -211,6 +211,18 @@ module Pupgrade
       # parameter that lives on in Hiera (`class-param-hiera-only`), yellow.
       def kind_cell(kind)
         paint(kind, kind.end_with?('-removed', '-added-required') ? :red : :yellow)
+      end
+
+      # The subject's namespace cyan and its name plain, split the way
+      # `module diff` splits an item: a define or type before a space
+      # ("concat::fragment target"), else everything up to the last `::`.
+      def subject_cell(subject)
+        head, space, tail = subject.partition(' ')
+        return "#{paint("#{head} ", :cyan)}#{tail}" unless space.empty?
+        return subject unless subject.include?('::')
+
+        namespace, _, name = subject.rpartition('::')
+        "#{paint("#{namespace}::", :cyan)}#{name}"
       end
 
       # @param style [Array<Symbol>] the color of a resource's Type[title]

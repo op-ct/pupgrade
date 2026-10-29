@@ -27,7 +27,7 @@ module Pupgrade
         COLUMNS         = %w[item difference detail].freeze
         SUMMARY_COLUMNS = (['surface'] + ::Pupgrade::Surface::Diff::KINDS + ['total']).freeze
 
-        # How the difference column is coloured, by its first word; a
+        # How the difference column is colored by its first word; a
         # required parameter added breaks callers, so it is red too.
         STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
@@ -108,11 +108,12 @@ module Pupgrade
           [item_cell(change), paint(phrase, *phrase_style(phrase)), ::Pupgrade::Surface::Render.detail(change)]
         end
 
-        # The surface kind cyan, a namespace grey, the leaf plain, so the
+        # The surface kind and a namespace cyan, the leaf plain, so the
         # items scan by kind and the names stand apart from their paths.
+        # `impact` colors its subjects the same way.
         def item_cell(change)
           kind, namespace, leaf = ::Pupgrade::Surface::Render.item_parts(change)
-          "#{paint(kind, :cyan)} #{namespace.empty? ? '' : paint(namespace, :grey)}#{leaf}"
+          "#{paint(kind, :cyan)} #{paint(namespace, :cyan) unless namespace.empty?}#{leaf}"
         end
 
         def phrase_style(phrase)
