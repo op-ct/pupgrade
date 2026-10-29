@@ -77,7 +77,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(cells(out).find { |r| r[2] == 'stdlib::shout' }.last).to eq('changed signatures: (text) -> (text, times)')
   end
 
-  it 'colors the where cell: certnames magenta, a resource in the verb color, and the rest counted, dimmed' do
+  it 'colors the where cell (certnames magenta, a resource in the verb color, the rest counted, dimmed) and the kind' do
     analysis = Pupgrade::Impact::Analysis
     item     = ->(name, certname) { analysis::Item.new(name: name, certname: certname) }
     uses     = [analysis::Use.new(label: 'resources', items: [item.call('Foo[a]', 'web01')], more: 2),
@@ -90,6 +90,8 @@ RSpec.describe Pupgrade::CLI::Impact do
       "resources: \e[0;31mFoo[a]\e[0m on \e[0;35mweb01\e[0m \e[0;35m\e[2mand 2 more\e[0m; sites: x.pp:3 \e[2mand 1 more\e[0m",
     )
     expect(described_class.new.send(:where_cell, finding.with(uses: nil))).to eq("\e[0;31muse unknown\e[0m")
+    kinds = %w[class-param-removed class-param-added-required function-changed class-param-hiera-only]
+    expect(kinds.map { |k| described_class.new.send(:kind_cell, k)[/\A\e\[0;3(\d)m/, 1] }).to eq(%w[1 1 3 3])
   ensure
     Pupgrade::Ansi.preference = color
   end

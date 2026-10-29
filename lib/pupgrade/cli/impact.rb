@@ -79,7 +79,7 @@ module Pupgrade
         if @options[:summary]
           print_table(SUMMARY_COLUMNS, modules.map { |c, h, f| summary_row(c, h, f.select { |x| shown?(x) }) })
         else
-          print_table(COLUMNS, shown.map { |f| [f.module, f.kind, f.subject, where_cell(f), detail_cell(f)] })
+          print_table(COLUMNS, shown.map { |f| [f.module, kind_cell(f.kind), f.subject, where_cell(f), detail_cell(f)] })
           print_history(modules) if @options[:changelog] || @options[:gitlog]
         end
         ::Pupgrade.logger.notice("impact: #{modules.size} module(s) move; #{shown.count(&:used?)} finding(s) with a use, " \
@@ -204,6 +204,13 @@ module Pupgrade
 
         style = verb_style(finding)
         finding.uses.map { |use| use_text(use, style) }.join('; ')
+      end
+
+      # The impact kind colored by its verb: a removal red, and an added
+      # required parameter red, since it breaks callers; a change, or a
+      # parameter that lives on in Hiera (`class-param-hiera-only`), yellow.
+      def kind_cell(kind)
+        paint(kind, kind.end_with?('-removed', '-added-required') ? :red : :yellow)
       end
 
       # @param style [Array<Symbol>] the color of a resource's Type[title]
