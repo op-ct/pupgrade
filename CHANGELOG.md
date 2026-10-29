@@ -22,13 +22,13 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     - `--propose` + `--ignore` show every row, marking conflicts introduced
       (`+ NEW`, red) and resolved (`- FIXD`, green); `--changed-only` drops
       the unchanged rows and `--hide-resolved` the resolved ones
-    - an introduced row is yellow, a resolved row grey, the kind coloured;
+    - an introduced row is yellow, a resolved row grey, the kind colored;
       the part of a detail in the way is red; summary zeros are grey
     - `--by-change`: (under a proposal) one table per changed Puppetfile entry
   - `--ignore MODULES` resolves as if those modules were gone (a what-if;
     `modules.exclude_modules` is the standing exclusion)
   - `--exclusion-file FILE` reads exclusions on top of the config's, in the
-    config's shape, as `solve --write-exclusions-file` writes them
+    config's shape, the one `solve --write-exclusions-file` writes
   - `--summary` displays as a table of modules x conflict types
     - with `--propose`, shows introduced (`+`), resolved (`-`), unchanged (`=`)
   - row filters: `--modules`, `--subjects`, `--conflicts`, `--skip-conflicts`
@@ -53,6 +53,10 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     wins, and is recorded in the branchfile (flag or `modules.branchfile`)
   * `-t`, `--tags-only` shows tags only (and the branch tip with
     `--include-heads`)
+- **`pupgrade module release MODULE [--branch B] [--branchfile FILE] [--fetch]`**:
+  every release of a module, past and future: each tag naming a version on
+  the branch it follows, oldest first, with its date, the deployed one marked;
+  `--include-heads` adds the branch tip
 - **`pupgrade module list [GLOBS]`**: every module on the modulepath or in the
   Puppetfile, with what the Puppetfile declares, what is deployed, and whether
   they agree, and whether any compiled catalog uses it (`?` without a compile
@@ -277,7 +281,7 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   * `--summary` gives one row per module; `--gitlog` and `--changelog` add
     each module's commits and CHANGELOG sections for the versions crossed
   * `--modules`, `--impacts`, `--all` filters
-  * `use unknown` and `no catalogs` red, detail verbs coloured
+  * `use unknown` and `no catalogs` red, detail verbs colored
   * exits `1` when any finding has a use
   * config subsystem `impact`: `compile_cache`
 

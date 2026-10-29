@@ -48,14 +48,38 @@ module Pupgrade
           [entry, clone]
         end
 
-        # The first of the branches the clone knows, as origin/<branch> or
-        # as given.
+        # The first of the branches the clone knows, either origin/<branch>
+        # or the name given.
         #
         # @return [String]
         def pick_branch(command, clone, branches)
           found = branches.find { |b| clone.resolve("origin/#{b}") || clone.resolve(b) }
           fatal!("#{command}: none of #{branches.join(', ')} is a branch the clone knows (try --fetch)", 3) unless found
           found
+        end
+
+        # The first --branch the clone knows, recorded in the branchfile
+        # when there is one.
+        #
+        # @return [String]
+        def given_branch(command, repo, entry)
+          clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
+          fatal!("#{command}: #{entry.path} is not a git clone, so follows no branch", 3) unless clone.own?
+
+          branch = pick_branch(command, clone, @options[:branch])
+          record_branch(command, repo, entry, branch) if @options[:branchfile]
+          branch
+        end
+
+        # @return [String, nil] the branch the branchfile names for the
+        #   module, under any of its names
+        def branch_for(repo, entry)
+          return nil unless @options[:branchfile]
+
+          result = ::Pupgrade::Inputs::Branchfile.load(File.expand_path(@options[:branchfile], repo.dir))
+          return nil if result.error || !result.exists?
+
+          [entry.declared&.name, entry.metadata.name, File.basename(entry.path)].compact.filter_map { |n| result.branch_for(n) }.first
         end
 
         # Writes the branch for the module into the branchfile, the one on
@@ -71,8 +95,8 @@ module Pupgrade
         end
 
         # A git module's declared ref as [kind, name, why]. A
-        # `:control_branch` is the branch its clone is on, as r10k deployed
-        # it: the control repo's branch under `deploy environment`, the
+        # `:control_branch` is the branch its clone is on, the one r10k
+        # deployed: the control repo's branch under `deploy environment`, the
         # `default_branch` under `puppetfile install`. `why` names which
         # (`default_branch` when the clone is on it and the control repo is
         # not); nil for any other ref, and for a clone that cannot say.

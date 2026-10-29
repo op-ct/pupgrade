@@ -45,7 +45,7 @@ module Pupgrade
           entry = inventory.find(name)
           fatal!("module info: no module #{name.inspect} on the modulepath or in the Puppetfile", 3) unless entry
 
-          @branch = @options[:branch] && given_branch(repo, entry)
+          @branch = @options[:branch] && given_branch('module info', repo, entry)
           at = ref && at_ref(repo, entry, ref)
           out = lines(repo, entry, at)
           out.concat(surface_lines(repo, entry, at)) if @options[:surfaces]
@@ -176,26 +176,6 @@ module Pupgrade
             out << ['candidates', newer.empty? ? 'none past the current version' : newer.map(&:ref).join(', ')]
           end
           out
-        end
-
-        # The --branch the clone knows, recorded in the branchfile when
-        # there is one.
-        def given_branch(repo, entry)
-          clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
-          fatal!("module info: #{entry.path} is not a git clone, so follows no branch", 3) unless clone.own?
-
-          branch = pick_branch('module info', clone, @options[:branch])
-          record_branch('module info', repo, entry, branch) if @options[:branchfile]
-          branch
-        end
-
-        def branch_for(repo, entry)
-          return nil unless @options[:branchfile]
-
-          result = ::Pupgrade::Inputs::Branchfile.load(File.expand_path(@options[:branchfile], repo.dir))
-          return nil if result.error || !result.exists?
-
-          [entry.declared&.name, entry.metadata.name, File.basename(entry.path)].compact.filter_map { |n| result.branch_for(n) }.first
         end
 
         def config_defaults

@@ -9,8 +9,8 @@ module Pupgrade
   module Solve
     # The versions a deployed git module could move to, read from its clone:
     # the tags past its current version, on its tracking branch when one is
-    # known, and the branch's tip when asked for. Each carries the
-    # metadata.json at that ref.
+    # known, and the branch's tip when asked for; or every release it has
+    # had and could move to. Each carries the metadata.json at that ref.
     class Candidates
       # One version a module could be at.
       #
@@ -61,6 +61,58 @@ module Pupgrade
       # @return [Array<Candidate>, Unsolvable] oldest first, the current
       #   version first of all
       def for(entry, branch: nil)
+        dir = clone_of(entry)
+        return dir if dir.is_a?(Unsolvable)
+
+        declared = entry.declared
+        current  = Candidate.new(ref: declared.ref.to_s, ref_type: declared.ref_type || 'ref', version: parse(entry.metadata.version),
+                                 metadata: entry.metadata, current: true)
+        branch ||= tracking_branch(entry)
+        if declared.ref_type == 'branch'
+          tip = tip_of(dir, declared.ref.to_s, entry)
+          return [current] if tip.nil? || at_head?(dir, declared.ref.to_s)
+
+          return [current, tip]
+        end
+
+        tags = tags_on(dir, branch, entry, past: current.version)
+        tips = (@include_heads && branch) ? [tip_of(dir, branch, entry)].compact : []
+        list = [current] + tags + tips
+        Pupgrade.logger.info("candidates: #{entry.path}: #{list.size - 1} past #{current.ref}" \
+                             "#{" on #{branch}" if branch}#{": #{list.drop(1).map(&:ref).join(', ')}" if list.size > 1}")
+        list
+      end
+
+      # Every release of the module: each tag naming a version on the
+      # branch it follows (a branch-pinned module's own branch; any tag of
+      # the clone when no branch is known), oldest first, and with
+      # include_heads the branch's tip last. The one at the clone's HEAD
+      # is current.
+      #
+      # @param entry [Driftless::ModuleInventory::Entry]
+      # @param branch [String, nil] as for {#for}
+      # @return [Array<Candidate>, Unsolvable]
+      def releases(entry, branch: nil)
+        dir = clone_of(entry)
+        return dir if dir.is_a?(Unsolvable)
+
+        declared = entry.declared
+        branch ||= (declared.ref_type == 'branch') ? declared.ref.to_s : tracking_branch(entry)
+        head = git(dir, 'rev-parse', 'HEAD', why: 'sha at HEAD')
+        list = tags_on(dir, branch, entry).map { |c| c.with(current: git(dir, 'rev-parse', "#{c.ref}^{commit}", why: "sha of #{c.ref}") == head) }
+        if @include_heads && branch && (tip = tip_of(dir, branch, entry))
+          list << tip.with(current: at_head?(dir, branch))
+        end
+        Pupgrade.logger.info("candidates: #{entry.path}: #{list.size} release(s)#{" on #{branch}" if branch}")
+        list
+      end
+
+      private
+
+      # The module's clone, fetched when asked to.
+      #
+      # @return [String, Unsolvable] its directory
+      def clone_of(entry)
         declared = entry.declared
         return Unsolvable.new(reason: 'not in the Puppetfile') unless declared
         return Unsolvable.new(reason: 'local module') if declared.local
@@ -71,25 +123,8 @@ module Pupgrade
         return Unsolvable.new(reason: 'not a git clone') unless File.exist?(File.join(dir, '.git'))
 
         fetch(dir, entry) if @fetch
-        current = Candidate.new(ref: declared.ref.to_s, ref_type: declared.ref_type || 'ref', version: parse(entry.metadata.version),
-                                metadata: entry.metadata, current: true)
-        branch ||= tracking_branch(entry)
-        if declared.ref_type == 'branch'
-          tip = tip_of(dir, declared.ref.to_s, entry)
-          return [current] if tip.nil? || at_head?(dir, declared.ref.to_s)
-
-          return [current, tip]
-        end
-
-        tags = tags_past(dir, current.version, branch, entry)
-        tips = (@include_heads && branch) ? [tip_of(dir, branch, entry)].compact : []
-        list = [current] + tags + tips
-        Pupgrade.logger.info("candidates: #{entry.path}: #{list.size - 1} past #{current.ref}" \
-                             "#{" on #{branch}" if branch}#{": #{list.drop(1).map(&:ref).join(', ')}" if list.size > 1}")
-        list
+        dir
       end
-
-      private
 
       # @return [String, nil] the branch a branchfile names for the module
       def tracking_branch(entry)
@@ -102,9 +137,12 @@ module Pupgrade
         [entry.declared&.name, entry.metadata.name, File.basename(entry.path)].compact.filter_map { |n| @branches.branch_for(n) }.first
       end
 
-      # Tags whose version is past the current one: on the branch when one
-      # is known, else any tag of the clone.
-      def tags_past(dir, current_version, branch, entry)
+      # Tags naming a version, oldest first: on the branch when one is
+      # known, else any tag of the clone; only those past a version when
+      # one is given.
+      #
+      # @return [Array<Candidate>] none current
+      def tags_on(dir, branch, entry, past: nil)
         args = ['tag', '--list']
         args.push('--merged', ref_in_clone(dir, branch)) if branch && ref_in_clone(dir, branch)
         out = git(dir, *args, why: 'listing tags')
@@ -112,8 +150,8 @@ module Pupgrade
 
         out.split("\n").filter_map { |tag|
           version = parse(tag[TAG_VERSION])
-          if version.nil? || (current_version && version <= current_version)
-            Pupgrade.logger.debug("candidates: #{entry.path}: tag #{tag} skipped: #{version.nil? ? 'not a version' : "not past #{current_version}"}")
+          if version.nil? || (past && version <= past)
+            Pupgrade.logger.debug("candidates: #{entry.path}: tag #{tag} skipped: #{version.nil? ? 'not a version' : "not past #{past}"}")
             next
           end
 
