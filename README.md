@@ -375,7 +375,7 @@ pupgrade module list                           # every module: declared, deploye
 pupgrade module info stdlib                    # one module: names, clone, metadata, candidates
 pupgrade module diff stdlib stdlib:v9.6.0      # what changes between two versions
 pupgrade module diff stdlib stdlib:v9.6.0 --full   # every value whole, as blocks
-pupgrade module gitlog stdlib v9.6.0           # what a ref has beyond the clone
+pupgrade module gitlog stdlib:v9.6.0           # what a ref has beyond the clone
 pupgrade module update stdlib v9.6.0           # check the ref out, in place
 ```
 

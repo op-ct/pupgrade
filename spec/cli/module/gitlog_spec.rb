@@ -71,11 +71,11 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
   it 'shows what a ref has beyond the clone, fetching on request' do
     Dir.mktmpdir do |dir|
       control_repo(dir)
-      status, out = run(['--no-config', '-d', dir, 'puppetlabs/stdlib', 'main'])
+      status, out = run(['--no-config', '-d', dir, 'puppetlabs/stdlib:main'])
       expect(status).to eq(0)
       expect(subjects(out)).to match([a_string_matching(/\A\(tag: v2, .*\) two\z/)])
 
-      status, out = run(['--no-config', '-d', dir, 'modules/stdlib', 'main', '--fetch', '-n', '1', '-f'])
+      status, out = run(['--no-config', '-d', dir, 'modules/stdlib:main', '--fetch', '-n', '1', '-f'])
       expect(status).to eq(0)
       expect(out.lines.first).to match(%r{\(origin/main, origin/HEAD\) three$})
       expect(out).to include("A\tREADME")
@@ -88,11 +88,11 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
       git(File.join(dir, 'modules/stdlib'), 'checkout', '-q', '--detach', 'v2')
       allow(Driftless).to receive(:logger).and_call_original
       out = nil
-      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib', 'v1']) }
+      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib:v1']) }
       expect(subjects(out)).to match([a_string_matching(/\A\(HEAD, tag: v2, .*\) two\z/)])
       expect(log).to include('notice: module gitlog: v1 is behind HEAD in modules/stdlib; logging the commits since v1 (v1..HEAD)')
 
-      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib', 'v2']) }
+      log = capture_log(level: :notice) { _, out = run(['--no-config', '-d', dir, 'stdlib:v2']) }
       expect(out).to eq('')
       expect(log).to include("notice: module gitlog: v2 is HEAD in modules/stdlib; there's nothing past it")
     end
@@ -101,15 +101,15 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
   it 'passes a rev expression to git as written, and logs a ref from its start on request' do
     Dir.mktmpdir do |dir|
       control_repo(dir)
-      status, out = run(['--no-config', '-d', dir, 'stdlib', 'main~0'])
+      status, out = run(['--no-config', '-d', dir, 'stdlib:main~0'])
       expect(status).to eq(0)
       expect(subjects(out)).to match([a_string_matching(/ two\z/)])
-      expect(run(['--no-config', '-d', dir, 'stdlib', 'main~9']).first).to eq(3)
+      expect(run(['--no-config', '-d', dir, 'stdlib:main~9']).first).to eq(3)
 
-      status, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '--from-start'])
+      status, out = run(['--no-config', '-d', dir, 'stdlib:main', '--from-start'])
       expect(status).to eq(0)
       expect(subjects(out).map { |s| s.split.last }).to eq(%w[two one])
-      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main~1', '--from-start'])
+      _, out = run(['--no-config', '-d', dir, 'stdlib:main~1', '--from-start'])
       expect(subjects(out).map { |s| s.split.last }).to eq(%w[one])
     end
   end
@@ -125,7 +125,7 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
       status, = run(['--no-config', '-d', dir, 'stdlib', '--branch', 'main', '--branchfile', 'branches.yaml'])
       expect(status).to eq(0)
       expect(File.read(File.join(dir, 'branches.yaml'))).to eq("---\npuppetlabs-stdlib: main\n")
-      expect(run(['--no-config', '-d', dir, 'stdlib', 'v2', '--branch', 'main']).first).to eq(2)
+      expect(run(['--no-config', '-d', dir, 'stdlib:v2', '--branch', 'main']).first).to eq(2)
     end
   end
 
@@ -182,7 +182,8 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
       control_repo(dir)
       expect(run(['--no-config', '-d', dir, 'nope']).first).to eq(3)
       expect(run(['--no-config', '-d', dir, 'org-forge']).first).to eq(3)
-      expect(run(['--no-config', '-d', dir, 'stdlib', 'v9']).first).to eq(3)
+      expect(run(['--no-config', '-d', dir, 'stdlib:v9']).first).to eq(3)
+      expect(run(['--no-config', '-d', dir, 'stdlib', 'main']).first).to eq(2)
       expect(run(['--no-config', '-d', dir]).first).to eq(2)
     end
   end
@@ -201,9 +202,9 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Gitlog do
       expect(status).to eq(0)
       expect(File.read(File.join(dir, 'branches.yaml'))).to eq("---\npuppetlabs-stdlib: main\n")
 
-      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '--fetch', '-t'])
+      _, out = run(['--no-config', '-d', dir, 'stdlib:main', '--fetch', '-t'])
       expect(subjects(out)).to match([a_string_matching(/\(tag: v2.*\) two\z/)])
-      _, out = run(['--no-config', '-d', dir, 'stdlib', 'main', '-t', '--include-heads'])
+      _, out = run(['--no-config', '-d', dir, 'stdlib:main', '-t', '--include-heads'])
       expect(out.lines.size).to eq(2)
       expect(out.lines.first).to match(/ three$/)
     end

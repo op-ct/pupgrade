@@ -15,12 +15,14 @@ module Pupgrade
         include ModuleCommand::Shared
 
         register_command name: %w[gitlog gl], subcommand_of: ModuleCommand
-        positional '<module>', '[<ref>]'
+        positional '<module>[:<ref>]'
         desc 'Show a deployed module\'s git log, or what a ref has beyond it'
 
         def execute(argv)
-          fatal!('module gitlog takes a module and an optional ref', help: true) unless argv.size.between?(1, 2)
-          selector, ref = argv
+          fatal!('module gitlog takes a module, with an optional :REF', help: true) unless argv.size == 1
+          # stdlib:v9.6.0, split at the first colon: a module has none, and a rev expression may
+          selector, sep, ref = argv.first.partition(':')
+          ref = nil if sep.empty? || ref.empty?
           fatal!('module gitlog: give a ref or --branch, not both', help: true) if ref && @options[:branch]
           repo = control_repo!('module gitlog')
           entry, clone = git_module!('module gitlog', repo, selector)
