@@ -106,6 +106,7 @@ module Pupgrade
         o.on('--modules=GLOBS', Array, 'Only modules whose name matches') { |v| accumulate(:modules, v) }
         o.on('--impacts=KINDS', Array, "Only these kinds (#{::Pupgrade::Impact::Analysis::KINDS.join(', ')})") { |v| accumulate(:kinds, v) }
         o.on('--all', 'Show findings nothing uses too') { @options[:all] = true }
+        o.on('--skip-requoted', 'Hide a default change only in its quotes (\'100\' -> 100)') { @options[:skip_requoted] = true }
 
         o.separator ''
         o.separator 'Layout:'
@@ -277,7 +278,8 @@ module Pupgrade
       def shown?(finding)
         (@options[:all] || finding.used? || finding.where == 'use unknown') &&
           glob_any?(@options[:modules], finding.module) &&
-          (Array(@options[:kinds]).empty? || @options[:kinds].include?(finding.kind))
+          (Array(@options[:kinds]).empty? || @options[:kinds].include?(finding.kind)) &&
+          !(@options[:skip_requoted] && finding.change.requoted?)
       end
 
       def glob_any?(globs, value)

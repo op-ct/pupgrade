@@ -43,6 +43,20 @@ module Pupgrade
           else "#{head}#{Diff.render(old)} -> #{Diff.render(new)}"
           end
         end
+
+        # Whether a default changed only in its quotes: `'100'` became `100`,
+        # or `"on"` became `'on'`. The text is the same once unquoted; the
+        # type may not be (a String and an Integer).
+        def requoted?
+          path.last == 'default' && old.is_a?(String) && new.is_a?(String) && old != new &&
+            Diff.unquoted(old) == Diff.unquoted(new)
+        end
+      end
+
+      # A default's source text without the quotes of a string literal: a
+      # single-quoted one, or a double-quoted one with nothing to interpolate.
+      def self.unquoted(text)
+        text[/\A'((?:[^'\\]|\\.)*)'\z/m, 1] || text[/\A"([^"\\$]*)"\z/, 1] || text
       end
 
       # Longest rendering of a value in a detail.

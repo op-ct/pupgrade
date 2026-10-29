@@ -29,8 +29,10 @@ module Pupgrade
       #     Hiera files concerned; empty when nothing uses it; nil without
       #     evidence, the use unknown
       # @!attribute [r] detail
-      #   @return [String] the surface change
-      Finding = Data.define(:module, :kind, :subject, :uses, :detail) do
+      #   @return [String] the surface change, in one line
+      # @!attribute [r] change
+      #   @return [Surface::Diff::Change] the surface change itself
+      Finding = Data.define(:module, :kind, :subject, :uses, :detail, :change) do
         # Whether the evidence shows the site touching it; a use unknown is
         # neither a use nor its absence.
         def used?
@@ -236,7 +238,7 @@ module Pupgrade
       #   unknown, none with it means no use
       def make(name, kind, subject, uses, change)
         Finding.new(module: name, kind: kind, subject: subject, uses: (uses.empty? && @evidence.nil?) ? nil : uses,
-                    detail: "#{Surface::Render.difference(change)}: #{Surface::Render.detail(change)}")
+                    detail: "#{Surface::Render.difference(change)}: #{Surface::Render.detail(change)}", change: change)
       end
 
       # @return [Array<Use>] one "nodes" use, or none

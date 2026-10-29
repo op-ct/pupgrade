@@ -82,7 +82,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     item     = ->(name, certname) { analysis::Item.new(name: name, certname: certname) }
     uses     = [analysis::Use.new(label: 'resources', items: [item.call('Foo[a]', 'web01')], more: 2),
                 analysis::Use.new(label: 'sites', items: [item.call('x.pp:3', nil)], more: 1)]
-    finding  = analysis::Finding.new(module: 'm', kind: 'define-param-removed', subject: 'foo p', uses: uses, detail: 'removed param: p')
+    finding  = analysis::Finding.new(module: 'm', kind: 'define-param-removed', subject: 'foo p', uses: uses, detail: 'removed param: p', change: nil)
     expect(finding.where).to eq('resources: Foo[a] on web01 and 2 more; sites: x.pp:3 and 1 more')
     color = Pupgrade::Ansi.preference
     Pupgrade::Ansi.preference = true
@@ -94,6 +94,16 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(kinds.map { |k| described_class.new.send(:kind_cell, k)[/\A\e\[0;3(\d)m/, 1] }).to eq(%w[1 1 3 3])
     expect(%w[apache::dead_opt legacy_shout].push('concat::fragment target').map { |s| described_class.new.send(:subject_cell, s) })
       .to eq(["\e[0;36mapache::\e[0mdead_opt", 'legacy_shout', "\e[0;36mconcat::fragment \e[0mtarget"])
+
+    # --skip-requoted hides a default changed only in its quotes
+    requoted = Pupgrade::Surface::Diff::Change.new(section: 'classes', name: 'a', path: %w[params p default], kind: 'changed', old: "'100'", new: '100')
+    row      = finding.with(kind: 'class-param-default-changed', change: requoted)
+    impact   = described_class.new
+    impact.instance_variable_set(:@options, {})
+    expect(impact.send(:shown?, row)).to be(true)
+    impact.instance_variable_set(:@options, { skip_requoted: true })
+    expect(impact.send(:shown?, row)).to be(false)
+    expect(impact.send(:shown?, row.with(change: requoted.with(new: '200')))).to be(true)
   ensure
     Pupgrade::Ansi.preference = color
   end
