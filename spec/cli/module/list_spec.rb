@@ -5,6 +5,7 @@ require 'stringio'
 
 require 'support/fixture_repo'
 require 'pupgrade/cli/module/list'
+require 'pupgrade/cli/catalog'
 
 RSpec.describe Pupgrade::CLI::ModuleCommand::List do
   before(:all) do # rubocop:disable RSpec/BeforeAfterAll
@@ -32,6 +33,17 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     [status, captured.string]
   end
 
+  # A compile of both factsets into dir, its table swallowed.
+  def compile(dir)
+    original = $stdout
+    $stdout  = StringIO.new
+    Pupgrade::CLI::Catalog::Compile.new.run(['--no-config', '-d', fixture.dir, '--factsets', 'factsets', '-o', dir, '--mocks', 'pupgrade/compiler-mocks.yaml'])
+  rescue SystemExit
+    nil
+  ensure
+    $stdout = original
+  end
+
   def cells(output)
     output.lines.map(&:rstrip).reject { |l| l.start_with?('--') }.map { |l| l.split('|', -1).map(&:strip) }
   end
@@ -49,11 +61,11 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     status, out = run([])
     expect(status).to eq(0)
     rows = cells(out)
-    expect(rows.first).to eq(%w[path name declared deployed version])
+    expect(rows.first).to eq(%w[path name declared deployed version used])
     expect(rows.size).to eq(Pupgrade::FixtureRepo::CATALOGUE.size + 3)
-    expect(rows.find { |r| r.first == 'modules/stdlib' }).to eq(['modules/stdlib', 'puppetlabs-stdlib', 'tag v8.6.0', 'match', '8.6.0'])
-    expect(rows.find { |r| r.first == 'modules/facts' }).to eq(['modules/facts', 'puppetlabs-facts', '1.4.0 (forge)', 'match', '1.4.0'])
-    expect(rows.find { |r| r.first == 'site-modules/profile' }).to eq(['site-modules/profile', '', '(not in the Puppetfile)', 'unknown', ''])
+    expect(rows.find { |r| r.first == 'modules/stdlib' }).to eq(['modules/stdlib', 'puppetlabs-stdlib', 'tag v8.6.0', 'match', '8.6.0', '?'])
+    expect(rows.find { |r| r.first == 'modules/facts' }).to eq(['modules/facts', 'puppetlabs-facts', '1.4.0 (forge)', 'match', '1.4.0', '?'])
+    expect(rows.find { |r| r.first == 'site-modules/profile' }).to eq(['site-modules/profile', '', '(not in the Puppetfile)', 'unknown', '', '?'])
 
     _, out = run(['puppetlabs/std*,concat'])
     expect(cells(out).drop(1).map(&:first)).to eq(%w[modules/concat modules/stdlib])
@@ -62,7 +74,7 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
 
     system('git', '-C', File.join(fixture.dir, 'modules/concat'), 'checkout', '-q', '--detach', 'v9.0.0')
     _, out = run(['concat'])
-    expect(cells(out).drop(1)).to eq([['modules/concat', 'puppetlabs-concat', 'tag v7.3.0', 'differ (v9.0.0)', '9.0.0']])
+    expect(cells(out).drop(1)).to eq([['modules/concat', 'puppetlabs-concat', 'tag v7.3.0', 'differ (v9.0.0)', '9.0.0', '?']])
     expect(run(%w[a b]).first).to eq(2)
   end
 
@@ -95,12 +107,20 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::List do
     puppetfile = File.join(fixture.dir, 'Puppetfile')
     original   = File.read(puppetfile)
     File.write(puppetfile, "#{original}mod 'profile', :local => true, :install_path => 'site-modules'\n")
-    expect(cells(run(['profile']).last)[1]).to eq(['site-modules/profile', 'profile', '(no version) (local)', 'match', ''])
+    expect(cells(run(['profile']).last)[1]).to eq(['site-modules/profile', 'profile', '(no version) (local)', 'match', '', '?'])
   ensure
     File.write(puppetfile, original)
   end
 
-  it 'colours the declared cell by kind and the deployed cell by state' do
+  it 'says whether the compiled catalogs use each module, from a compile cache' do
+    catalogs = File.join(@tmp, 'catalogs')
+    compile(catalogs)
+    _, out = run(['--compile-cache', catalogs, 'stdlib,apt,profile'])
+    expect(cells(out).drop(1).map { |r| [r.first, r.last] }).to eq([['modules/apt', 'no'], ['modules/stdlib', 'yes'], ['site-modules/profile', 'yes']])
+    expect(cells(run(['--compile-cache', File.join(@tmp, 'none'), 'stdlib']).last)[1].last).to eq('?')
+  end
+
+  it 'colors the declared cell by kind and the deployed cell by state' do
     _, out = run(['--color', 'stdlib,profile'])
     expect(out).to include("\e[0;36mtag v8.6.0\e[0m", "\e[0;32mmatch\e[0m", "\e[0;33m(not in the Puppetfile)\e[0m", "\e[0;33munknown\e[0m")
   end

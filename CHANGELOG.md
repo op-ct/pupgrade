@@ -55,7 +55,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
     `--include-heads`)
 - **`pupgrade module list [GLOBS]`**: every module on the modulepath or in the
   Puppetfile, with what the Puppetfile declares, what is deployed, and whether
-  they agree
+  they agree, and whether any compiled catalog uses it (`?` without a compile
+  cache; `--compile-cache DIR`)
 - **`pupgrade module info MODULE [--branchfile FILE] [--fetch]`**: one module
   in full: names, path, declaration, remote, what the clone sits at, metadata
   (dependencies, requirements, OS support), the branch it follows, and the
