@@ -24,29 +24,62 @@ module Pupgrade
       # @!attribute [r] subject
       #   @return [String] the class, function, type, or fact, with its
       #     parameter when one is concerned
-      # @!attribute [r] where
-      #   @return [String] the nodes, resources, call sites, or Hiera keys
-      #     concerned; "use unknown" without evidence; "" when nothing uses it
+      # @!attribute [r] uses
+      #   @return [Array<Use>, nil] the nodes, resources, call sites, or
+      #     Hiera files concerned; empty when nothing uses it; nil without
+      #     evidence, the use unknown
       # @!attribute [r] detail
       #   @return [String] the surface change
-      Finding = Data.define(:module, :kind, :subject, :where, :detail) do
+      Finding = Data.define(:module, :kind, :subject, :uses, :detail) do
         # Whether the evidence shows the site touching it; a use unknown is
         # neither a use nor its absence.
         def used?
-          !where.empty? && !UNKNOWN.include?(where)
+          !uses.nil? && !uses.empty?
+        end
+
+        # @return [String] "nodes: a, b; hiera: data/common.yaml:5", "use
+        #   unknown", or "" when nothing uses it
+        def where
+          uses.nil? ? 'use unknown' : uses.join('; ')
         end
       end
 
-      UNKNOWN = ['use unknown'].freeze
+      # One kind of use of a finding: its first {NAMED} items, and a count
+      # of the rest.
+      #
+      # @!attribute [r] label
+      #   @return [String] "nodes", "resources", "sites", "hiera", or "lookups"
+      # @!attribute [r] items
+      #   @return [Array<Item>] the first {NAMED}
+      # @!attribute [r] more
+      #   @return [Integer] how many more there are
+      Use = Data.define(:label, :items, :more) do
+        def to_s
+          "#{label}: #{items.join(', ')}#{" and #{more} more" if more.positive?}"
+        end
+      end
+
+      # One node, resource, call site, or Hiera file.
+      #
+      # @!attribute [r] name
+      #   @return [String, nil] a resource's "Type[title]", or a file:line;
+      #     nil for a node
+      # @!attribute [r] certname
+      #   @return [String, nil] the node; nil for a file:line
+      Item = Data.define(:name, :certname) do
+        def to_s
+          [name, certname].compact.join(' on ')
+        end
+      end
 
       # How many names a `where` lists before counting instead.
       NAMED = 3
 
       # @param evidence [Evidence, nil]
       # @param hiera [Hash{String => Array<String>}] every top-level Hiera
-      #   key to the data files setting it, as "path:line"
+      #   key to the data files setting it, each "path:line"
       # @param lookups [Hash{String => Array<String>}] every key some
-      #   lookup() reads to its call sites, as "path:line"
+      #   lookup() reads to its call sites, each "path:line"
       def initialize(evidence: nil, hiera: {}, lookups: {})
         @evidence = evidence
         @hiera    = hiera
@@ -199,27 +232,24 @@ module Pupgrade
         param.is_a?(Hash) && !param.key?('default') && !param['captures_rest']
       end
 
-      # @param where [Array<String>] the parts naming the uses; none without
-      #   evidence means the use is unknown, none with it means no use
-      def make(name, kind, subject, where, change)
-        parts = Array(where).reject(&:empty?)
-        text  = (parts.empty? && @evidence.nil?) ? 'use unknown' : parts.join('; ')
-        Finding.new(module: name, kind: kind, subject: subject, where: text,
+      # @param uses [Array<Use>] none without evidence means the use is
+      #   unknown, none with it means no use
+      def make(name, kind, subject, uses, change)
+        Finding.new(module: name, kind: kind, subject: subject, uses: (uses.empty? && @evidence.nil?) ? nil : uses,
                     detail: "#{Surface::Render.difference(change)}: #{Surface::Render.detail(change)}")
       end
 
-      # @return [Array<String>] one "nodes: ..." part, or none
+      # @return [Array<Use>] one "nodes" use, or none
       def nodes(certnames)
         return [] if certnames.nil? || certnames.empty?
 
-        [list('nodes', certnames)]
+        [list('nodes', certnames.map { |c| Item.new(name: nil, certname: c) })]
       end
 
       def resources(pairs)
         return [] if pairs.nil? || pairs.empty?
 
-        names = pairs.map { |certname, r| "#{r['type']}[#{r['title']}] on #{certname}" }
-        [list('resources', names)]
+        [list('resources', pairs.map { |certname, r| Item.new(name: "#{r['type']}[#{r['title']}]", certname: certname) })]
       end
 
       # @return [Array<String>] one "hiera: ..." part naming the data files
@@ -235,10 +265,10 @@ module Pupgrade
         refs.empty? ? [] : [list('hiera', refs)]
       end
 
-      def list(label, names)
-        names = names.uniq
-        shown = (names.size <= NAMED) ? names.join(', ') : "#{names.first(NAMED).join(', ')} and #{names.size - NAMED} more"
-        "#{label}: #{shown}"
+      # @param items [Array<Item, String>] a String is a file:line
+      def list(label, items)
+        items = items.map { |i| i.is_a?(Item) ? i : Item.new(name: i, certname: nil) }.uniq
+        Use.new(label: label, items: items.first(NAMED), more: [items.size - NAMED, 0].max)
       end
     end
   end

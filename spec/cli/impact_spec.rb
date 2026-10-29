@@ -77,7 +77,24 @@ RSpec.describe Pupgrade::CLI::Impact do
     expect(cells(out).find { |r| r[2] == 'stdlib::shout' }.last).to eq('changed signatures: (text) -> (text, times)')
   end
 
-  it 'summarises per module with the commits crossed, and prints the history on request' do
+  it 'colors the where cell: certnames magenta, a resource in the verb color, and the rest counted, dimmed' do
+    analysis = Pupgrade::Impact::Analysis
+    item     = ->(name, certname) { analysis::Item.new(name: name, certname: certname) }
+    uses     = [analysis::Use.new(label: 'resources', items: [item.call('Foo[a]', 'web01')], more: 2),
+                analysis::Use.new(label: 'sites', items: [item.call('x.pp:3', nil)], more: 1)]
+    finding  = analysis::Finding.new(module: 'm', kind: 'define-param-removed', subject: 'foo p', uses: uses, detail: 'removed param: p')
+    expect(finding.where).to eq('resources: Foo[a] on web01 and 2 more; sites: x.pp:3 and 1 more')
+    color = Pupgrade::Ansi.preference
+    Pupgrade::Ansi.preference = true
+    expect(described_class.new.send(:where_cell, finding)).to eq(
+      "resources: \e[0;31mFoo[a]\e[0m on \e[0;35mweb01\e[0m \e[0;35m\e[2mand 2 more\e[0m; sites: x.pp:3 \e[2mand 1 more\e[0m",
+    )
+    expect(described_class.new.send(:where_cell, finding.with(uses: nil))).to eq("\e[0;31muse unknown\e[0m")
+  ensure
+    Pupgrade::Ansi.preference = color
+  end
+
+  it 'summarizes per module with the commits crossed, and prints the history on request' do
     _, out = run(['--compile-cache', catalogs, '--summary'])
     expect(cells(out)).to eq([
       %w[module from to commits findings used],

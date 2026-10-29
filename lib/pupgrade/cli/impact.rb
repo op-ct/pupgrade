@@ -196,18 +196,42 @@ module Pupgrade
       # verbs the same way.
       VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
+      # Certnames magenta, a resource's Type[title] in the detail's verb
+      # color, and "and N more" in its items' color, dimmed; a use unknown
+      # red.
       def where_cell(finding)
-        finding.used? || finding.where.empty? ? finding.where : paint(finding.where, :red)
+        return paint(finding.where, :red) if finding.uses.nil?
+
+        style = verb_style(finding)
+        finding.uses.map { |use| use_text(use, style) }.join('; ')
       end
 
-      # "changed param type: Variant[…] -> Optional[…]": the verb coloured
-      # by what happened, what it happened to in cyan.
+      # @param style [Array<Symbol>] the color of a resource's Type[title]
+      def use_text(use, style)
+        items = use.items.map do |item|
+          name = (item.name && use.label == 'resources') ? paint(item.name, *style) : item.name
+          [name, item.certname && paint(item.certname, :magenta)].compact.join(' on ')
+        end
+        return "#{use.label}: #{items.join(', ')}" unless use.more.positive?
+
+        more = use.items.any?(&:certname) ? %i[magenta dim] : [:dim]
+        "#{use.label}: #{items.join(', ')} #{paint("and #{use.more} more", *more)}"
+      end
+
+      # "changed param type: Variant[…] -> Optional[…]": the verb colored
+      # by what happened, and what it happened to in cyan.
       def detail_cell(finding)
         phrase, rest = finding.detail.split(': ', 2)
         verb, thing = phrase.split(' ', 2)
-        style = phrase.start_with?('added required') ? [:red] : VERB_STYLE.fetch(verb, [:yellow])
-        head  = [paint(verb, *style), thing && paint(thing, :cyan)].compact.join(' ')
+        head = [paint(verb, *verb_style(finding)), thing && paint(thing, :cyan)].compact.join(' ')
         rest ? "#{head}: #{rest}" : head
+      end
+
+      # The color of the detail's verb; an added required parameter breaks
+      # callers, so it is red.
+      def verb_style(finding)
+        phrase = finding.detail.split(': ', 2).first
+        phrase.start_with?('added required') ? [:red] : VERB_STYLE.fetch(phrase.split(' ', 2).first, [:yellow])
       end
 
       def summary_row(change, history, findings)
