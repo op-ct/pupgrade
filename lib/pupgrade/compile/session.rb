@@ -31,7 +31,7 @@ module Pupgrade
                         'its datadir is relative to its own directory'
       config_key 'compile.pson', type: :boolean, default: false,
                  about: 'Whether to load the puppet-pson gem, so code written before Puppet 8 that calls PSON compiles'
-      config_key 'compile.prepend_file', type: :string, default: nil, example: 'spec/pupgrade-before.pp',
+      config_key 'compile.prepend_file', type: :string, default: nil, example: 'pupgrade/pre-manifest.pp',
                  about: 'A file of Puppet code evaluated before the manifest (what onceover\'s before: block holds), ' \
                         'relative to the control repo'
       config_key 'compile.mocks', type: :string, default: nil, example: 'pupgrade/compiler-mocks.yaml',
