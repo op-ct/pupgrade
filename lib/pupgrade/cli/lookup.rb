@@ -100,16 +100,16 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         declare_repo_and_factsets(o)
         o.on('-n', '--node=CERTNAME', 'The factset to look up as, by certname (case-insensitive)') { |v| @options[:node] = v }
         o.on('--[no-]compile', 'Compile the manifests first, so variables they set reach the hierarchy') { |v| @options[:compile] = v }
-        o.on('--module-name=NAME', 'The module $module_name names, as in a class of it (default: the key\'s first segment; "" for none)') { |v| @options[:module_name] = v }
-        o.on('--explain', 'Explain how the lookup went and where the value came from, as `puppet lookup --explain`') { @options[:explain] = true }
-        o.on('--explain-options', 'Explain the lookup_options for the key, as `puppet lookup --explain-options`') { @options[:explain_options] = true }
+        o.on('--module-name=NAME', 'Look up in a class scope of this module, with $module_name set (default: the key\'s first segment; "" for none)') { |v| @options[:module_name] = v }
+        o.on('--explain', 'Explain how the lookup went and where the value came from (`puppet lookup --explain`)') { @options[:explain] = true }
+        o.on('--explain-options', 'Explain the lookup_options for the key (`puppet lookup --explain-options`)') { @options[:explain_options] = true }
         o.on('--merge=STRATEGY', MERGES, "How to merge values found at several levels (#{MERGES.join(', ')}; default: first)") { |v| @options[:merge] = v }
         o.on('--render-as=FORMAT', FORMATS, 'yaml (default), json, or s (default with --explain)') { |v| @options[:format] = v }
         o.separator ''
         o.separator 'Listing nodes:'
         o.on('--list', 'List the nodes the factsets describe, with the columns, instead of looking up') { @options[:list] = true }
         o.on('--columns=COLUMNS[,…]', Array, 'Facts and ENC $vars to show (config: lookup.columns)') { |v| accumulate(:columns, v) }
-        o.on('--certname=GLOB[,…]', Array, 'Lookup factsets with matching certnames') { |v| accumulate(:certnames, v) }
+        o.on('--certname=GLOB[,…]', Array, 'Lookup factsets with matching certnames; !GLOB leaves its matches out') { |v| accumulate(:certnames, v) }
         declare_what_to_compile(o,'Puppet/Compiler options')
         declare_guard(o)
         o.separator ''
@@ -139,8 +139,8 @@ using pupgrades ENC rules or --vars (use --list to preview ENC vars)
         puts((format == 's') ? invocation.explainer.explain : render(invocation.explainer.to_hash, format))
       end
 
-      # A scope below the top one with $module_name set, as a class scope
-      # has it; the top scope itself when there is no module.
+      # A scope below the top one with $module_name set, the way a class
+      # scope sets it; the top scope itself when there is no module.
       def class_scope(top, mod)
         return top unless mod
 

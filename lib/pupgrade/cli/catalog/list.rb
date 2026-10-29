@@ -5,6 +5,7 @@ require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
 require 'pupgrade/cli/compile_options'
 require 'pupgrade/compile/probe_record'
+require 'pupgrade/certname_globs'
 
 module Pupgrade
   module CLI
@@ -39,16 +40,15 @@ module Pupgrade
         def configure_parser(o)
           o.on('-d', '--repo-dir=DIR', 'Path of deployed control repository (Default: `.`)') { |v| @options[:repo_dir] = v }
           o.on('--cache-dir=DIR', 'The compile cache to list (config: compile.cache_dir)') { |v| @options[:cache_dir] = v }
-          o.on('--certname=GLOB[,…]', Array, 'Only nodes whose certname matches') { |v| accumulate(:certnames, v) }
+          o.on('--certname=GLOB[,…]', Array, 'Only nodes whose certname matches; !GLOB leaves its matches out') { |v| accumulate(:certnames, v) }
         end
 
         private
 
         # The node directories, narrowed by --certname.
         def nodes(dir)
-          globs = Array(@options[:certnames])
           Dir.children(dir).select { |n| File.file?(File.join(dir, n, 'probes.json')) }.sort
-            .select { |n| globs.empty? || globs.any? { |g| File.fnmatch?(g, n, File::FNM_CASEFOLD) } }
+            .select { |n| ::Pupgrade::CertnameGlobs.match?(@options[:certnames], n) }
         end
 
         # One node's cells, with the key that puts the rows in the order

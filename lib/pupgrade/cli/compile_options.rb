@@ -1,4 +1,5 @@
 require 'driftless/control_repo'
+require 'pupgrade/certname_globs'
 require 'pupgrade/compile/enc'
 require 'pupgrade/compile/factset'
 require 'pupgrade/compile/mocks'
@@ -58,15 +59,14 @@ module Pupgrade
         repo
       end
 
-      # The factsets named, narrowed by `--certname` globs.
+      # The factsets named, narrowed by `--certname` globs ({CertnameGlobs}).
       #
       # @return [Array<Compile::Factset>]
       def load_factsets(repo, command)
         fatal!("#{command} needs at least one --factsets PATH (config: compile.factsets)", help: true) if Array(@options[:factsets]).empty?
         paths = Array(@options[:factsets]).map { |p| File.expand_path(p, repo.dir) }
         all   = ::Pupgrade::Compile::Factset.load_all(paths)
-        globs = Array(@options[:certnames])
-        all = all.select { |f| globs.any? { |g| File.fnmatch?(g, f.certname, File::FNM_CASEFOLD) } } unless globs.empty?
+        all   = all.select { |f| ::Pupgrade::CertnameGlobs.match?(@options[:certnames], f.certname) }
         fatal!("#{command}: no factsets matched", 3) if all.empty?
         all
       rescue ::Pupgrade::Compile::Factset::Error => e

@@ -6,6 +6,7 @@ require 'pupgrade/cli/base'
 require 'pupgrade/cli/catalog'
 require 'pupgrade/cli/table'
 require 'pupgrade/cli/catalog/resources'
+require 'pupgrade/certname_globs'
 require 'pupgrade/compile/catalog_diff'
 
 module Pupgrade
@@ -35,8 +36,8 @@ module Pupgrade
           'edges'     => { 'edge-added' => '+', 'edge-removed' => '-' },
         }.freeze
 
-        # How the change cell is coloured, by its verb, as `module diff`
-        # colours its own; any other verb is yellow.
+        # How the change cell is colored by its verb; any other verb is
+        # yellow. `module diff` colors its own verbs the same way.
         VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
         # How many node names a --group row lists before counting instead.
@@ -74,19 +75,19 @@ module Pupgrade
           o.separator ''
           o.separator 'Row filters (comma-separated, repeatable; globs are case-insensitive). Hidden rows'
           o.separator 'do not count for the exit status:'
-          o.on('--certname=GLOBS', Array, 'Only nodes whose certname matches') { |v| accumulate(:certnames, v) }
+          o.on('--certname=GLOB[,…]', Array, 'Only nodes whose certname matches; !GLOB leaves its matches out') { |v| accumulate(:certnames, v) }
           o.on('--resources=GLOBS', Array, 'Only rows whose resource (Type[title]) matches') { |v| accumulate(:resources, v) }
           o.on('--params=GLOBS', Array, 'Only rows whose parameter matches') { |v| accumulate(:params, v) }
           o.on('--changes=KINDS', Array, "Only these kinds (#{::Pupgrade::Compile::CatalogDiff::KINDS.join(', ')}), " \
                                          'globs of them, or entities: `param` is param-*') { |v| accumulate(:changes, v) }
-          o.on('--skip-changes=KINDS', Array, 'Drop these kinds, as --changes takes them') { |v| accumulate(:skip_changes, v) }
+          o.on('--skip-changes=KINDS', Array, 'Drop these kinds, in the forms --changes takes') { |v| accumulate(:skip_changes, v) }
           o.on('--ignore-params=NAMES', Array, 'Parameters never compared') { |v| accumulate(:ignore_params, v) }
 
           o.separator ''
           o.separator 'Layout:'
           o.on('--group', 'One row per distinct change, with the nodes it appears on') { @options[:group] = true }
           o.on('--summary', 'One row per node with counts: +added -removed ~changed') { @options[:summary] = true }
-          o.on('--full', 'Each changed resource whole, as a unified diff of its JSON') { @options[:full] = true }
+          o.on('--full', 'Each changed resource whole: a unified diff of its JSON') { @options[:full] = true }
 
           o.separator ''
           o.separator 'Each directory is what `compile -o DIR` wrote (DIR/<certname>/catalog.json), or one'
@@ -97,7 +98,7 @@ module Pupgrade
         private
 
         def shown?(change)
-          glob_any?(@options[:certnames], change.certname) &&
+          ::Pupgrade::CertnameGlobs.match?(@options[:certnames], change.certname) &&
             glob_any?(Array(@options[:resources]).map { |g| reference_glob(g) }, change.resource.to_s) &&
             (Array(@options[:params]).empty? || (change.param && glob_any?(@options[:params], change.param))) &&
             (Array(@options[:changes]).empty? || @options[:changes].include?(change.kind)) &&
@@ -129,8 +130,9 @@ module Pupgrade
           paint(kind, *VERB_STYLE.fetch(kind.split('-', 2).last, [:yellow]))
         end
 
-        # Each changed resource whole, as a unified diff of it before and
-        # after; a change to no resource (a node, class, or edge) as its row.
+        # Each changed resource whole: a unified diff of it before and
+        # after. A change to no resource (a node, class, or edge) prints
+        # its row.
         def print_full(from, to, changes)
           certnames = changes.map(&:certname).uniq
           before    = resources_in(from, certnames)

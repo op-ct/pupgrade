@@ -65,6 +65,8 @@ RSpec.describe Pupgrade::CLI::Catalog do
     expect(table.find { |r| r.first == 'web01.example.com' }.values_at(4, 5, 6)).to eq(%w[1 0 0])
     _, out = run(['ls', '--cache-dir', @catalogs, '--certname', 'web*'])
     expect(cells(out).drop(1).map(&:first)).to eq(['web01.example.com'])
+    _, out = run(['ls', '--cache-dir', @catalogs, '--certname', '!web*'])
+    expect(cells(out).drop(1).map(&:first)).to eq(['db01.example.com'])
     expect(run(['list', '--cache-dir', File.join(@tmp, 'nope')]).first).to eq(3)
   end
 
