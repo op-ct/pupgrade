@@ -144,13 +144,13 @@ module Pupgrade
         entry['sites'] << site if site && entry['sites'].size < 20 && !entry['sites'].include?(site)
       end
 
-      # A function call the mocks answer, recorded under `mocks` and logged
-      # at the `--on-mock` level; nothing for a call they leave to run.
+      # A mocked function call, recorded under `mocks` and logged at the
+      # `--on-mock` level; nothing for a call that is not mocked.
       #
       # @param file [String, nil] the call site's file, when the caller
       #   knows it; else the site is where the Puppet stack is
       # @param line [Integer, nil]
-      # @return [Array(Boolean, Object)] whether the mocks answer, and with what
+      # @return [Array(Boolean, Object)] whether the call is mocked, and with what
       def mocked_function(name, args, file: nil, line: nil)
         found, value = @mocks.for_function(name, args, @node || @factset.values)
         return [false, nil] unless found
@@ -232,7 +232,7 @@ module Pupgrade
       # @param kind [String] which entry point: "execute", "execpipe", "backtick", ...
       # @param command [String] the command line
       # @return [Array(Symbol, Mocks::Command|nil)] [:mock, the entry] or [:run, nil]
-      # @raise [Leak] when nothing answers and the policy is to stop
+      # @raise [Leak] when the command is not mocked and the policy is to stop
       def guard(kind, command)
         entry = @mocks.for_command(command, @node || @factset.values)
         where = location
@@ -249,8 +249,8 @@ module Pupgrade
         end
 
         intercepted(kind, command, 'raised', where)
-        Pupgrade.logger.warning("guard: #{@factset.certname}: #{kind}: #{command.inspect} is not answered by the mocks#{" at #{where}" if where}")
-        raise Leak, "#{kind}: #{command.inspect} is not answered by the mocks (#{where})"
+        Pupgrade.logger.warning("guard: #{@factset.certname}: #{kind}: #{command.inspect} is not mocked#{" at #{where}" if where}")
+        raise Leak, "#{kind}: #{command.inspect} is not mocked (#{where})"
       end
 
       # A mocked answer at the level asked for, or not at all.
@@ -280,7 +280,7 @@ module Pupgrade
       private
 
       # One interception, filed by its outcome: mocked, a command run or
-      # stopped, or a fact read nothing answered.
+      # stopped, or a fact read with no value in the factset or the mocks.
       def intercepted(kind, what, action, where)
         list = if action.start_with?('mocked') then @mocked
                elsif action == 'missing' then @missing
@@ -435,8 +435,8 @@ module Pupgrade
         end
       end
 
-      # A Ruby function calling another (`call_function`). The mocks answer
-      # this call the same way they answer one from Puppet code.
+      # A Ruby function calling another (`call_function`). This call is
+      # mocked the same way as one from Puppet code.
       module FunctionCallHooks
         def call_function(function_name, *args, &block)
           if (rec = Probes.current)

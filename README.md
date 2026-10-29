@@ -99,7 +99,7 @@ and pupgrade is [installed](#installation).
     ```
 
 1. Compile a catalog per factset. A command a module runs during the compile
-   stops the node until a mock answers it:
+   stops the node until it is mocked:
 
     ```shell
     pupgrade catalog compile --factsets pupgrade/factsets
@@ -178,9 +178,9 @@ covers what the hierarchy keys on.
 A compile runs module code, and some of it runs commands: `hostname -f`,
 `rpm -q`, a `systemctl` in a custom function. pupgrade's execution guard
 catches the commands that go through Puppet's and Facter's execution
-helpers, and every `Facter.value` read. A command nothing answers stops that
-node's compile (`--on-leak fail`, the default), so you find them one at a
-time, or all at once with `--on-leak allow`.
+helpers, and every `Facter.value` read. A command that is not mocked stops
+that node's compile (`--on-leak fail`, the default), so you find them one at
+a time, or all at once with `--on-leak allow`.
 
 `pupgrade/compiler-mocks.yaml` answers them:
 
@@ -206,10 +206,10 @@ functions:                              # Puppet functions answered without runn
       os.family: RedHat
 ```
 
-The first entry whose `match` fits and whose `when` holds answers. pupgrade
+The first entry whose `match` fits and whose `when` holds is used. pupgrade
 applies its own mocks after yours, for the probes package providers make as
 they load (`pupgrade catalog compile --show-default-mocks` prints them).
-A function mock answers every call to that function, from manifests and
+A function mock covers every call to that function, from manifests and
 templates and from Ruby functions calling it, whatever the arguments.
 
 Every interception is in the node's `probes.json`, and the compile table
@@ -543,11 +543,11 @@ Facter's execution helpers and every `Facter.value` read (not raw Ruby
 backticks, and no provider confines, since the catalog is never applied).
 
 ```shell
-# 1. find them: a compile stops at the first command nothing answers, and
+# 1. find them: a compile stops at the first command that is not mocked, and
 #    the warning says what asked and from where
 pupgrade catalog compile
-#   warning: guard: web01.example.com: execute: "hostname -f" is not answered by the
-#   mocks at site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4
+#   warning: guard: web01.example.com: execute: "hostname -f" is not mocked at
+#   site-modules/profile/manifests/base.pp:13 via modules/stdlib/lib/puppet/functions/stdlib/run_hostname.rb:4
 
 # 2. or find them all at once: every command runs for real, and is recorded
 pupgrade catalog compile --on-leak allow

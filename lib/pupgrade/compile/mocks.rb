@@ -26,9 +26,9 @@ module Pupgrade
     #           os.family: RedHat
     #
     # The first entry whose `match` fits the command line and whose `when`
-    # fits the node's facts answers. A command no entry answers gets the
+    # fits the node's facts is used. A command that is not mocked gets the
     # run's `on_leak` policy: `fail` stops the node's compile, `allow` runs
-    # it and records it. A function no entry answers runs.
+    # it and records it. A function that is not mocked runs.
     class Mocks
       class Error < StandardError; end
 
@@ -155,8 +155,8 @@ module Pupgrade
       # @param name [String] the function called
       # @param args [Array] its arguments, for a block
       # @param node [Enc::Node, Hash] the node, or its facts alone
-      # @return [Array(Boolean, Object)] whether a block or entry answers,
-      #   and with what
+      # @return [Array(Boolean, Object)] whether the call is mocked, and
+      #   with what
       def for_function(name, args, node = {})
         name  = name.to_s.delete_prefix('::')
         facts = node.is_a?(Enc::Node) ? node.facts : node
@@ -171,7 +171,7 @@ module Pupgrade
       end
 
       # @param name [String] a fact, dotted for a path into a structured one
-      # @return [Array(Boolean, Object)] whether the mocks answer, and with what
+      # @return [Array(Boolean, Object)] whether the fact is mocked, and with what
       def fact(name)
         return [true, @facts[name]] if @facts.key?(name)
 
