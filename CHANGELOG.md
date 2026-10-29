@@ -57,6 +57,9 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   every release of a module, past and future: each tag naming a version on
   the branch it follows, oldest first, with its date, the deployed one marked;
   `--include-heads` adds the branch tip
+  - a column per constraint, saying whether each release meets it and which
+    way it misses: `--with DEP[=VERSION]` (the dependency range against the
+    version, deployed by default), `--puppet VERSION`, `--os NAME[=RELEASE]`
 - **`pupgrade module list [GLOBS]`**: every module on the modulepath or in the
   Puppetfile, with what the Puppetfile declares, what is deployed, and whether
   they agree, and whether any compiled catalog uses it (`?` without a compile

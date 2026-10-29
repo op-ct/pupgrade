@@ -71,6 +71,27 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Release do
     system('git', '-C', clone, 'branch', '-q', '-D', 'old', out: File::NULL, err: File::NULL)
   end
 
+  it 'holds each release against a dependency version, a Puppet version, and an OS release, a column each' do
+    status, out = run(['concat', '--with', 'stdlib', '--puppet', '8', '--os', 'RedHat=9'])
+    expect(status).to eq(0)
+    expect(cells(out)).to eq([
+      ['version', 'tag', 'released', 'stdlib 8.6.0', 'puppet 8.0.0', 'RedHat 9', ''],
+      ['7.3.0', 'v7.3.0', '2024-01-06', 'ok', 'ok', 'missing (has 7, 8)', '(deployed)'],
+      ['9.0.0', 'v9.0.0', '2024-01-07', 'needs >= 9.0.0 < 10.0.0 (newer)', 'ok', 'ok', ''],
+      ['9.1.0', 'v9.1.0', '2024-01-08', 'needs >= 9.0.0 < 10.0.0 (newer)', 'ok', 'ok', ''],
+    ])
+    _, out = run(['stdlib', '--with', 'stdlib=1.0.0', '--puppet', '6', '--os', 'CentOS,Windows=10,Debian=12.1'])
+    rows = cells(out)
+    expect(rows.first.drop(3)).to eq(['stdlib 1.0.0', 'puppet 6.0.0', 'CentOS', 'Windows 10', 'Debian 12.1', ''])
+    expect(rows[1].drop(3)).to eq(['none', 'needs >= 7.0.0 < 9.0.0 (newer)', 'ok', 'missing', 'missing (has 10, 11)', '(deployed)'])
+    expect(rows[2].drop(3)).to eq(['none', 'needs >= 7.0.0 < 9.0.0 (newer)', 'missing', 'missing', 'ok', ''])
+    expect(cells(run(['concat', '--with', 'stdlib=10.0.0']).last).drop(1).map { |r| r[3] })
+      .to eq(['needs >= 4.13.1 < 9.0.0 (older)', 'needs >= 9.0.0 < 10.0.0 (older)', 'needs >= 9.0.0 < 10.0.0 (older)'])
+    expect(run(['concat', '--with', 'nope']).first).to eq(3)
+    expect(run(['concat', '--with', 'stdlib=x']).first).to eq(2)
+    expect(run(['concat', '--puppet', 'eight']).first).to eq(2)
+  end
+
   it 'stops for a module with no git releases' do
     expect(run(['facts']).first).to eq(3)
     expect(run(['profile']).first).to eq(3)

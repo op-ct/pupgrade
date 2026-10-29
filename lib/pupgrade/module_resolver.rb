@@ -22,8 +22,8 @@ module Pupgrade
                       'Empty: operating systems are not checked'
     config_key 'modules.requirements', type: :hash, default: nil,
                example: { 'puppet' => '>= 8.0.0 < 9.0.0' },
-               about: 'The Puppet versions the control repo itself runs or is moving to, as a module\'s ' \
-                      'metadata.json would declare them (`puppet` or `openvox`); a module whose requirement ' \
+               about: 'The Puppet versions the control repo itself runs or is moving to, in the form ' \
+                      'a module\'s metadata.json declares them (`puppet` or `openvox`); a module whose requirement ' \
                       'shares no version with it is a puppet-version conflict'
     config_key 'modules.exclude_modules', type: :array, default: [],
                about: 'Globs (case-insensitive) of module names left out of every check: never a row, ' \
@@ -114,6 +114,11 @@ module Pupgrade
       Pupgrade.logger.info("resolve: #{mods.size} module(s), #{kept.size} conflict(s), #{dropped.size + suppressed} excluded")
       Result.new(conflicts: kept.sort_by { |c| [KINDS.index(c.kind), c.module, c.subject] },
                  excluded: dropped.size + suppressed, puppet_range: puppet_range, warnings: warnings)
+    end
+
+    # "9" matches "9" and "9.2"; "22.04" matches only "22.04".
+    def self.release_matches?(declared, wanted)
+      declared == wanted || wanted.start_with?("#{declared}.")
     end
 
     private
@@ -216,18 +221,13 @@ module Pupgrade
             if declared.nil?
               Conflict.new(kind: 'operatingsystem', module: e.metadata.name, subject: subject,
                            detail: "missing #{os} (declared: #{support.keys.join(', ')})", fault: "missing #{os}")
-            elsif release && !declared.empty? && declared.none? { |d| release_matches?(d, release) }
+            elsif release && !declared.empty? && declared.none? { |d| self.class.release_matches?(d, release) }
               Conflict.new(kind: 'operatingsystem', module: e.metadata.name, subject: subject,
                            detail: "missing #{subject} (declared: #{os} #{declared.join(', ')})", fault: "missing #{subject}")
             end
           end
         end
       end
-    end
-
-    # "9" matches "9" and "9.2"; "22.04" matches only "22.04".
-    def release_matches?(declared, wanted)
-      declared == wanted || wanted.start_with?("#{declared}.")
     end
 
     # Whether the row is dropped by its kind's exclusion list; a stale
