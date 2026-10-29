@@ -92,6 +92,27 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Release do
     expect(run(['concat', '--puppet', 'eight']).first).to eq(2)
   end
 
+  it 'shows how each --item of the API surface reads per release: first text, then changed, =, or absent' do
+    status, out = run(['stdlib', '--item', 'stdlib::shout', '--item', 'Stdlib::Port,legacy_shout,stdlib::version'])
+    expect(status).to eq(0)
+    rows = cells(out)
+    expect(rows.first.drop(3)).to eq(['param stdlib::version', 'function legacy_shout', 'function stdlib::shout', 'type alias Stdlib::Port', ''])
+    expect(rows.drop(1).map { |r| r.drop(3) }).to eq([
+      ["String $version = '8.6.0'", 'ruby3x, in lib/puppet/parser/functions/legacy_shout.rb', '(text)', 'Integer[0, 65535]', '(deployed)'],
+      ["changed: String $version = '9.0.0'", 'absent', 'changed: (text, times)', 'changed: Integer[1, 65535]', ''],
+      ["changed: String $version = '9.4.0'", 'absent', '=', '=', ''],
+      ["changed: String $version = '9.6.0'", 'absent', '=', '=', ''],
+    ])
+    _, out = run(['apache', '--with', 'stdlib', '--item', 'apache::dead_opt,stdlib::whisper'])
+    rows = cells(out)
+    expect(rows.first.drop(3)).to eq(['stdlib 8.6.0', 'param apache::dead_opt', ''])
+    expect(rows.drop(1).map { |r| r[4] }).to eq(["String $dead_opt = 'builtin'", '=', 'absent'])
+    expect(Dir.children(File.join(fixture.dir, 'pupgrade/cache/api_surfaces'))).to include(fixture.surface_file('apache', '12.0.0', 'v12.0.0'))
+    _, out = run(['stdlib', '--include-heads', '--branch', 'main', '--item', 'stdlib::whisper'])
+    expect(cells(out).drop(1).map { |r| r[3] }).to eq(['(String $text) -> String', '=', '=', '=', '='])
+    expect(cells(run(['stdlib', '--item', 'nope']).last).first).to eq(['version', 'tag', 'released', ''])
+  end
+
   it 'stops for a module with no git releases' do
     expect(run(['facts']).first).to eq(3)
     expect(run(['profile']).first).to eq(3)

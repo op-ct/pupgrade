@@ -52,7 +52,7 @@ module Pupgrade
         "#{kind} #{namespace}#{leaf}"
       end
 
-      # The item in three parts for colouring: the surface kind, the
+      # The item in three parts for coloring: the surface kind, the
       # namespace (`mod::class::` for a parameter, `mod::` for a namespaced
       # name, '' when there is none), and the leaf.
       #
@@ -131,6 +131,25 @@ module Pupgrade
         else
           value(v)
         end
+      end
+
+      # What an entry reads as, in one line: a class, defined type, or
+      # Puppet function as its parameter list, a Ruby 4.x function as its
+      # signatures, a type alias as its type, anything else as
+      # {Diff.summary} puts it.
+      #
+      # @param section [String] one of {Diff::SECTIONS}
+      # @param entry [Hash]
+      # @return [String] "(String $text) -> String", "(text) | (text, times)",
+      #   "Integer[0, 65535]"
+      def entry_text(section, entry)
+        return entry['type'].to_s if section == 'type_aliases'
+        return entry['signatures'].map { |sig| signature(sig) }.join(' | ') if entry['signatures'].is_a?(Array)
+        return Diff.summary(entry) unless %w[classes defined_types functions].include?(section) && entry['params'].is_a?(Hash)
+
+        text = "(#{entry['params'].map { |name, param| declaration(name, param) }.join(', ')})"
+        text += " -> #{entry['return_type']}" if entry['return_type']
+        text
       end
 
       # @return [String] "Boolean $x = $is_slave"

@@ -1,10 +1,14 @@
 require 'pupgrade/cli/base'
 require 'pupgrade/cli/module_command'
+require 'pupgrade/cli/surface'
 require 'pupgrade/cli/table'
 require 'driftless/git_clone'
 require 'driftless/module_inventory'
 require 'pupgrade/release_constraints'
 require 'pupgrade/solve/candidates'
+require 'pupgrade/surface'
+require 'pupgrade/surface/targets'
+require 'pupgrade/surface/timeline'
 
 module Pupgrade
   module CLI
@@ -14,10 +18,12 @@ module Pupgrade
       # One module's releases: every tag naming a version on the branch it
       # follows, past and future, oldest first, with the date of each and
       # the deployed one marked; on request, whether each meets a
-      # dependency version, a Puppet version, or an operating system.
+      # dependency version, a Puppet version, or an operating system, and
+      # how an item of the API surface reads in each.
       class Release < Base
         include Table
         include ModuleCommand::Shared
+        include Surface::Shared
 
         register_command name: 'release', subcommand_of: ModuleCommand
         positional '<module>'
@@ -25,8 +31,8 @@ module Pupgrade
 
         COLUMNS = %w[version tag released].freeze
 
-        # How a constraint cell is colored by its first word.
-        STYLE = { 'ok' => [:green], 'needs' => [:red], 'missing' => [:red] }.freeze
+        # How a constraint or item cell is colored by its first word.
+        STYLE = { 'ok' => [:green], 'needs' => [:red], 'missing' => [:red], 'absent' => [:red], 'changed:' => [:yellow] }.freeze
 
         def execute(argv)
           fatal!('module release takes a module', help: true) unless argv.size == 1
@@ -44,7 +50,11 @@ module Pupgrade
 
           constraints = constraints(inventory)
           clone = ::Driftless::GitClone.new(File.join(repo.dir, entry.path))
-          print_table(COLUMNS + constraints.map(&:heading) + [''], list.map { |c| row(clone, c, constraints) })
+          items, cells = item_columns(repo, entry, clone, list)
+          rows = list.map.with_index do |c, i|
+            row(clone, c, constraints) + cells.map { |column| column[i] } + [c.current ? paint('(deployed)', :green) : '']
+          end
+          print_table(COLUMNS + constraints.map(&:heading) + items.map(&:heading) + [''], rows)
           name = entry.metadata.name || entry.declared&.name || File.basename(entry.path)
           branch ||= (entry.declared.ref_type == 'branch') ? entry.declared.ref.to_s : branch_for(repo, entry)
           ::Pupgrade.logger.notice("module release: #{name}: #{list.size} release(s)#{" on #{branch}" if branch}")
@@ -65,8 +75,14 @@ module Pupgrade
           o.on('--puppet=VERSION', 'Each release\'s Puppet requirement against VERSION (8 reads as 8.0.0)') { |v| @options[:puppet] = v }
           o.on('--os=NAME[,…]', Array, 'Each release\'s support for the OS, or a release of it as NAME=RELEASE') { |v| accumulate(:os, v) }
           o.separator ''
+          o.separator 'Surface items, a column each (globs, case-insensitive; a parameter is CLASS::PARAM):'
+          o.on('--item=GLOBS', Array, 'How each matching item of the API surface reads in each release') { |v| accumulate(:items, v) }
+          o.on('--cache-dir=DIR', 'Where surface documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
+          o.on('--refresh', 'Extract the surfaces again, ignoring the cache') { @options[:refresh] = :all }
+          o.separator ''
           o.separator 'A constraint cell reads ok, needs RANGE (newer or older: which way the version would'
-          o.separator 'have to move), missing, none (no such dependency), or undeclared.'
+          o.separator 'have to move), missing, none (no such dependency), or undeclared. An item cell is the'
+          o.separator 'item\'s signature or type where it first appears, then changed: ..., =, or absent.'
         end
 
         private
@@ -88,6 +104,30 @@ module Pupgrade
           end
         end
 
+        # The surface items --item names and how each reads per release,
+        # from the document of the module at every release, through the
+        # cache `surface` keeps.
+        #
+        # @return [Array(Array<Surface::Timeline::Item>, Array<Array<String>>)]
+        #   the items, and per item one cell per release
+        def item_columns(repo, entry, clone, list)
+          globs = Array(@options[:items])
+          return [[], []] if globs.empty?
+
+          ::Pupgrade.logger.notice("module release: reading the surface of #{entry.path} at #{list.size} release(s)")
+          reader = targets(fetch: false)
+          docs   = list.map do |candidate|
+            ref = ref_candidate(clone, candidate.ref) || candidate.ref
+            reader.document(reader.resolve(File.join(repo.dir, entry.path), ref: ref)).first
+          end
+          timeline = ::Pupgrade::Surface::Timeline.new(docs)
+          items    = timeline.items(globs)
+          ::Pupgrade.logger.warn("module release: no surface item matches #{globs.join(', ')} at any release") if items.empty?
+          [items, items.map { |item| timeline.cells(item).map { |cell| paint(cell, *STYLE.fetch(cell.split.first, [])) } }]
+        rescue ::Pupgrade::Surface::Error, ::Pupgrade::Surface::Targets::Error => e
+          fatal!("module release: #{e.message}", 3)
+        end
+
         def parse_version(text, what)
           ::Pupgrade::ReleaseConstraints.version(text)
         rescue ArgumentError => e
@@ -99,8 +139,7 @@ module Pupgrade
         end
 
         # A tag cyan and a branch tip magenta, the colors `module list` gives
-        # a declaration; a constraint met green, missed red; the deployed
-        # row marked green.
+        # a declaration; a constraint met green, missed red.
         def row(clone, candidate, constraints)
           ref   = paint(candidate.ref, (candidate.ref_type == 'tag') ? :cyan : :magenta)
           date  = clone.log('-1', '--format=%cs', "#{candidate.ref}^{commit}") || ''
@@ -108,11 +147,11 @@ module Pupgrade
             verdict = c.check(candidate.metadata)
             paint(verdict, *STYLE.fetch(verdict.split.first, []))
           end
-          [candidate.version.to_s, ref, date] + cells + [candidate.current ? paint('(deployed)', :green) : '']
+          [candidate.version.to_s, ref, date] + cells
         end
 
         def config_defaults
-          { branchfile: ::Pupgrade.config.dig('modules', 'branchfile') }.compact
+          surface_config_defaults.merge(branchfile: ::Pupgrade.config.dig('modules', 'branchfile')).compact
         end
       end
     end

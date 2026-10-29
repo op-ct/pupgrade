@@ -60,6 +60,10 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   - a column per constraint, saying whether each release meets it and which
     way it misses: `--with DEP[=VERSION]` (the dependency range against the
     version, deployed by default), `--puppet VERSION`, `--os NAME[=RELEASE]`
+  - `--item GLOBS`: a column per matching item of the API surface (a
+    parameter is `CLASS::PARAM`), reading its signature or type where it
+    first appears, then `changed: …`, `=`, or `absent`, from the surface
+    document of each release
 - **`pupgrade module list [GLOBS]`**: every module on the modulepath or in the
   Puppetfile, with what the Puppetfile declares, what is deployed, and whether
   they agree, and whether any compiled catalog uses it (`?` without a compile
