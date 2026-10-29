@@ -110,7 +110,7 @@ RSpec.describe Pupgrade::CLI::Impact do
     log = capture_log do
       status = nil
       silently do
-        described_class.new.run(['--no-config', '-vv', '-d', fixture.dir, '--no-catalogs', '--propose', proposed])
+        described_class.new.run(['--no-config', '-vv', '-d', fixture.dir, '--no-catalogs', '-p', proposed])
       rescue SystemExit => e
         status = e.status
       end

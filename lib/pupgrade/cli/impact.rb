@@ -95,7 +95,7 @@ module Pupgrade
       def configure_parser(o)
         o.on('-d', '--repo-dir=DIR', 'Path to the control repo environment',
              "Default: '.' (if environment.conf and hiera.yaml exist)") { |v| @options[:repo_dir] = v }
-        o.on('--propose=PUPPETFILE', 'The proposed Puppetfile, as `check` takes it; the same as giving it first') { |v| @options[:propose] = v }
+        o.on('-p', '--propose=PUPPETFILE', 'The proposed Puppetfile, in the form `check --propose` reads; the same as giving it first') { |v| @options[:propose] = v }
         o.on('--cache-dir=DIR', 'Where surface documents are kept (config: surface.cache_dir)') { |v| @options[:cache_dir] = v }
         o.on('--refresh', 'Extract the surfaces again, ignoring the cache') { @options[:refresh] = :all }
         o.on('--compile-cache=DIR', 'The `compile` cache to read (config: impact.compile_cache, else compile.cache_dir)') { |v| @options[:compile_cache] = v }
@@ -192,7 +192,8 @@ module Pupgrade
         [{}, {}]
       end
 
-      # How the verb of a change is coloured, as `module diff` colours it.
+      # How the verb of a change is colored. `module diff` colors its
+      # verbs the same way.
       VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
       def where_cell(finding)
