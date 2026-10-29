@@ -1,3 +1,4 @@
+require 'pupgrade/impact/uses'
 require 'pupgrade/surface/diff'
 require 'pupgrade/surface/render'
 
@@ -7,6 +8,8 @@ module Pupgrade
     # each change the evidence shows the site touching, and where. Without
     # evidence every change is a finding with its use unknown.
     class Analysis
+      include Uses
+
       KINDS = %w[
         class-removed class-param-removed class-param-hiera-only class-param-added-required class-param-type-changed class-param-default-changed
         define-removed define-param-removed define-param-added-required define-param-type-changed define-param-default-changed
@@ -45,37 +48,6 @@ module Pupgrade
           uses.nil? ? 'use unknown' : uses.join('; ')
         end
       end
-
-      # One kind of use of a finding: its first {NAMED} items, and a count
-      # of the rest.
-      #
-      # @!attribute [r] label
-      #   @return [String] "nodes", "resources", "sites", "hiera", or "lookups"
-      # @!attribute [r] items
-      #   @return [Array<Item>] the first {NAMED}
-      # @!attribute [r] more
-      #   @return [Integer] how many more there are
-      Use = Data.define(:label, :items, :more) do
-        def to_s
-          "#{label}: #{items.join(', ')}#{" and #{more} more" if more.positive?}"
-        end
-      end
-
-      # One node, resource, call site, or Hiera file.
-      #
-      # @!attribute [r] name
-      #   @return [String, nil] a resource's "Type[title]", or a file:line;
-      #     nil for a node
-      # @!attribute [r] certname
-      #   @return [String, nil] the node; nil for a file:line
-      Item = Data.define(:name, :certname) do
-        def to_s
-          [name, certname].compact.join(' on ')
-        end
-      end
-
-      # How many names a `where` lists before counting instead.
-      NAMED = 3
 
       # @param evidence [Evidence, nil]
       # @param hiera [Hash{String => Array<String>}] every top-level Hiera
@@ -173,9 +145,8 @@ module Pupgrade
       def function_findings(name, change)
         return [] if change.kind == 'added'
 
-        kind  = (change.kind == 'removed') ? 'function-removed' : 'function-changed'
-        sites = @evidence&.call_sites(change.name)
-        [make(name, kind, change.name, (sites.nil? || sites.empty?) ? [] : [list('sites', sites)], change)]
+        kind = (change.kind == 'removed') ? 'function-removed' : 'function-changed'
+        [make(name, kind, change.name, sites(@evidence&.call_sites(change.name)), change)]
       end
 
       def type_findings(name, change, _to)
@@ -241,19 +212,6 @@ module Pupgrade
                     detail: "#{Surface::Render.difference(change)}: #{Surface::Render.detail(change)}", change: change)
       end
 
-      # @return [Array<Use>] one "nodes" use, or none
-      def nodes(certnames)
-        return [] if certnames.nil? || certnames.empty?
-
-        [list('nodes', certnames.map { |c| Item.new(name: nil, certname: c) })]
-      end
-
-      def resources(pairs)
-        return [] if pairs.nil? || pairs.empty?
-
-        [list('resources', pairs.map { |certname, r| Item.new(name: "#{r['type']}[#{r['title']}]", certname: certname) })]
-      end
-
       # @return [Array<String>] one "hiera: ..." part naming the data files
       #   setting the key, or none
       def hiera(key)
@@ -265,12 +223,6 @@ module Pupgrade
       def hiera_under(klass)
         refs = @hiera.select { |key, _| key.start_with?("#{klass}::") }.values.flatten
         refs.empty? ? [] : [list('hiera', refs)]
-      end
-
-      # @param items [Array<Item, String>] a String is a file:line
-      def list(label, items)
-        items = items.map { |i| i.is_a?(Item) ? i : Item.new(name: i, certname: nil) }.uniq
-        Use.new(label: label, items: items.first(NAMED), more: [items.size - NAMED, 0].max)
       end
     end
   end

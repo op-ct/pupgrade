@@ -63,6 +63,13 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   - `--surfaces[=KINDS]`: the names on each API surface, from the module's
     surface document, at `MODULE:REF` when a ref is given
 
+- **`pupgrade module usage MODULE [--params] [--unused]`**: what the site
+  uses of one deployed module: one row per item of its API surface, whether
+  the compiled catalogs show it used, and where (nodes, resources, call
+  sites); `--params` adds each class parameter with the nodes setting it and
+  those leaving its default; `--surfaces` and `--names` filter rows as in
+  `module diff`; exits 1 when nothing uses the module
+
 - **`pupgrade module update`**` MODULE REF [--dry-run] [--force]`
 
   Check out `REF` in the deployed git `MODULE`, in place; `--force` goes

@@ -27,7 +27,27 @@ module Pupgrade
     # Hiera keys the evidence shows concerned. Exit 1 when any finding has
     # a use.
     class Impact < Base
+      # What is shared with `module usage`: how a use reads in a table cell.
+      module Shared
+        # Certnames magenta, a resource's Type[title] in the given style,
+        # and "and N more" in its items' color, dimmed.
+        #
+        # @param use [Pupgrade::Impact::Uses::Use]
+        # @param style [Array<Symbol>] the color of a resource's Type[title]
+        def use_text(use, style)
+          items = use.items.map do |item|
+            name = (item.name && use.label == 'resources') ? paint(item.name, *style) : item.name
+            [name, item.certname && paint(item.certname, :magenta)].compact.join(' on ')
+          end
+          return "#{use.label}: #{items.join(', ')}" unless use.more.positive?
+
+          more = use.items.any?(&:certname) ? %i[magenta dim] : [:dim]
+          "#{use.label}: #{items.join(', ')} #{paint("and #{use.more} more", *more)}"
+        end
+      end
+
       include Table
+      include Shared
       extend ::Pupgrade::ConfigKeys::DSL
 
       register_command name: 'impact', subcommand_of: Root
@@ -197,9 +217,8 @@ module Pupgrade
       # verbs the same way.
       VERB_STYLE = { 'added' => [:green], 'removed' => [:red] }.freeze
 
-      # Certnames magenta, a resource's Type[title] in the detail's verb
-      # color, and "and N more" in its items' color, dimmed; a use unknown
-      # red.
+      # Each use as {Shared#use_text} reads it, a resource in the detail's
+      # verb color; a use unknown red.
       def where_cell(finding)
         return paint(finding.where, :red) if finding.uses.nil?
 
@@ -224,18 +243,6 @@ module Pupgrade
 
         namespace, _, name = subject.rpartition('::')
         "#{paint("#{namespace}::", :cyan)}#{name}"
-      end
-
-      # @param style [Array<Symbol>] the color of a resource's Type[title]
-      def use_text(use, style)
-        items = use.items.map do |item|
-          name = (item.name && use.label == 'resources') ? paint(item.name, *style) : item.name
-          [name, item.certname && paint(item.certname, :magenta)].compact.join(' on ')
-        end
-        return "#{use.label}: #{items.join(', ')}" unless use.more.positive?
-
-        more = use.items.any?(&:certname) ? %i[magenta dim] : [:dim]
-        "#{use.label}: #{items.join(', ')} #{paint("and #{use.more} more", *more)}"
       end
 
       # "changed param type: Variant[…] -> Optional[…]": the verb colored
