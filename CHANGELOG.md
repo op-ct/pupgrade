@@ -60,6 +60,8 @@ It's a new gem to help upgrade the module base of large Puppet/OpenVox  control 
   in full: names, path, declaration, remote, what the clone sits at, metadata
   (dependencies, requirements, OS support), the branch it follows, and the
   tagged versions it could move to
+  - `--surfaces[=KINDS]`: the names on each API surface, from the module's
+    surface document, at `MODULE:REF` when a ref is given
 
 - **`pupgrade module update`**` MODULE REF [--dry-run] [--force]`
 

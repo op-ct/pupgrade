@@ -67,6 +67,23 @@ RSpec.describe Pupgrade::CLI::ModuleCommand::Info do
     expect(run(['facts:v1.0.0']).first).to eq(3)
   end
 
+  it 'lists the names on each API surface with --surfaces, at the ref read, or only the kinds named' do
+    status, info = run(['stdlib', '--surfaces'])
+    expect(status).to eq(0)
+    expect(info).to include(
+      'classes'      => 'stdlib',
+      'functions'    => 'legacy_shout, stdlib::run_hostname, stdlib::shout, stdlib::whisper',
+      'type aliases' => 'Stdlib::Port',
+    )
+    expect(info).not_to have_key('facts')
+    expect(run(['stdlib']).last).not_to have_key('classes')
+
+    _, info = run(['stdlib:v9.6.0', '--surfaces=functions,facts'])
+    expect(info).to include('functions' => 'stdlib::run_hostname, stdlib::shout, stdlib::whisper', 'facts' => '(none)')
+    expect(info).not_to have_key('classes')
+    expect(run(['stdlib', '--surfaces=bogus']).first).to eq(2)
+  end
+
   it 'follows the first --branch the clone has, its tags the candidates, and records it in a branchfile' do
     system('git', '-C', File.join(fixture.dir, 'modules/stdlib'), 'branch', '-q', 'old', 'v8.6.0', exception: true)
     # old ends at the current tag: no tag past it, only the branch tip
