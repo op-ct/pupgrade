@@ -24,7 +24,7 @@ module Pupgrade
 
       config_key 'compile.environment', type: :string, default: 'production',
           about: "The environment name the catalogs are compiled in.\n" \
-                 'Can interpolate w/enc.yaml syntax, ex: ${facts.agent_specified_environment}'
+                 'Interpolates enc.yaml vars, ex: ${facts.agent_specified_environment}'
       config_key 'compile.manifest', type: :string, default: nil, example: 'manifests/site.pp',
                  about: 'A manifest file/directory to compile instead of environment.conf\'s'
       config_key 'compile.hiera', type: :string, default: nil, example: 'pupgrade/hiera.yaml',
