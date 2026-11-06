@@ -36,7 +36,7 @@ module Pupgrade
                  'nearest: move modules to nearest fit (override with --bump)'
       config_key 'solve.include_heads', type: :boolean, default: false,
                  about: 'Include untagged branch tips as candidates (modules.branchfile)'
-      config_key 'solve.compile_cache', type: :string, default: nil, example: '# pupgrade/cache/catalogs-all',
+      config_key 'solve.compile_cache', type: :string, default: nil, example: 'pupgrade/cache/catalogs-all',
                   about: 'evidence of what the site uses, for --prune-unused (if unset: compile.cache_dir)'
 
       COLUMNS = %w[module current chosen candidates note].freeze
